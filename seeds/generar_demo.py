@@ -207,11 +207,15 @@ def generar() -> None:
     # (filtros, correas, bujías, frenos, lubricantes).
     rubros_taller = {"FILTROS", "CORREAS", "ENCENDIDO", "FRENOS", "LUBRICANTES"}
     precios = []
-    for a in ARTICULOS:
+    for i, a in enumerate(ARTICULOS):
         codigo, costo, rubro = a[0], Decimal(a[2]), a[6]
         listas = ["MOST", "MAY"] + (["TALL"] if rubro in rubros_taller else [])
         for lista in listas:
             margen = MARGEN_LISTA[lista]
+            # La lista mayorista es la competitiva: markup variable por artículo (8%..47%), como en la
+            # realidad los ítems que pelean precio. Algunos quedan finos → el guardián de márgenes los marca.
+            if lista == "MAY":
+                margen = Decimal(8 + (i * 37) % 40)
             precio = _redondear(costo * (1 + margen / 100))
             precios.append({"articulo_codigo": codigo, "lista_codigo": lista,
                             "precio": precio, "margen": margen})
