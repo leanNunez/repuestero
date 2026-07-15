@@ -101,3 +101,29 @@ def test_grafo_nl2sql_scopeado_por_rls(monkeypatch, tenants):
     assert codigos == ["COD-A"]  # solo org A — NUNCA COD-B (org B)
     assert resultado["sql"] is not None
     assert resultado["respuesta"]
+
+
+def test_grafo_cae_a_openai_si_el_proveedor_se_cae(monkeypatch):
+    """Si el PROVEEDOR (no el SQL) se cae, el grafo reintenta y cambia a OpenAI, no explota.
+
+    Regresión: `_generar` no atrapaba la excepción del proveedor, así que un Groq caído
+    (auth/red/rate-limit) se propagaba como 500 en vez de disparar el fallback a OpenAI.
+    Los otros tests stubean `completar` con éxito y por eso nunca ejercitaban este camino.
+    """
+    llamadas: list[str] = []
+
+    def completar_flaky(system: str, user: str, *, proveedor: str = llm.GROQ) -> str:
+        llamadas.append(proveedor)
+        if proveedor == llm.GROQ:
+            raise RuntimeError("groq caído: 401 Invalid API Key")
+        if "generador de SQL" in system:
+            return "select 1 as uno"
+        return "respuesta de openai"
+
+    monkeypatch.setattr(llm, "completar", completar_flaky)
+
+    resultado = grafo.responder("cualquier cosa", lambda sql: [{"uno": 1}])
+
+    assert llm.GROQ in llamadas and llm.OPENAI in llamadas  # intentó groq y recién ahí cayó a openai
+    assert resultado["filas"] == [{"uno": 1}]
+    assert resultado["respuesta"] == "respuesta de openai"

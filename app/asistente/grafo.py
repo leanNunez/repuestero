@@ -76,7 +76,15 @@ def _generar(estado: Estado) -> dict:
     user = estado["pregunta"]
     if estado.get("error"):
         user = f"{user}\n\n(El intento anterior falló: {estado['error']}. Devolvé la consulta corregida.)"
-    texto = llm.completar(_SYSTEM_SQL, user, proveedor=estado["proveedor"])
+    try:
+        texto = llm.completar(_SYSTEM_SQL, user, proveedor=estado["proveedor"])
+    except Exception as exc:  # noqa: BLE001 — el proveedor caído (auth/red/rate-limit) alimenta el
+        # reintento y, agotado Groq, el cambio a OpenAI. NO se propaga: un proveedor abajo no es un 500.
+        logger.warning(
+            "Proveedor %s falló al generar SQL (intento %d): %s", estado["proveedor"], estado["intentos"], exc
+        )
+        # sql=None → el guard rechaza el SELECT vacío → _ruta reintenta y luego cambia de proveedor.
+        return {"sql": None, "intentos": estado["intentos"] + 1, "error": f"proveedor no disponible: {exc}"}
     return {"sql": _extraer_sql(texto), "intentos": estado["intentos"] + 1, "error": None}
 
 
@@ -99,7 +107,12 @@ def _redactar(estado: Estado) -> dict:
     if estado.get("filas") is None:
         return {"respuesta": "No pude armar una consulta válida para esa pregunta. ¿La reformulás?"}
     user = f"Pregunta: {estado['pregunta']}\n\nResultado:\n{_formatear_filas(estado['filas'])}"
-    return {"respuesta": llm.completar(_SYSTEM_RESPUESTA, user, proveedor=estado["proveedor"])}
+    try:
+        return {"respuesta": llm.completar(_SYSTEM_RESPUESTA, user, proveedor=estado["proveedor"])}
+    except Exception as exc:  # noqa: BLE001 — ya tenemos los datos; si el proveedor cae al narrar,
+        # devolvemos las filas con un mensaje, nunca un 500. (Generar ya usa el proveedor vivo.)
+        logger.warning("Proveedor %s falló al redactar: %s", estado["proveedor"], exc)
+        return {"respuesta": "Encontré resultados pero no pude redactar la respuesta. Te muestro los datos."}
 
 
 def _ruta(estado: Estado) -> str:
