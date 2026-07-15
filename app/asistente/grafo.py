@@ -15,7 +15,7 @@ tenants. Eso lo hace testeable con un ejecutor y un LLM de mentira, sin tocar re
 import json
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
@@ -125,43 +125,84 @@ def _ruta(estado: Estado) -> str:
     return "redactar"  # agotó Groq y OpenAI: redactar dará la respuesta de "no pude"
 
 
-def _construir():
+def _construir(*, con_narracion: bool):
+    """Arma el grafo. Con narración termina en `redactar`; sin narración corta al tener los datos.
+
+    El grafo de solo-datos lo usa el endpoint de streaming, que narra aparte token por token. Ambos
+    comparten los mismos nodos y el mismo loop de reintento/fallback: solo cambia el destino terminal.
+    """
     g = StateGraph(Estado)
     g.add_node("generar", _generar)
     g.add_node("ejecutar", _ejecutar)
     g.add_node("cambiar_proveedor", _cambiar_proveedor)
-    g.add_node("redactar", _redactar)
     g.add_edge(START, "generar")
     g.add_edge("generar", "ejecutar")
+
+    if con_narracion:
+        g.add_node("redactar", _redactar)
+        g.add_edge("redactar", END)
+    destino_listo = "redactar" if con_narracion else END
+
     g.add_conditional_edges(
         "ejecutar",
         _ruta,
-        {"redactar": "redactar", "generar": "generar", "cambiar_proveedor": "cambiar_proveedor"},
+        {"redactar": destino_listo, "generar": "generar", "cambiar_proveedor": "cambiar_proveedor"},
     )
     g.add_edge("cambiar_proveedor", "generar")
-    g.add_edge("redactar", END)
     return g.compile()
 
 
-_GRAFO = _construir()
+_GRAFO = _construir(con_narracion=True)
+_GRAFO_DATOS = _construir(con_narracion=False)
+
+
+def _estado_inicial(pregunta: str, ejecutar: Callable[[str], list[dict[str, Any]]]) -> Estado:
+    return {
+        "pregunta": pregunta,
+        "sql": None,
+        "error": None,
+        "intentos": 0,
+        "proveedor": llm.GROQ,
+        "filas": None,
+        "respuesta": None,
+        "ejecutar": ejecutar,
+    }
 
 
 def responder(pregunta: str, ejecutar: Callable[[str], list[dict[str, Any]]]) -> dict:
-    """Punto de entrada. `ejecutar` corre un SELECT ya validado y devuelve las filas como dicts."""
-    final = _GRAFO.invoke(
-        {
-            "pregunta": pregunta,
-            "sql": None,
-            "error": None,
-            "intentos": 0,
-            "proveedor": llm.GROQ,
-            "filas": None,
-            "respuesta": None,
-            "ejecutar": ejecutar,
-        }
-    )
+    """Punto de entrada (no-streaming). `ejecutar` corre un SELECT ya validado y devuelve dicts."""
+    final = _GRAFO.invoke(_estado_inicial(pregunta, ejecutar))
     return {
         "respuesta": final.get("respuesta"),
         "sql": final.get("sql"),
         "filas": final.get("filas") or [],
     }
+
+
+def responder_datos(pregunta: str, ejecutar: Callable[[str], list[dict[str, Any]]]) -> dict:
+    """Produce SQL + filas SIN narrar (para el endpoint de streaming, que narra aparte).
+
+    Corre el mismo loop generar→ejecutar con reintentos y fallback a OpenAI que `responder`, pero
+    corta antes de redactar. Devuelve también el `proveedor` que terminó funcionando, para que la
+    narración streameada use ese (y no reintente con un Groq caído). `filas` es None si no se logró
+    una consulta válida (Groq y OpenAI agotados)."""
+    final = _GRAFO_DATOS.invoke(_estado_inicial(pregunta, ejecutar))
+    return {
+        "sql": final.get("sql"),
+        "filas": final.get("filas"),
+        "error": final.get("error"),
+        "proveedor": final.get("proveedor", llm.GROQ),
+    }
+
+
+def narrar_stream(pregunta: str, filas: list[dict[str, Any]], proveedor: str) -> Iterator[str]:
+    """Streamea la narración en lenguaje natural de las filas, token por token.
+
+    Usa el proveedor que ya funcionó en la fase de datos. Si el proveedor se cae al narrar, degrada
+    con un mensaje final (mismo criterio que `_redactar`): ya tenemos los datos, nunca un 500."""
+    user = f"Pregunta: {pregunta}\n\nResultado:\n{_formatear_filas(filas)}"
+    try:
+        yield from llm.completar_stream(_SYSTEM_RESPUESTA, user, proveedor=proveedor)
+    except Exception as exc:  # noqa: BLE001 — ya tenemos los datos; degradamos, no explotamos.
+        logger.warning("Proveedor %s falló al streamear la narración: %s", proveedor, exc)
+        yield "Encontré resultados pero no pude redactar la respuesta. Te muestro los datos."

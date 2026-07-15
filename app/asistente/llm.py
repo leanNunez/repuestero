@@ -5,6 +5,7 @@ modelo desde la config y se expone una función `completar` uniforme. Separar es
 sea agnóstico del SDK y que los tests puedan reemplazar `completar` por un stub sin tocar red.
 """
 
+from collections.abc import Iterator
 from functools import lru_cache
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -38,3 +39,15 @@ def completar(system: str, user: str, *, proveedor: str = GROQ) -> str:
     modelo = _openai() if proveedor == OPENAI else _groq()
     respuesta = modelo.invoke([SystemMessage(content=system), HumanMessage(content=user)])
     return respuesta.content if isinstance(respuesta.content, str) else str(respuesta.content)
+
+
+def completar_stream(system: str, user: str, *, proveedor: str = GROQ) -> Iterator[str]:
+    """Igual que `completar`, pero streamea la respuesta token por token (para el endpoint SSE).
+
+    System y user van SEPARADOS (nunca concatenados — regla anti-injection). Emite el texto de cada
+    chunk; los chunks vacíos (algunos modelos mandan uno al abrir/cerrar) se saltean."""
+    modelo = _openai() if proveedor == OPENAI else _groq()
+    for chunk in modelo.stream([SystemMessage(content=system), HumanMessage(content=user)]):
+        texto = chunk.content if isinstance(chunk.content, str) else str(chunk.content)
+        if texto:
+            yield texto
