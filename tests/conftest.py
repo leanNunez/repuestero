@@ -23,16 +23,21 @@ from sqlalchemy import create_engine, text
 # Bases de conexión (sin nombre de db). Overridables por env para CI o puertos distintos.
 _OWNER_BASE = os.environ.get("TEST_OWNER_URL", "postgresql+psycopg://postgres:postgres@localhost:5432")
 _APP_BASE = os.environ.get("TEST_APP_URL", "postgresql+psycopg://app_user:app_password@localhost:5432")
+_READONLY_BASE = os.environ.get(
+    "TEST_READONLY_URL", "postgresql+psycopg://app_readonly:readonly_password@localhost:5432"
+)
 _TEST_DB = os.environ.get("TEST_DB_NAME", "repuestos_test")
 
 OWNER_URL = f"{_OWNER_BASE}/{_TEST_DB}"
 APP_URL = f"{_APP_BASE}/{_TEST_DB}"
+READONLY_URL = f"{_READONLY_BASE}/{_TEST_DB}"
 
 # El app y alembic leen la config de estas env vars. Se fijan ANTES de importar la app
 # (conftest se importa antes que cualquier módulo de test) para que apunten a la base de
 # tests y no a la de dev.
 os.environ["DATABASE_URL"] = APP_URL
 os.environ["MIGRATIONS_DATABASE_URL"] = OWNER_URL
+os.environ["DATABASE_READONLY_URL"] = READONLY_URL
 os.environ.setdefault("SUPABASE_JWT_SECRET", "test-secret-solo-para-tests")
 
 

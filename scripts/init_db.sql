@@ -17,3 +17,14 @@ alter default privileges for role postgres in schema public
 
 alter default privileges for role postgres in schema public
     grant usage, select on sequences to app_user;
+
+-- Rol read-only para el asistente NL2SQL. El SQL que genera el LLM corre con ESTE rol:
+-- NOSUPERUSER, sin BYPASSRLS y con SOLO SELECT. Aunque el LLM genere un DELETE, la base lo
+-- rechaza a nivel motor. Sigue sujeto a RLS → el GUC de tenant lo encierra en su organización.
+create role app_readonly with login password 'readonly_password'
+    nosuperuser nocreatedb nocreaterole noinherit;
+
+grant usage on schema public to app_readonly;
+
+alter default privileges for role postgres in schema public
+    grant select on tables to app_readonly;
