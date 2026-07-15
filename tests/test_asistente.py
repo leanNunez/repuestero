@@ -7,6 +7,8 @@ Cubre las capas de defensa que se pueden testear en frío:
 - el grafo NL2SQL queda encerrado por RLS en su tenant.
 """
 
+import json
+
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import DBAPIError
@@ -14,6 +16,7 @@ from sqlalchemy.exc import DBAPIError
 from app.asistente import grafo, llm, seguridad, service
 from app.asistente.sql_guard import SQLNoPermitido, validar_y_acotar
 from app.core.db import ORG_GUC, readonly_tenant_session, set_guc
+from app.core.rls import TenantContext
 from tests.conftest import READONLY_URL
 
 # --------------------------------------------------------------------------- anti-injection (unit)
@@ -101,3 +104,97 @@ def test_grafo_nl2sql_scopeado_por_rls(monkeypatch, tenants):
     assert codigos == ["COD-A"]  # solo org A — NUNCA COD-B (org B)
     assert resultado["sql"] is not None
     assert resultado["respuesta"]
+
+
+def test_grafo_cae_a_openai_si_el_proveedor_se_cae(monkeypatch):
+    """Si el PROVEEDOR (no el SQL) se cae, el grafo reintenta y cambia a OpenAI, no explota.
+
+    Regresión: `_generar` no atrapaba la excepción del proveedor, así que un Groq caído
+    (auth/red/rate-limit) se propagaba como 500 en vez de disparar el fallback a OpenAI.
+    Los otros tests stubean `completar` con éxito y por eso nunca ejercitaban este camino.
+    """
+    llamadas: list[str] = []
+
+    def completar_flaky(system: str, user: str, *, proveedor: str = llm.GROQ) -> str:
+        llamadas.append(proveedor)
+        if proveedor == llm.GROQ:
+            raise RuntimeError("groq caído: 401 Invalid API Key")
+        if "generador de SQL" in system:
+            return "select 1 as uno"
+        return "respuesta de openai"
+
+    monkeypatch.setattr(llm, "completar", completar_flaky)
+
+    resultado = grafo.responder("cualquier cosa", lambda sql: [{"uno": 1}])
+
+    assert llm.GROQ in llamadas and llm.OPENAI in llamadas  # intentó groq y recién ahí cayó a openai
+    assert resultado["filas"] == [{"uno": 1}]
+    assert resultado["respuesta"] == "respuesta de openai"
+
+
+# ------------------------------------------------------------------ streaming SSE (Entregable B)
+
+def test_responder_datos_produce_sql_y_filas_sin_narrar(monkeypatch, tenants):
+    """La fase de datos del streaming: SQL + filas scopeadas por RLS, SIN gastar en narración."""
+    monkeypatch.setattr(llm, "completar", _fake_completar)
+
+    ejecutar = service._hacer_ejecutor(tenants.a, tenants.user_a)
+    datos = grafo.responder_datos("listame los códigos de artículos", ejecutar)
+
+    codigos = [fila["codigo"] for fila in datos["filas"]]
+    assert codigos == ["COD-A"]  # solo org A — RLS
+    assert datos["sql"] is not None
+    assert datos["proveedor"] == llm.GROQ
+    assert "respuesta" not in datos  # NO narra: eso lo hace narrar_stream aparte
+
+
+def test_responder_datos_cae_a_openai_si_groq_falla(monkeypatch):
+    """El fallback de proveedor también aplica a la fase de datos del streaming."""
+
+    def flaky(system: str, user: str, *, proveedor: str = llm.GROQ) -> str:
+        if proveedor == llm.GROQ:
+            raise RuntimeError("groq caído")
+        return "select 1 as uno"
+
+    monkeypatch.setattr(llm, "completar", flaky)
+    datos = grafo.responder_datos("x", lambda sql: [{"uno": 1}])
+
+    assert datos["proveedor"] == llm.OPENAI  # narración usará el proveedor vivo
+    assert datos["filas"] == [{"uno": 1}]
+
+
+def test_narrar_stream_degrada_si_el_proveedor_cae(monkeypatch):
+    """Si el proveedor se cae al narrar, se emite un token de degradación, no explota (ya hay datos)."""
+
+    def boom(system: str, user: str, *, proveedor: str = llm.GROQ):
+        raise RuntimeError("proveedor caído al narrar")
+
+    monkeypatch.setattr(llm, "completar_stream", boom)
+    tokens = list(grafo.narrar_stream("x", [{"a": 1}], llm.OPENAI))
+
+    assert tokens == ["Encontré resultados pero no pude redactar la respuesta. Te muestro los datos."]
+
+
+def test_consultar_stream_emite_eventos_en_orden(monkeypatch, tenants):
+    """El stream emite progreso → token×N → resultado{sql,filas} → fin, con filas scopeadas al tenant."""
+    monkeypatch.setattr(llm, "completar", _fake_completar)  # SQL fijo para la fase de datos
+    monkeypatch.setattr(
+        llm, "completar_stream", lambda system, user, *, proveedor=llm.GROQ: iter(["Hola ", "mundo"])
+    )
+
+    tenant = TenantContext(session=None, org_id=tenants.a, user_id=tenants.user_a)
+    eventos = list(service.consultar_stream(tenant, "listame los códigos de artículos"))
+
+    tipos = [e.event for e in eventos]
+    assert tipos[0] == "progreso"  # arranca anunciando la fase
+    assert tipos.count("token") == 2  # los dos chunks de la narración
+    assert tipos[-1] == "fin"
+    assert tipos.index("resultado") > tipos.index("token")  # resultado va DESPUÉS de narrar
+
+    resultado = next(e for e in eventos if e.event == "resultado")
+    data = json.loads(resultado.data)
+    assert data["sql"] is not None
+    assert [f["codigo"] for f in data["filas"]] == ["COD-A"]  # solo org A — RLS
+
+    texto = "".join(json.loads(e.data)["texto"] for e in eventos if e.event == "token")
+    assert texto == "Hola mundo"
