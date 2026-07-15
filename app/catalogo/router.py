@@ -1,10 +1,27 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.catalogo import service
-from app.catalogo.schemas import ArticuloLeer
+from app.catalogo.schemas import ArticuloLeer, ResultadoBusqueda
 from app.core.rls import TenantContext, get_tenant
 
 router = APIRouter(prefix="/catalogo", tags=["catalogo"])
+
+
+@router.get("/buscar", response_model=list[ResultadoBusqueda])
+def buscar(
+    q: str = Query(min_length=1, max_length=120),
+    limite: int = Query(default=20, ge=1, le=100),
+    tenant: TenantContext = Depends(get_tenant),
+) -> list[ResultadoBusqueda]:
+    """Búsqueda híbrida: texto (full-text + typos) + significado (pgvector), fusionados por RRF.
+
+    "filtro para el aceite del gol" encuentra el FILTRO DE ACEITE aunque no matcheen las palabras.
+    """
+    resultados = service.buscar_articulos(tenant.session, tenant.org_id, q=q, limite=limite)
+    return [
+        ResultadoBusqueda(**ArticuloLeer.model_validate(a).model_dump(), score=round(s, 6))
+        for a, s in resultados
+    ]
 
 
 @router.get("/articulos", response_model=list[ArticuloLeer])

@@ -29,6 +29,12 @@ class ArticuloLeer(BaseModel):
     activo: bool
 
 
+class ResultadoBusqueda(ArticuloLeer):
+    """Un artículo con su puntaje de relevancia en la búsqueda híbrida (mayor = más relevante)."""
+
+    score: float
+
+
 class ListaPrecioCrear(BaseModel):
     codigo: str = Field(max_length=30)
     nombre: str = Field(max_length=80)
