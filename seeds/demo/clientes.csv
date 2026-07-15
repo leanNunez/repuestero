@@ -1,0 +1,7 @@
+codigo,denominacion,cuit,cond_fiscal,limite_cta_cte,telefono,email,direccion
+C001,Taller Mecánico El Rulo,20-28456789-8,MONOTRIBUTO,500000,0341-155667788,elrulo@gmail.com,"Av. San Martín 2340, Rosario"
+C002,Transporte La Veloz SA,30-71233445-9,RESPONSABLE_INSCRIPTO,3000000,0341-4780099,compras@laveloz.com.ar,"Ruta 9 Km 312, Roldán"
+C003,Rectificadora San Martín,27-32118844-9,RESPONSABLE_INSCRIPTO,1200000,0341-4551133,rectisanmartin@hotmail.com,"Mendoza 1870, Rosario"
+C004,Gomería y Repuestos Norte,23-30999111-7,MONOTRIBUTO,400000,0341-156443322,,"Av. Alberdi 990, Rosario"
+C005,García Marcelo,,CONSUMIDOR_FINAL,0,0341-153998877,,
+C006,Consumidor Final,,CONSUMIDOR_FINAL,0,,,

@@ -1,0 +1,25 @@
+articulo_codigo,vehiculo_marca,vehiculo_modelo,vehiculo_anio_desde,vehiculo_anio_hasta,origen,confirmado,nota
+W719/80,Volkswagen,Gol Trend,2013,2019,manual,1,OEM 030115561AN
+W719/80,Volkswagen,Amarok,2011,2022,extraido_ia,0,"Sugerido por catálogo, verificar rosca"
+C25114,Volkswagen,Gol Trend,2013,2019,manual,1,
+CU2545,Volkswagen,Gol Trend,2013,2019,manual,1,
+WK814/1,Toyota,Hilux,2016,2023,manual,1,Diesel 2.8
+W719/80,Toyota,Etios,2013,2021,extraido_ia,0,
+BKR6E,Toyota,Etios,2013,2021,manual,1,
+BKR6E,Chevrolet,Corsa Classic,2009,2016,manual,1,
+FR7DC,Volkswagen,Gol Trend,2013,2019,extraido_ia,0,Alternativa a bujía original
+FDB1617,Volkswagen,Gol Trend,2013,2019,manual,1,Freno delantero
+FDB1617,Chevrolet,Onix,2016,2023,extraido_ia,0,
+N1055,Fiat,Cronos,2018,2024,manual,1,
+G16789,Volkswagen,Gol Trend,2013,2019,manual,1,
+30125,Volkswagen,Gol Trend,2013,2019,manual,1,Eje trasero
+KYB334,Ford,Ka,2015,2021,extraido_ia,0,
+5PK1123,Chevrolet,Corsa Classic,2009,2016,manual,1,
+94048,Ford,Ranger,2013,2022,manual,1,Kit completo con tensor
+ELAION-F30,Volkswagen,Gol Trend,2013,2019,manual,1,Servicio 10.000 km
+ELAION-F30,Fiat,Cronos,2018,2024,extraido_ia,0,
+6204-2RS,Renault,Kangoo,2010,2018,extraido_ia,0,"Rodamiento genérico, confirmar medida"
+VKBA3550,Peugeot,208,2013,2020,manual,1,
+H4-12V,Chevrolet,Corsa Classic,2009,2016,manual,1,
+H7-12V,Volkswagen,Gol Trend,2013,2019,manual,1,Luz baja
+H7-12V,Renault,Clio,2012,2016,extraido_ia,0,
