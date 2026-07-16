@@ -1,7 +1,7 @@
-import { Bot, PackageX, Sparkles, TrendingDown } from "lucide-react";
+import { PackageX, TrendingDown } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { useDrawerStore } from "@/features/ui-shell/drawerStore";
+import { AssistantLauncher } from "@/features/chat/ui/AssistantLauncher";
 import {
   useMargenes,
   useReposicion,
@@ -56,41 +56,20 @@ function TableSkeleton() {
   );
 }
 
-function AssistantLauncher({ onOpen }: { onOpen: () => void }) {
-  return (
-    <button
-      onClick={onOpen}
-      className="group flex w-full items-center gap-3 rounded-lg border border-border bg-accent px-4 py-3 text-left transition-colors hover:bg-accent/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background active:scale-[0.99]"
-    >
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-        <Bot className="h-5 w-5" />
-      </span>
-      <div className="min-w-0 flex-1">
-        <p className="text-sm font-medium text-accent-foreground">Preguntá sobre tu negocio</p>
-        <p className="truncate text-xs text-accent-foreground/70">
-          “¿qué artículos tengo que reponer?”, “¿cuáles pierdo plata?” — en lenguaje natural
-        </p>
-      </div>
-      <Sparkles className="h-4 w-4 shrink-0 text-primary transition-transform group-hover:scale-110" />
-    </button>
-  );
-}
-
 export function DashboardPage() {
   const resumen = useResumen();
   const reposicion = useReposicion();
   const margenes = useMargenes();
-  const toggleAssistant = useDrawerStore((s) => s.toggleAssistant);
   const margenesBajos = (margenes.data ?? []).filter((m) => m.bajo);
 
   return (
     <div className="flex h-full flex-col gap-4 p-4 md:p-5">
-      <AssistantLauncher onOpen={toggleAssistant} />
+      <AssistantLauncher />
 
       {resumen.isLoading ? (
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-[74px] w-full" />
+            <Skeleton key={i} className="h-[116px] w-full" />
           ))}
         </div>
       ) : resumen.isError || !resumen.data ? (
