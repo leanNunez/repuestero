@@ -40,3 +40,7 @@ bases_legacy/
 
 # Front (Fase 1)
 node_modules/
+
+# Archivos de trabajo — temporales, no son fuente
+scratchpad/
+img/
