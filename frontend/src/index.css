@@ -23,6 +23,10 @@
   --warning-foreground: #ffffff;
   --accent: #eef2ff;
   --accent-foreground: #4338ca;
+  /* Sidebar celeste (referencia visual). Marca; igual en claro y oscuro.
+     #2f6fe0 da 4.70:1 con texto blanco → contraste AA. */
+  --sidebar: #2f6fe0;
+  --sidebar-foreground: #ffffff;
   --radius: 0.625rem;
 }
 
@@ -46,6 +50,8 @@
   --warning-foreground: #0a0a0b;
   --accent: #1e1b4b;
   --accent-foreground: #c7d2fe;
+  /* En oscuro el celeste encandila: el sidebar pasa a gris oscuro (texto blanco se mantiene). */
+  --sidebar: #18181b;
 }
 
 @theme inline {
@@ -68,6 +74,8 @@
   --color-warning-foreground: var(--warning-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);

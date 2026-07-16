@@ -41,7 +41,7 @@ export function ChatInput({ onSend, disabled }: Props) {
         value={text}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={onKeyDown}
-        placeholder="Preguntá sobre tu catálogo, stock o clientes…"
+        placeholder="Escribile a Repu… (stock, precios, clientes)"
         rows={1}
         maxLength={500}
         disabled={disabled}
