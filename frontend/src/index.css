@@ -17,6 +17,12 @@
   --ring: #4f46e5;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
+  --success: #059669;
+  --success-foreground: #ffffff;
+  --warning: #d97706;
+  --warning-foreground: #ffffff;
+  --accent: #eef2ff;
+  --accent-foreground: #4338ca;
   --radius: 0.625rem;
 }
 
@@ -34,6 +40,12 @@
   --ring: #818cf8;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
+  --success: #34d399;
+  --success-foreground: #0a0a0b;
+  --warning: #fbbf24;
+  --warning-foreground: #0a0a0b;
+  --accent: #1e1b4b;
+  --accent-foreground: #c7d2fe;
 }
 
 @theme inline {
@@ -50,6 +62,12 @@
   --color-ring: var(--ring);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);

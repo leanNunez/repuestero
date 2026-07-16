@@ -7,9 +7,9 @@ import type { MargenItem } from "../schema";
 
 export function MargenesTable({ items }: { items: MargenItem[] }) {
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-card">
+    <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
-        <thead className="border-b border-border text-xs text-muted-foreground">
+        <thead className="sticky top-0 z-10 border-b border-border bg-card text-xs text-muted-foreground">
           <tr>
             <th className="px-4 py-2.5 font-medium">Código</th>
             <th className="px-4 py-2.5 font-medium">Detalle</th>
