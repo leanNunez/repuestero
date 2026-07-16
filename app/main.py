@@ -8,6 +8,7 @@ from slowapi.errors import RateLimitExceeded
 from app.asistente import seguridad
 from app.asistente.router import router as asistente_router
 from app.catalogo.router import router as catalogo_router
+from app.clientes.router import router as clientes_router
 from app.compatibilidad.router import router as compatibilidad_router
 from app.dashboard.router import router as dashboard_router
 from app.core.config import get_settings
@@ -43,6 +44,7 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.include_router(catalogo_router)
+app.include_router(clientes_router)
 app.include_router(compatibilidad_router)
 app.include_router(asistente_router)
 app.include_router(dashboard_router)
