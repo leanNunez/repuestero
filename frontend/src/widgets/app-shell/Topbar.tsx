@@ -3,7 +3,7 @@ import { Moon, Sun } from "lucide-react";
 
 import { RepuMascot } from "@/features/chat/ui/RepuMascot";
 import { useDrawerStore } from "@/features/ui-shell/drawerStore";
-import { useTokenStore } from "@/shared/auth/tokenStore";
+import { supabase } from "@/shared/auth/supabase";
 import { useThemeStore } from "@/shared/theme/themeStore";
 import { Button } from "@/shared/ui/button";
 
@@ -21,7 +21,8 @@ function titulo(pathname: string): string {
 
 export function Topbar() {
   const toggleAssistant = useDrawerStore((s) => s.toggleAssistant);
-  const clearToken = useTokenStore((s) => s.clearToken);
+  // El logout pasa por Supabase; el AuthGate limpia el token del store al detectar el signOut.
+  const cerrarSesion = () => void supabase?.auth.signOut();
   const theme = useThemeStore((s) => s.theme);
   const toggleTheme = useThemeStore((s) => s.toggle);
   const pathname = useRouterState({ select: (s) => s.location.pathname });
@@ -47,7 +48,7 @@ export function Topbar() {
         >
           <RepuMascot className="h-7 w-6 translate-y-0.5" />
         </button>
-        <Button variant="ghost" size="sm" onClick={clearToken}>
+        <Button variant="ghost" size="sm" onClick={cerrarSesion}>
           Salir
         </Button>
       </div>
