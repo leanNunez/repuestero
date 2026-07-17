@@ -8,7 +8,13 @@ class Vehiculo(Base, OrgMixin, TimestampMixin):
     __tablename__ = "vehiculos"
     __table_args__ = (
         UniqueConstraint(
-            "org_id", "marca", "modelo", "anio_desde", "anio_hasta", "motor", "version",
+            "org_id",
+            "marca",
+            "modelo",
+            "anio_desde",
+            "anio_hasta",
+            "motor",
+            "version",
             name="uq_vehiculos_identidad",
         ),
     )

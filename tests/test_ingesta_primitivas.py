@@ -51,7 +51,9 @@ def sesion(org):
     eng.dispose()
 
 
-def _articulo(sesion, org, codigo: str, *, costo="100.0000", detalle="FILTRO DE ACEITE") -> Articulo:
+def _articulo(
+    sesion, org, codigo: str, *, costo="100.0000", detalle="FILTRO DE ACEITE"
+) -> Articulo:
     art = Articulo(org_id=org.id, codigo=codigo, detalle=detalle, costo=Decimal(costo))
     sesion.add(art)
     sesion.flush()
@@ -63,6 +65,7 @@ def _lista(sesion, org, codigo: str) -> ListaPrecio:
 
 
 # --------------------------------------------------------------------------- calcular_precio
+
 
 def test_calcular_precio_es_markup_sobre_costo():
     """LA definición del negocio: costo 100 + margen 40 = 140, NO 166,67.
@@ -89,18 +92,27 @@ def test_calcular_precio_margen_cero_es_el_costo():
 
 # --------------------------------------------------------------------------- upsert_precio
 
+
 def test_upsert_precio_inserta_y_despues_actualiza(sesion, org):
     """Lo que `fijar_precio` no puede: llamarla dos veces no revienta contra el unique."""
     art = _articulo(sesion, org, "UPS-1")
     lista = _lista(sesion, org, "MOST")
 
     p1 = service.upsert_precio(
-        sesion, org.id, articulo_id=art.id, lista_id=lista.id,
-        precio=Decimal("140.00"), margen=Decimal("40"),
+        sesion,
+        org.id,
+        articulo_id=art.id,
+        lista_id=lista.id,
+        precio=Decimal("140.00"),
+        margen=Decimal("40"),
     )
     p2 = service.upsert_precio(
-        sesion, org.id, articulo_id=art.id, lista_id=lista.id,
-        precio=Decimal("280.00"), margen=Decimal("40"),
+        sesion,
+        org.id,
+        articulo_id=art.id,
+        lista_id=lista.id,
+        precio=Decimal("280.00"),
+        margen=Decimal("40"),
     )
 
     assert p1.id == p2.id  # misma fila, no una nueva
@@ -115,11 +127,19 @@ def test_upsert_precio_sin_margen_no_borra_el_margen_existente(sesion, org):
     lista = _lista(sesion, org, "MOST")
 
     service.upsert_precio(
-        sesion, org.id, articulo_id=art.id, lista_id=lista.id,
-        precio=Decimal("140.00"), margen=Decimal("40"),
+        sesion,
+        org.id,
+        articulo_id=art.id,
+        lista_id=lista.id,
+        precio=Decimal("140.00"),
+        margen=Decimal("40"),
     )
     fila = service.upsert_precio(
-        sesion, org.id, articulo_id=art.id, lista_id=lista.id, precio=Decimal("150.00"),
+        sesion,
+        org.id,
+        articulo_id=art.id,
+        lista_id=lista.id,
+        precio=Decimal("150.00"),
     )
 
     assert fila.margen == Decimal("40.00")
@@ -132,19 +152,16 @@ def test_fijar_precio_sigue_siendo_insert_only(sesion, org):
 
     art = _articulo(sesion, org, "FIJ-1")
     lista = _lista(sesion, org, "MOST")
-    service.fijar_precio(
-        sesion, org.id, articulo=art, lista=lista, precio=Decimal("140.00")
-    )
+    service.fijar_precio(sesion, org.id, articulo=art, lista=lista, precio=Decimal("140.00"))
 
     sp = sesion.begin_nested()
     with pytest.raises(IntegrityError):
-        service.fijar_precio(
-            sesion, org.id, articulo=art, lista=lista, precio=Decimal("150.00")
-        )
+        service.fijar_precio(sesion, org.id, articulo=art, lista=lista, precio=Decimal("150.00"))
     sp.rollback()
 
 
 # ------------------------------------------------------- recálculo: el caso del margen NULL
+
 
 def test_margen_null_no_permite_recalcular(sesion, org):
     """LA regla central del feature: sin margen cargado no se inventa un precio.
@@ -156,11 +173,15 @@ def test_margen_null_no_permite_recalcular(sesion, org):
     art = _articulo(sesion, org, "NULL-1")
     lista = _lista(sesion, org, "MOST")
     service.upsert_precio(
-        sesion, org.id, articulo_id=art.id, lista_id=lista.id,
-        precio=Decimal("100.00"), margen=None,
+        sesion,
+        org.id,
+        articulo_id=art.id,
+        lista_id=lista.id,
+        precio=Decimal("100.00"),
+        margen=None,
     )
 
-    (precio, _lista_obj), = service.listar_precios_de_articulo(sesion, org.id, art.id)
+    ((precio, _lista_obj),) = service.listar_precios_de_articulo(sesion, org.id, art.id)
     assert precio.margen is None
     assert precio.precio == Decimal("100.00")
 
@@ -172,12 +193,20 @@ def test_recalculo_completo_de_dos_listas(sesion, org):
     most, may = _lista(sesion, org, "MOST"), _lista(sesion, org, "MAY")
 
     service.upsert_precio(
-        sesion, org.id, articulo_id=art.id, lista_id=most.id,
-        precio=Decimal("140.00"), margen=Decimal("40"),
+        sesion,
+        org.id,
+        articulo_id=art.id,
+        lista_id=most.id,
+        precio=Decimal("140.00"),
+        margen=Decimal("40"),
     )
     service.upsert_precio(
-        sesion, org.id, articulo_id=art.id, lista_id=may.id,
-        precio=Decimal("115.00"), margen=None,
+        sesion,
+        org.id,
+        articulo_id=art.id,
+        lista_id=may.id,
+        precio=Decimal("115.00"),
+        margen=None,
     )
 
     # Llega un remito con costo 200: se recalcula solo lo que tiene margen.
@@ -198,6 +227,7 @@ def test_recalculo_completo_de_dos_listas(sesion, org):
 
 
 # --------------------------------------------------------------------------- actualizar_articulo
+
 
 def test_actualizar_articulo_solo_pisa_lo_enviado(sesion, org):
     """`exclude_unset` distingue 'no me lo mandaste' de 'ponelo en None'. Sin eso, cargar un
@@ -222,7 +252,9 @@ def test_actualizar_articulo_regenera_la_busqueda_lexica(sesion, org):
     esa columna a mano."""
     art = _articulo(sesion, org, "ACT-2", detalle="AMORTIGUADOR TRASERO")
     service.actualizar_articulo(
-        sesion, org.id, articulo=art,
+        sesion,
+        org.id,
+        articulo=art,
         datos=ArticuloActualizar(detalle="PASTILLA DE FRENO CERAMICA"),
     )
     sesion.flush()
@@ -232,6 +264,7 @@ def test_actualizar_articulo_regenera_la_busqueda_lexica(sesion, org):
 
 
 # --------------------------------------------------------------------------- asegurar_embeddings
+
 
 def test_asegurar_embeddings_hace_buscable_un_articulo_nuevo(sesion, org):
     """EL test del demo. Un artículo recién creado tiene embedding NULL y es invisible al
@@ -268,6 +301,7 @@ def test_asegurar_embeddings_con_lista_vacia_no_llama_al_modelo(sesion, org):
 
 # --------------------------------------------------------------------------- proveedores
 
+
 def test_obtener_o_crear_proveedor_no_duplica(sesion, org):
     p1 = prov_service.obtener_o_crear_proveedor(
         sesion, org.id, codigo="DIST-1", razon_social="Distribuidora Sur"
@@ -303,11 +337,19 @@ def test_upsert_vinculo_actualiza_costo_y_conserva_codigo_proveedor(sesion, org)
     )
 
     prov_service.upsert_vinculo_articulo(
-        sesion, org.id, articulo_id=art.id, proveedor_id=prov.id,
-        codigo_proveedor="W719/80", costo=Decimal("100"),
+        sesion,
+        org.id,
+        articulo_id=art.id,
+        proveedor_id=prov.id,
+        codigo_proveedor="W719/80",
+        costo=Decimal("100"),
     )
     v = prov_service.upsert_vinculo_articulo(
-        sesion, org.id, articulo_id=art.id, proveedor_id=prov.id, costo=Decimal("200"),
+        sesion,
+        org.id,
+        articulo_id=art.id,
+        proveedor_id=prov.id,
+        costo=Decimal("200"),
     )
 
     assert v.costo == Decimal("200.0000")

@@ -266,14 +266,14 @@ def buscar_articulos(
 
     puntajes = {fila.id: float(fila.score) for fila in filas}
     articulos = {
-        a.id: a
-        for a in session.scalars(select(Articulo).where(Articulo.id.in_(puntajes)))
+        a.id: a for a in session.scalars(select(Articulo).where(Articulo.id.in_(puntajes)))
     }
     # Se respeta el orden por score del SQL (session.scalars no lo garantiza).
     return [(articulos[i], puntajes[i]) for i in puntajes]
 
 
 # --------------------------------------------------------------------------- indexado
+
 
 def texto_para_embedding(articulo: Articulo) -> str:
     """El texto que representa al artículo para el embedding. Mismos campos que el tsvector FTS,

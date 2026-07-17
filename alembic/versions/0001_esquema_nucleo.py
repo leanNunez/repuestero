@@ -163,9 +163,7 @@ def upgrade() -> None:
         sa.Column("costo", sa.Numeric(14, 4), nullable=False, server_default="0"),
         sa.Column("es_preferido", sa.Boolean(), nullable=False, server_default=sa.false()),
         _creado_en(),
-        sa.UniqueConstraint(
-            "articulo_id", "proveedor_id", name="uq_artprov_articulo_proveedor"
-        ),
+        sa.UniqueConstraint("articulo_id", "proveedor_id", name="uq_artprov_articulo_proveedor"),
     )
 
     # ---------------------------------------------------------------- clientes
@@ -176,9 +174,7 @@ def upgrade() -> None:
         sa.Column("codigo", sa.String(20), nullable=False),
         sa.Column("denominacion", sa.String(140), nullable=False),
         sa.Column("cuit", sa.String(13)),
-        sa.Column(
-            "cond_fiscal", sa.String(30), nullable=False, server_default="CONSUMIDOR_FINAL"
-        ),
+        sa.Column("cond_fiscal", sa.String(30), nullable=False, server_default="CONSUMIDOR_FINAL"),
         sa.Column("limite_cta_cte", sa.Numeric(14, 2), nullable=False, server_default="0"),
         sa.Column(
             "lista_precio_id",
@@ -239,9 +235,7 @@ def upgrade() -> None:
         sa.Column("origen", sa.String(30), nullable=False, server_default="manual"),
         sa.Column("confirmado", sa.Boolean(), nullable=False, server_default=sa.false()),
         _creado_en(),
-        sa.UniqueConstraint(
-            "articulo_id", "vehiculo_id", name="uq_aplicacion_articulo_vehiculo"
-        ),
+        sa.UniqueConstraint("articulo_id", "vehiculo_id", name="uq_aplicacion_articulo_vehiculo"),
     )
 
     # ---------------------------------------------------------------- inventario

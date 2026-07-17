@@ -15,7 +15,7 @@ def repuestos_para(
     solo_confirmados: bool = Query(default=False),
     tenant: TenantContext = Depends(get_tenant),
 ) -> list[ArticuloLeer]:
-    """"¿Tenés el filtro de aceite para un Gol Trend 2015?" — en una llamada."""
+    """ "¿Tenés el filtro de aceite para un Gol Trend 2015?" — en una llamada."""
     vehiculos = service.buscar_vehiculo(
         tenant.session, tenant.org_id, marca=marca, modelo=modelo, anio=anio
     )

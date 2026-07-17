@@ -68,9 +68,7 @@ def readonly_tenant_session(
             set_guc(session, USER_GUC, str(user_id))
         set_guc(session, ORG_GUC, str(org_id))
         # set_config con is_local=true: alcance de transacción, se descarta al terminar.
-        session.execute(
-            text("select set_config('transaction_read_only', 'on', true)")
-        )
+        session.execute(text("select set_config('transaction_read_only', 'on', true)"))
         session.execute(
             text("select set_config('statement_timeout', :ms, true)"),
             {"ms": str(timeout_ms)},

@@ -50,10 +50,7 @@ def test_with_check_bloquea_insertar_en_otro_tenant(app_conn, tenants):
 
     with pytest.raises(DBAPIError) as exc:
         app_conn.execute(
-            text(
-                "insert into articulos (org_id, codigo, detalle) "
-                "values (:o, 'X-1', 'Intruso')"
-            ),
+            text("insert into articulos (org_id, codigo, detalle) values (:o, 'X-1', 'Intruso')"),
             {"o": tenants.b},
         )
 
@@ -121,8 +118,7 @@ def test_remitos_hash_unico_por_org_pero_no_entre_orgs(app_conn, tenants):
     dos repuesteras que le compran al mismo distribuidor pueden recibir remitos idénticos.
     Si el unique fuera solo sobre imagen_hash, la segunda org no podría cargar el suyo."""
     insert = text(
-        "insert into remitos_procesados (org_id, imagen_hash, renglones_count) "
-        "values (:o, :h, 1)"
+        "insert into remitos_procesados (org_id, imagen_hash, renglones_count) values (:o, :h, 1)"
     )
 
     _fijar_org(app_conn, tenants.a)

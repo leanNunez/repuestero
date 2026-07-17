@@ -57,9 +57,7 @@ def obtener_o_crear_proveedor(
             session.flush()
         return proveedor
 
-    return crear_proveedor(
-        session, org_id, codigo=codigo, razon_social=razon_social, cuit=cuit
-    )
+    return crear_proveedor(session, org_id, codigo=codigo, razon_social=razon_social, cuit=cuit)
 
 
 def vincular_articulo(

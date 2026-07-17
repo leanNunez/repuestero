@@ -39,6 +39,7 @@ Flag = Literal[
 
 # --------------------------------------------------------------------------- entrada
 
+
 class ExtraerRequest(BaseModel):
     """El techo de tamaño vive ACÁ, en el boundary, sobre el string base64.
 
@@ -55,6 +56,7 @@ class ExtraerRequest(BaseModel):
 
 
 # --------------------------------------------------------------------------- lo que devuelve el LLM
+
 
 class RenglonExtraido(BaseModel):
     """Un renglón tal como lo leyó el modelo. Todavía no se comparó con nada."""
@@ -82,6 +84,7 @@ class RemitoExtraido(BaseModel):
 
 
 # --------------------------------------------------------------------------- la propuesta
+
 
 class PrecioPreview(BaseModel):
     """Qué pasaría con un precio si se confirma. `precio_nuevo is None` ⇔ no hay margen."""
@@ -130,6 +133,7 @@ class PropuestaResponse(BaseModel):
 
 # --------------------------------------------------------------------------- la confirmación
 
+
 class RenglonConfirmar(BaseModel):
     """Un renglón que el humano revisó y aprobó.
 
@@ -167,9 +171,7 @@ class ConfirmarRequest(BaseModel):
     #: parar a un lugar por omisión es exactamente como se pierde el control del inventario.
     deposito_codigo: str = Field(min_length=1, max_length=20)
 
-    renglones: list[RenglonConfirmar] = Field(
-        min_length=1, max_length=_s.ingesta_max_renglones
-    )
+    renglones: list[RenglonConfirmar] = Field(min_length=1, max_length=_s.ingesta_max_renglones)
 
 
 class ConfirmarResponse(BaseModel):

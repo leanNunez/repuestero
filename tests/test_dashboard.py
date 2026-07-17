@@ -42,8 +42,8 @@ def org_dash(migrated_db):
         ids = {}
         # (codigo, costo, punto_pedido, stock, precio)  → D1 bajo pp y margen fino; D2 sano.
         for codigo, costo, pp, stock, precio in [
-            ("D1", 100, 10, 3, 105),   # stock 3 <= pp 10; margen (105-100)/105 = 4.8% → bajo
-            ("D2", 100, 5, 20, 200),   # stock 20 > pp 5; margen 50% → ok
+            ("D1", 100, 10, 3, 105),  # stock 3 <= pp 10; margen (105-100)/105 = 4.8% → bajo
+            ("D2", 100, 5, 20, 200),  # stock 20 > pp 5; margen 50% → ok
         ]:
             aid = conn.execute(
                 text(
@@ -98,7 +98,7 @@ def test_margenes_marca_los_finos(sesion_app, org_dash):
     filas = service.margenes(sesion_app, org_dash, umbral=Decimal("20"))
 
     por_codigo = {f["codigo"]: f for f in filas}
-    assert por_codigo["D1"]["bajo"] is True   # ~4.8% < 20
+    assert por_codigo["D1"]["bajo"] is True  # ~4.8% < 20
     assert por_codigo["D2"]["bajo"] is False  # 50% >= 20
     assert filas[0]["codigo"] == "D1"  # ordenado ascendente por margen (el peor primero)
 

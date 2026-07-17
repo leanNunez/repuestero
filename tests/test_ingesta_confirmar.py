@@ -39,16 +39,25 @@ def org(migrated_db):
         may = ListaPrecio(org_id=org_id, codigo="MAY", nombre="Mayorista")
         s.add_all([most, may])
         art = Articulo(
-            org_id=org_id, codigo="W719/80",
-            detalle="FILTRO DE ACEITE MANN W719/80", costo=Decimal("100"),
+            org_id=org_id,
+            codigo="W719/80",
+            detalle="FILTRO DE ACEITE MANN W719/80",
+            costo=Decimal("100"),
         )
         s.add(art)
         s.flush()
         # MOST con margen 40 → se recalcula. MAY SIN margen → NO se toca.
-        catalogo.upsert_precio(s, org_id, articulo_id=art.id, lista_id=most.id,
-                               precio=Decimal("140.00"), margen=Decimal("40"))
-        catalogo.upsert_precio(s, org_id, articulo_id=art.id, lista_id=may.id,
-                               precio=Decimal("115.00"), margen=None)
+        catalogo.upsert_precio(
+            s,
+            org_id,
+            articulo_id=art.id,
+            lista_id=most.id,
+            precio=Decimal("140.00"),
+            margen=Decimal("40"),
+        )
+        catalogo.upsert_precio(
+            s, org_id, articulo_id=art.id, lista_id=may.id, precio=Decimal("115.00"), margen=None
+        )
         s.commit()
     eng.dispose()
     return SimpleNamespace(id=org_id)
@@ -68,28 +77,28 @@ def sesion(org):
 
 
 def _req(renglones, *, hash_="a" * 64, deposito="CEN", **kw):
-    return ConfirmarRequest(
-        remito_hash=hash_, deposito_codigo=deposito, renglones=renglones, **kw
-    )
+    return ConfirmarRequest(remito_hash=hash_, deposito_codigo=deposito, renglones=renglones, **kw)
 
 
 def _renglon(codigo="NUEVO-1", detalle="BUJIA NGK BKR6E", cant="5", costo="4200", **kw):
     return RenglonConfirmar(
-        codigo=codigo, detalle=detalle,
-        cantidad=Decimal(cant), costo_unitario=Decimal(costo), **kw
+        codigo=codigo, detalle=detalle, cantidad=Decimal(cant), costo_unitario=Decimal(costo), **kw
     )
 
 
 def _stock(sesion, org, codigo) -> Decimal:
     """Lee la VISTA stock, nunca un número guardado."""
     return sesion.execute(
-        text("select s.cantidad from stock s join articulos a on a.id = s.articulo_id "
-             "where a.codigo = :c"),
+        text(
+            "select s.cantidad from stock s join articulos a on a.id = s.articulo_id "
+            "where a.codigo = :c"
+        ),
         {"c": codigo},
     ).scalar()
 
 
 # =========================================================== alta
+
 
 def test_alta_crea_articulo_stock_y_embedding(sesion, org):
     """EL test del demo: después de confirmar, el artículo existe, tiene stock y es
@@ -110,13 +119,17 @@ def test_alta_avisa_que_queda_sin_precio(sesion, org):
     """No se inventa un margen para un artículo nuevo. Se crea sin precio y se avisa."""
     r = service.confirmar(sesion, org.id, datos=_req([_renglon(codigo="NUEVO-2")]))
 
-    assert catalogo.listar_precios_de_articulo(
-        sesion, org.id, catalogo.obtener_articulo(sesion, org.id, "NUEVO-2").id
-    ) == []
+    assert (
+        catalogo.listar_precios_de_articulo(
+            sesion, org.id, catalogo.obtener_articulo(sesion, org.id, "NUEVO-2").id
+        )
+        == []
+    )
     assert any("SIN precio de venta" in a for a in r.advertencias)
 
 
 # =========================================================== actualización + recálculo
+
 
 def test_actualiza_costo_y_recalcula_solo_las_listas_con_margen(sesion, org):
     """La regla central del feature, de punta a punta.
@@ -125,7 +138,8 @@ def test_actualiza_costo_y_recalcula_solo_las_listas_con_margen(sesion, org):
     MAY no tiene margen → su precio queda intacto y el código se reporta.
     """
     r = service.confirmar(
-        sesion, org.id,
+        sesion,
+        org.id,
         datos=_req([_renglon(codigo="W719/80", detalle="FILTRO", cant="10", costo="200")]),
         usuario_id=USUARIO,
     )
@@ -149,7 +163,8 @@ def test_actualizacion_no_pisa_el_detalle_existente(sesion, org):
     """El detalle que leyó un OCR no es mejor dato que el que ya está cargado. Solo se
     actualiza el costo."""
     service.confirmar(
-        sesion, org.id,
+        sesion,
+        org.id,
         datos=_req([_renglon(codigo="W719/80", detalle="filtro mal escaneado", costo="300")]),
     )
 
@@ -160,23 +175,25 @@ def test_actualizacion_no_pisa_el_detalle_existente(sesion, org):
 
 def test_sin_margen_reportado_no_es_un_error(sesion, org):
     """Que falte el margen se avisa, pero la carga se completa igual."""
-    r = service.confirmar(
-        sesion, org.id, datos=_req([_renglon(codigo="W719/80", costo="200")])
-    )
+    r = service.confirmar(sesion, org.id, datos=_req([_renglon(codigo="W719/80", costo="200")]))
     assert r.movimientos == 1
     assert any("no tienen margen cargado" in a for a in r.advertencias)
 
 
 # =========================================================== kardex
 
+
 def test_el_movimiento_apunta_al_remito_que_lo_originó(sesion, org):
     """`ref_tipo`/`ref_id` son lo que permite contestar 'este stock, ¿de dónde salió?'.
     Por eso el remito se inserta ANTES que los renglones: su id tiene que existir."""
-    r = service.confirmar(sesion, org.id, datos=_req([_renglon(codigo="REF-1")]), usuario_id=USUARIO)
+    r = service.confirmar(
+        sesion, org.id, datos=_req([_renglon(codigo="REF-1")]), usuario_id=USUARIO
+    )
 
     mov = sesion.execute(
-        text("select motivo, ref_tipo, ref_id, creado_por from stock_movimientos "
-             "where ref_id = :r"),
+        text(
+            "select motivo, ref_tipo, ref_id, creado_por from stock_movimientos where ref_id = :r"
+        ),
         {"r": r.remito_id},
     ).one()
 
@@ -186,6 +203,7 @@ def test_el_movimiento_apunta_al_remito_que_lo_originó(sesion, org):
 
 
 # =========================================================== idempotencia
+
 
 def test_el_mismo_remito_no_entra_dos_veces(sesion, org):
     """El candado es el unique index, no un `if`. Dos pestañas apretando Confirmar a la vez
@@ -203,6 +221,7 @@ def test_el_mismo_remito_no_entra_dos_veces(sesion, org):
 
 
 # =========================================================== atomicidad
+
 
 def test_un_remito_es_todo_o_nada(sesion, org, monkeypatch):
     """Si un renglón del medio falla, los anteriores NO quedan cargados.
@@ -227,7 +246,8 @@ def test_un_remito_es_todo_o_nada(sesion, org, monkeypatch):
     sp = sesion.begin_nested()
     with pytest.raises(RuntimeError, match="boom"):
         service.confirmar(
-            sesion, org.id,
+            sesion,
+            org.id,
             datos=_req([_renglon(codigo="ATOM-1"), _renglon(codigo="ATOM-2")], hash_="c" * 64),
         )
     sp.rollback()
@@ -245,10 +265,13 @@ def test_codigo_repetido_en_el_remito_suma_las_dos_cantidades(sesion, org):
     en la propuesta para que el humano confirme que el papel realmente dice eso.
     """
     r = service.confirmar(
-        sesion, org.id,
+        sesion,
+        org.id,
         datos=_req(
-            [_renglon(codigo="DUP-1", cant="5", costo="100"),
-             _renglon(codigo="DUP-1", cant="5", costo="120")],
+            [
+                _renglon(codigo="DUP-1", cant="5", costo="100"),
+                _renglon(codigo="DUP-1", cant="5", costo="120"),
+            ],
             hash_="9" * 64,
         ),
     )
@@ -274,11 +297,13 @@ def test_deposito_inexistente_falla_antes_de_escribir_nada(sesion, org):
 
 # =========================================================== proveedor y auditoría
 
+
 def test_vincula_el_articulo_al_proveedor_con_su_codigo(sesion, org):
     """El código con el que el PROVEEDOR llama a la pieza es lo que permite reconocerla en
     el próximo remito."""
     service.confirmar(
-        sesion, org.id,
+        sesion,
+        org.id,
         datos=_req(
             [_renglon(codigo="PROV-1", codigo_proveedor="W719/80-MANN")],
             hash_="d" * 64,
@@ -288,10 +313,12 @@ def test_vincula_el_articulo_al_proveedor_con_su_codigo(sesion, org):
     )
 
     fila = sesion.execute(
-        text("select ap.codigo_proveedor, ap.costo, p.razon_social "
-             "from articulo_proveedores ap "
-             "join proveedores p on p.id = ap.proveedor_id "
-             "join articulos a on a.id = ap.articulo_id where a.codigo = 'PROV-1'")
+        text(
+            "select ap.codigo_proveedor, ap.costo, p.razon_social "
+            "from articulo_proveedores ap "
+            "join proveedores p on p.id = ap.proveedor_id "
+            "join articulos a on a.id = ap.articulo_id where a.codigo = 'PROV-1'"
+        )
     ).one()
 
     assert fila.codigo_proveedor == "W719/80-MANN"
@@ -301,15 +328,19 @@ def test_vincula_el_articulo_al_proveedor_con_su_codigo(sesion, org):
 def test_guarda_la_propuesta_aprobada_para_auditoria(sesion, org):
     """Dentro de seis meses, '¿quién metió este costo?' se contesta con una fila."""
     r = service.confirmar(
-        sesion, org.id,
-        datos=_req([_renglon(codigo="AUD-1", costo="1234.56")], hash_="e" * 64,
-                   numero_remito="R-0001"),
+        sesion,
+        org.id,
+        datos=_req(
+            [_renglon(codigo="AUD-1", costo="1234.56")], hash_="e" * 64, numero_remito="R-0001"
+        ),
         usuario_id=USUARIO,
     )
 
     fila = sesion.execute(
-        text("select numero_remito, renglones_count, propuesta, creado_por "
-             "from remitos_procesados where id = :i"),
+        text(
+            "select numero_remito, renglones_count, propuesta, creado_por "
+            "from remitos_procesados where id = :i"
+        ),
         {"i": r.remito_id},
     ).one()
 
@@ -321,5 +352,7 @@ def test_guarda_la_propuesta_aprobada_para_auditoria(sesion, org):
 
 def test_sin_proveedor_igual_carga(sesion, org):
     """Un remito sin proveedor identificable no es motivo para no cargar la mercadería."""
-    r = service.confirmar(sesion, org.id, datos=_req([_renglon(codigo="SINPROV-1")], hash_="f" * 64))
+    r = service.confirmar(
+        sesion, org.id, datos=_req([_renglon(codigo="SINPROV-1")], hash_="f" * 64)
+    )
     assert r.movimientos == 1

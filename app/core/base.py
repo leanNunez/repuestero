@@ -16,9 +16,7 @@ from sqlalchemy.types import Uuid
 #:
 #: `Mapped[int]` a secas daría SERIAL, que permite insertar el id a mano y pisarlo.
 #: `always` lo prohíbe a nivel motor.
-BigIntPk = Annotated[
-    int, mapped_column(BigInteger, Identity(always=True), primary_key=True)
-]
+BigIntPk = Annotated[int, mapped_column(BigInteger, Identity(always=True), primary_key=True)]
 
 #: Plata. numeric(14,4) para costos (necesitan precisión en el cálculo de márgenes).
 Money = Annotated[Decimal, mapped_column(Numeric(14, 4))]

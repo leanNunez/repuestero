@@ -65,9 +65,7 @@ class ListaPrecio(Base, OrgMixin, TimestampMixin):
 
 class ArticuloPrecio(Base, OrgMixin, TimestampMixin):
     __tablename__ = "articulo_precios"
-    __table_args__ = (
-        UniqueConstraint("articulo_id", "lista_id", name="uq_precio_articulo_lista"),
-    )
+    __table_args__ = (UniqueConstraint("articulo_id", "lista_id", name="uq_precio_articulo_lista"),)
 
     id: Mapped[BigIntPk]
     articulo_id: Mapped[int] = mapped_column(

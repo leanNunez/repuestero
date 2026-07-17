@@ -34,14 +34,21 @@ from tests.conftest import APP_URL, OWNER_URL
 _JPEG = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00" + b"\x00" * 200
 _JPEG_B64 = base64.b64encode(_JPEG).decode()
 
-_EXTRACCION_OK = json.dumps({
-    "proveedor_nombre": "Distribuidora Sur",
-    "numero_remito": "R-0001",
-    "renglones": [
-        {"codigo": "ROUT-1", "descripcion": "BUJIA NGK BKR6E", "cantidad": "5",
-         "costo_unitario": "4200", "confianza": 0.95},
-    ],
-})
+_EXTRACCION_OK = json.dumps(
+    {
+        "proveedor_nombre": "Distribuidora Sur",
+        "numero_remito": "R-0001",
+        "renglones": [
+            {
+                "codigo": "ROUT-1",
+                "descripcion": "BUJIA NGK BKR6E",
+                "cantidad": "5",
+                "costo_unitario": "4200",
+                "confianza": 0.95,
+            },
+        ],
+    }
+)
 
 
 @pytest.fixture(scope="module")
@@ -52,16 +59,14 @@ def org(migrated_db):
         s.add(Organizacion(id=org_id, nombre="Org Router"))
         s.flush()
         s.execute(
-            ListaPrecio.__table__.insert().values(
-                org_id=org_id, codigo="MOST", nombre="Mostrador"
-            )
+            ListaPrecio.__table__.insert().values(org_id=org_id, codigo="MOST", nombre="Mostrador")
         )
         s.add(Articulo(org_id=org_id, codigo="EXISTE-1", detalle="FILTRO", costo=Decimal("100")))
         inventario.crear_deposito(s, org_id, codigo="CEN", nombre="Central")
         s.execute(
-            __import__("app.core.models", fromlist=["Miembro"]).Miembro.__table__.insert().values(
-                org_id=org_id, user_id=user_id, rol="admin"
-            )
+            __import__("app.core.models", fromlist=["Miembro"])
+            .Miembro.__table__.insert()
+            .values(org_id=org_id, user_id=user_id, rol="admin")
         )
         s.commit()
     eng.dispose()
@@ -98,14 +103,18 @@ def _extraer(cliente, **kw):
 
 # =========================================================== auth
 
+
 def test_sin_token_es_401():
     """Antes que nada: nadie sin credenciales gasta un token de visión."""
     with TestClient(app) as c:
-        r = c.post("/ingesta-visual/extraer", json={"imagen_base64": _JPEG_B64, "mime": "image/jpeg"})
+        r = c.post(
+            "/ingesta-visual/extraer", json={"imagen_base64": _JPEG_B64, "mime": "image/jpeg"}
+        )
     assert r.status_code == 401
 
 
 # =========================================================== /extraer
+
 
 def test_extraer_devuelve_la_propuesta(cliente, monkeypatch):
     monkeypatch.setattr(llm, "extraer_de_imagen", lambda *a, **k: _EXTRACCION_OK)
@@ -170,6 +179,7 @@ def test_modelo_ilegible_es_502_y_no_filtra_internals(cliente, monkeypatch):
 
 def test_proveedor_caido_es_500_generico(cliente, monkeypatch):
     """Sin fallback multimodal: si OpenAI se cae, se dice que falló — sin exponer por qué."""
+
     def _explota(*a, **k):
         raise RuntimeError("openai: 401 invalid api key")
 
@@ -184,13 +194,13 @@ def test_proveedor_caido_es_500_generico(cliente, monkeypatch):
 
 # =========================================================== /confirmar
 
+
 def _body_confirmar(hash_="a" * 64, **kw):
     return {
         "remito_hash": hash_,
         "deposito_codigo": "CEN",
         "renglones": [
-            {"codigo": "ROUT-C1", "detalle": "BUJIA NGK", "cantidad": "5",
-             "costo_unitario": "4200"}
+            {"codigo": "ROUT-C1", "detalle": "BUJIA NGK", "cantidad": "5", "costo_unitario": "4200"}
         ],
         **kw,
     }
@@ -256,5 +266,7 @@ def test_cantidad_cero_es_422(cliente):
 
 
 def test_remito_sin_renglones_es_422(cliente):
-    r = cliente.post("/ingesta-visual/confirmar", json=_body_confirmar(hash_="f" * 64, renglones=[]))
+    r = cliente.post(
+        "/ingesta-visual/confirmar", json=_body_confirmar(hash_="f" * 64, renglones=[])
+    )
     assert r.status_code == 422
