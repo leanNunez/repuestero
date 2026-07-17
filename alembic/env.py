@@ -1,8 +1,8 @@
 from logging.config import fileConfig
 
-from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+from alembic import context
 from app.core.config import get_settings
 from app.core.registry import Base
 
@@ -30,9 +30,7 @@ def include_object(obj, name, type_, reflected, compare_to) -> bool:
     Sin este filtro, Alembic la vería en el metadata y generaría un `create_table("stock")`,
     que además chocaría con la vista real.
     """
-    if type_ == "table" and obj.info.get("is_view"):
-        return False
-    return True
+    return not (type_ == "table" and obj.info.get("is_view"))
 
 
 def run_migrations_offline() -> None:

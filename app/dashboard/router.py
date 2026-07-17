@@ -2,8 +2,8 @@ from decimal import Decimal
 
 from fastapi import APIRouter, Depends, Query
 
-from app.dashboard import schemas, service
 from app.core.rls import TenantContext, get_tenant
+from app.dashboard import schemas, service
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 

@@ -21,7 +21,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.asistente import llm, seguridad
-from app.catalogo import service as catalogo
 from app.catalogo.models import Articulo, ListaPrecio
 from app.core import db as core_db
 from app.core.config import get_settings

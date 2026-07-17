@@ -94,8 +94,9 @@ def migrated_db():
     owner.dispose()
 
     # Migración real: mismo camino que en prod (env.py lee MIGRATIONS_DATABASE_URL → base test).
-    from alembic import command
     from alembic.config import Config
+
+    from alembic import command
 
     command.upgrade(Config("alembic.ini"), "head")
 

@@ -269,7 +269,6 @@ def test_propuesta_distingue_alta_de_actualizacion_y_previsualiza_el_precio(sesi
 def test_margen_null_muestra_precio_nuevo_none(sesion, org):
     """La regla central, vista desde la propuesta: sin margen no hay precio nuevo que ofrecer."""
     art = catalogo.obtener_articulo(sesion, org.id, "W719/80")
-    lista = catalogo.obtener_lista_precio(sesion, org.id, "MOST")
     # Se le saca el margen a la fila existente.
     (fila, _), = catalogo.listar_precios_de_articulo(sesion, org.id, art.id)
     fila.margen = None
