@@ -358,7 +358,7 @@ Multi‑sucursal, **offline resiliente** (§8), integraciones (MercadoLibre, Wha
 
 ## 8. Riesgos y decisiones abiertas (para hablar antes de codear)
 
-1. **Offline en el mostrador.** Los competidores (ej. Contabilium) venden "funciona con o sin internet". Un SPA cloud que muere sin conexión es una objeción real en la caja. Para la **demo** no importa (online‑only). Para **vender**, hay que decidir: ¿PWA con cola local?, ¿o asumir online‑only en v1? Es un lift grande — no lo resolvemos ahora, pero tenelo en el radar.
+1. **Offline en el mostrador.** ✅ **Dirección decidida** → ver [ADR 0001](adr/0001-offline-first-mostrador.md). Los competidores (ej. Contabilium) venden "funciona con o sin internet". Un SPA cloud que muere sin conexión es una objeción real en la caja. La decisión: **offline-first con sync, acotado al flujo de mostrador** (PWA + cola local + motor de sync sobre el Postgres de la nube), apoyándose en las invariantes que ya existen (ledger append-only, idempotencia por hash, numeración con autoridad de servidor). Para la **demo** sigue siendo online‑only; NO se implementa hasta que Fase 1 esté deployada.
 2. **Dato de compatibilidad.** Es tu moat y tu cuello de botella. La estrategia AI‑assisted (§5.F) lo hace viable, pero es trabajo de datos continuo.
 3. **Certificado AFIP.** Para producción necesitás CUIT + certificado por cada local (o esquema de facturación por cuenta del cliente). Para demo, stub.
 4. **Alcance vs tiempo.** El riesgo #1 del proyecto no es técnico: es **querer construir el ERP completo y no terminar nunca**. La regla de oro: **Fase 1 tiene que estar deployada y grabada antes de tocar facturación real.**
