@@ -14,27 +14,15 @@ from sse_starlette.sse import EventSourceResponse, ServerSentEvent
 
 from app.asistente import seguridad, service
 from app.asistente.schemas import ConsultaRequest, ConsultaResponse
-from app.core.ratelimit import limiter
+from app.core.ratelimit import ip_cliente, limiter
 from app.core.rls import TenantContext, get_tenant
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/asistente", tags=["asistente"])
 
-# Solo se confía en X-Forwarded-For si viene de un proxy conocido (spoofeable si no).
-_PROXIES_CONFIABLES = {"127.0.0.1", "::1"}
-
 # Respuesta única cuando se detecta prompt injection. La comparten /consultar y /stream.
 _MSG_BLOQUEADO = "No puedo procesar esa consulta. Preguntame sobre tu catálogo, stock o clientes."
-
-
-def _ip(request: Request) -> str:
-    ip = request.client.host if request.client else "unknown"
-    if ip in _PROXIES_CONFIABLES:
-        fwd = request.headers.get("x-forwarded-for", "")
-        if fwd:
-            return fwd.split(",")[0].strip()
-    return ip
 
 
 @router.post("/consultar", response_model=ConsultaResponse)
@@ -44,7 +32,7 @@ def consultar(
     body: ConsultaRequest,
     tenant: TenantContext = Depends(get_tenant),
 ) -> ConsultaResponse:
-    ip = _ip(request)
+    ip = ip_cliente(request)
 
     if seguridad.esta_baneado(ip):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Demasiados intentos. Probá más tarde.")
@@ -97,7 +85,7 @@ def stream(
 ) -> EventSourceResponse:
     """Versión SSE de /consultar: emite progreso, la narración token por token y un evento final con
     el SQL y las filas. Mismas rejas que /consultar (ban → rate-limit → tamaño → anti-injection)."""
-    ip = _ip(request)
+    ip = ip_cliente(request)
 
     if seguridad.esta_baneado(ip):
         raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Demasiados intentos. Probá más tarde.")
