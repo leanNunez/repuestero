@@ -1,10 +1,11 @@
+from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
 from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from app.catalogo.models import Articulo, ArticuloPrecio, ListaPrecio
-from app.catalogo.schemas import ArticuloCrear, ListaPrecioCrear
+from app.catalogo.schemas import ArticuloActualizar, ArticuloCrear, ListaPrecioCrear
 from app.core.embeddings import embed_passages, embed_query
 
 
@@ -43,6 +44,26 @@ def crear_articulo(session: Session, org_id: UUID, datos: ArticuloCrear) -> Arti
     return articulo
 
 
+def actualizar_articulo(
+    session: Session, org_id: UUID, *, articulo: Articulo, datos: ArticuloActualizar
+) -> Articulo:
+    """Update parcial. Solo pisa los campos que el caller seteó explícitamente.
+
+    `exclude_unset=True` es la clave: distingue "no me lo mandaste" de "mandámelo en None".
+    Sin eso, actualizar el costo desde un remito borraría la marca y el rubro del artículo.
+
+    NO toca dos columnas, por razones opuestas:
+    - `busqueda` es `Computed`: Postgres la regenera sola en el UPDATE. Tocarla es un error.
+    - `embedding` NO se invalida acá aunque el detalle cambie. Ver `asegurar_embeddings`:
+      ponerlo en None abriría una ventana en la que el artículo desaparece de la búsqueda
+      semántica hasta que corra un batch. El caller re-embebe en la misma transacción.
+    """
+    for campo, valor in datos.model_dump(exclude_unset=True).items():
+        setattr(articulo, campo, valor)
+    session.flush()
+    return articulo
+
+
 def crear_lista_precio(session: Session, org_id: UUID, datos: ListaPrecioCrear) -> ListaPrecio:
     lista = ListaPrecio(org_id=org_id, **datos.model_dump())
     session.add(lista)
@@ -62,9 +83,14 @@ def fijar_precio(
     *,
     articulo: Articulo,
     lista: ListaPrecio,
-    precio,
-    margen=None,
+    precio: Decimal,
+    margen: Decimal | None = None,
 ) -> ArticuloPrecio:
+    """Insert-only: re-fijar el precio de un (articulo, lista) viola uq_precio_articulo_lista.
+
+    Para actualizar un precio existente usá `upsert_precio`. Esta queda porque el importador
+    la usa sobre una base vacía, donde el insert directo es lo correcto.
+    """
     fila = ArticuloPrecio(
         org_id=org_id,
         articulo_id=articulo.id,
@@ -75,6 +101,82 @@ def fijar_precio(
     session.add(fila)
     session.flush()
     return fila
+
+
+def listar_precios_de_articulo(
+    session: Session, org_id: UUID, articulo_id: int
+) -> list[tuple[ArticuloPrecio, ListaPrecio]]:
+    """Los precios de un artículo con su lista. Devuelve ambos porque quien muestra un
+    precio necesita decir de qué lista es ('Mostrador', 'Mayorista'), no un lista_id."""
+    filas = session.execute(
+        select(ArticuloPrecio, ListaPrecio)
+        .join(ListaPrecio, ListaPrecio.id == ArticuloPrecio.lista_id)
+        .where(ArticuloPrecio.org_id == org_id, ArticuloPrecio.articulo_id == articulo_id)
+        .order_by(ListaPrecio.codigo)
+    ).all()
+    return [(precio, lista) for precio, lista in filas]
+
+
+def upsert_precio(
+    session: Session,
+    org_id: UUID,
+    *,
+    articulo_id: int,
+    lista_id: int,
+    precio: Decimal,
+    margen: Decimal | None = None,
+) -> ArticuloPrecio:
+    """Fija el precio de un (articulo, lista), exista o no la fila.
+
+    Es lo que `fijar_precio` no puede hacer: aquella es insert-only y revienta contra
+    `uq_precio_articulo_lista` al re-fijar. Toma ids en vez de objetos ORM, como el resto
+    de los services del proyecto (`registrar_movimiento`, `vincular_articulo`).
+
+    El filtro por org_id es explícito aunque `uq_precio_articulo_lista` NO esté scopeado
+    por org: la unicidad la garantiza (articulo_id, lista_id), pero este SELECT igual se
+    apoya en las dos barreras — el where del código y RLS en el motor.
+    """
+    fila = session.scalar(
+        select(ArticuloPrecio).where(
+            ArticuloPrecio.org_id == org_id,
+            ArticuloPrecio.articulo_id == articulo_id,
+            ArticuloPrecio.lista_id == lista_id,
+        )
+    )
+
+    if fila is None:
+        fila = ArticuloPrecio(
+            org_id=org_id,
+            articulo_id=articulo_id,
+            lista_id=lista_id,
+            precio=precio,
+            margen=margen,
+        )
+        session.add(fila)
+    else:
+        fila.precio = precio
+        if margen is not None:
+            fila.margen = margen
+
+    session.flush()
+    return fila
+
+
+def calcular_precio(costo: Decimal, margen: Decimal) -> Decimal:
+    """Precio de venta a partir del costo y el margen. MARKUP SOBRE COSTO: costo × (1 + m/100).
+
+    Con costo 100 y margen 40 devuelve 140, NO 166,67 (eso sería margen sobre el precio de
+    venta). No es una elección estética: es la fórmula que ya usan los datos del sistema
+    (ver seeds/generar_demo.py, que genera los precios así). Si esto cambiara, todos los
+    precios recalculados dejarían de cuadrar con los cargados.
+
+    El `quantize` a centavos es obligatorio, no cosmético: `costo` es numeric(14,4) y
+    `precio` es numeric(14,2). Sin redondear acá, Postgres redondea al guardar con su
+    propia regla y el precio que se le mostró al humano no es el que quedó en la base.
+    """
+    return (costo * (Decimal(1) + margen / Decimal(100))).quantize(
+        Decimal("0.01"), rounding=ROUND_HALF_UP
+    )
 
 
 # --------------------------------------------------------------------------- búsqueda híbrida
@@ -180,11 +282,48 @@ def texto_para_embedding(articulo: Articulo) -> str:
     return " ".join(p for p in partes if p)
 
 
+def asegurar_embeddings(session: Session, org_id: UUID, *, articulos: list[Articulo]) -> int:
+    """Re-embebe AHORA una lista corta y conocida de artículos, en la misma transacción.
+
+    Es la contraparte interactiva de `reindexar_embeddings`, y existe por dos motivos:
+
+    1. **Un artículo recién creado sería invisible a la búsqueda semántica.** El brazo
+       vectorial filtra `embedding is not null`, así que hasta que corriera un batch el
+       artículo solo aparecería por el brazo léxico (`busqueda` sí la genera Postgres en
+       el INSERT). Quien carga un producto y lo busca a los diez segundos no lo encontraría.
+    2. **Un artículo editado conservaría un embedding MENTIROSO para siempre.**
+       `reindexar_embeddings` solo llena NULLs: si cambia el `detalle`, su vector viejo
+       nunca se recalcula. Este es un bug latente que este camino además tapa.
+
+    ¿Y por qué no rompe la razón por la que el indexado está fuera del hot path? Porque esa
+    razón es el cold-load del modelo (~120MB), y el proceso de la API YA lo pagó al arrancar
+    (`main.py` llama a `precargar_embeddings()` en el startup, y el modelo queda cacheado con
+    `lru_cache`). Lo que queda es embeber un puñado de textos cortos: decenas de ms, una vez,
+    en un endpoint donde el humano ya esperó varios segundos de OCR. `reindexar_embeddings`
+    sigue siendo lo correcto para el CLI de importación masiva, que sí paga el cold-load.
+
+    A diferencia de aquella, esta SÍ toma org_id: no barre la base buscando pendientes, opera
+    sobre objetos que el caller ya tiene en la mano.
+    """
+    if not articulos:
+        return 0
+
+    vectores = embed_passages([texto_para_embedding(a) for a in articulos])
+    for articulo, vector in zip(articulos, vectores, strict=True):
+        articulo.embedding = vector
+    session.flush()
+    return len(articulos)
+
+
 def reindexar_embeddings(session: Session, *, lote: int = 256) -> int:
     """Genera y guarda el embedding de todos los articulos que aún no lo tienen. Por lotes.
 
     Fuera del hot path a propósito: cargar el modelo y embeber es caro. Se corre una vez después
     de importar (ver catalogo/reindex.py), no en cada alta de artículo.
+
+    OJO: solo llena NULLs y NO filtra por org (depende del rol/RLS de la sesión — está pensada
+    para el CLI, que corre como owner y bypassea RLS para indexar todos los tenants de una).
+    Para el camino interactivo, y para re-embeber un artículo EDITADO, usá `asegurar_embeddings`.
     """
     total = 0
     while True:

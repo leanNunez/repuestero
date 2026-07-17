@@ -24,6 +24,20 @@ class Settings(BaseSettings):
     asistente_max_filas: int = 200
     asistente_timeout_ms: int = 5000
 
+    # Ingesta visual (remito por foto). Usa openai_model: es multimodal, groq_model NO.
+    #: Techo del archivo. Una foto de celular moderno ronda los 3-5 MB; 8 deja margen sin
+    #: que un upload gigante llegue nunca a decodificarse.
+    ingesta_max_imagen_mb: int = 8
+    #: Techo de renglones por remito. Un "remito" de 5000 renglones no puede inflar la DB
+    #: ni la factura de tokens.
+    ingesta_max_renglones: int = 50
+    #: Debajo de esto, el renglón se marca para atención humana. Es un HINT de UI, nunca un
+    #: gate: la confianza que un LLM se auto-reporta está mal calibrada. El gate es el humano.
+    ingesta_umbral_confianza: float = 0.75
+    #: Timeout de la llamada de visión. Sin esto, una llamada colgada retiene una conexión
+    #: de Postgres indefinidamente (ver la nota en ingesta_visual/router.py).
+    ingesta_timeout_ms: int = 30000
+
     #: CORS. En prod NUNCA "*": lista separada por comas de orígenes permitidos.
     allowed_origins: str = "*"
 

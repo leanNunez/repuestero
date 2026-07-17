@@ -10,14 +10,31 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-from app.core.registry import TABLAS_TENANT
-
 revision: str = "0001"
 down_revision: str | None = None
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 APP_ROLE = "app_user"
+
+#: Las tablas con org_id que existían al momento de esta migración. Es una copia
+#: congelada de `core.registry.TABLAS_TENANT`, NO un import: una migración es un
+#: snapshot inmutable del esquema en un punto del tiempo. Si importara la tupla viva,
+#: agregar un feature nuevo al registry haría que esta migración intente aplicar RLS
+#: sobre una tabla que todavía no existe. Cada migración posterior aplica RLS a las
+#: tablas que ella misma crea.
+TABLAS_TENANT_0001: tuple[str, ...] = (
+    "articulos",
+    "listas_precio",
+    "articulo_precios",
+    "depositos",
+    "stock_movimientos",
+    "clientes",
+    "proveedores",
+    "articulo_proveedores",
+    "vehiculos",
+    "articulo_aplicaciones",
+)
 
 
 def _org_fk() -> sa.Column:
@@ -336,7 +353,7 @@ def _aplicar_rls() -> None:
     `with check` controla qué filas podés ESCRIBIR. Sin él, un tenant podría insertar
     filas dentro de otro.
     """
-    for tabla in TABLAS_TENANT:
+    for tabla in TABLAS_TENANT_0001:
         op.execute(f"alter table {tabla} enable row level security;")
         op.execute(f"alter table {tabla} force row level security;")
         op.execute(
@@ -378,5 +395,5 @@ def downgrade() -> None:
     op.execute("drop function if exists kardex_append_only();")
     op.execute("drop view if exists stock;")
 
-    for tabla in (*TABLAS_TENANT, "miembros", "organizaciones"):
+    for tabla in (*TABLAS_TENANT_0001, "miembros", "organizaciones"):
         op.execute(f"drop table if exists {tabla} cascade;")

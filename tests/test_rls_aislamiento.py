@@ -76,6 +76,73 @@ def test_vista_stock_respeta_rls_por_security_invoker(app_conn, tenants):
     assert stock_b == [3]
 
 
+def test_remitos_procesados_respeta_rls(app_conn, tenants):
+    """`remitos_procesados` (ingesta visual) es tabla de tenant como cualquier otra.
+
+    Importa además por una razón propia: es el candado de idempotencia. Si un tenant pudiera
+    ver los hashes de otro, sabría qué remitos cargó su competencia."""
+    _fijar_org(app_conn, tenants.a)
+    app_conn.execute(
+        text(
+            "insert into remitos_procesados (org_id, imagen_hash, renglones_count) "
+            "values (:o, :h, 1)"
+        ),
+        {"o": tenants.a, "h": "a" * 64},
+    )
+
+    _fijar_org(app_conn, tenants.b)
+    assert app_conn.execute(text("select count(*) from remitos_procesados")).scalar_one() == 0
+
+    _fijar_org(app_conn, tenants.a)
+    hashes = app_conn.execute(text("select imagen_hash from remitos_procesados")).scalars().all()
+    assert hashes == ["a" * 64]
+
+
+def test_remitos_procesados_with_check_bloquea_otro_tenant(app_conn, tenants):
+    """Parado en A no se puede sembrar un remito dentro de B."""
+    _fijar_org(app_conn, tenants.a)
+
+    with pytest.raises(DBAPIError) as exc:
+        app_conn.execute(
+            text(
+                "insert into remitos_procesados (org_id, imagen_hash, renglones_count) "
+                "values (:o, :h, 1)"
+            ),
+            {"o": tenants.b, "h": "b" * 64},
+        )
+
+    assert "row-level security" in str(exc.value).lower()
+
+
+def test_remitos_hash_unico_por_org_pero_no_entre_orgs(app_conn, tenants):
+    """El candado de idempotencia: el MISMO remito no entra dos veces en la misma org...
+
+    ...pero dos orgs distintas SÍ pueden tener el mismo hash. No es un caso hipotético:
+    dos repuesteras que le compran al mismo distribuidor pueden recibir remitos idénticos.
+    Si el unique fuera solo sobre imagen_hash, la segunda org no podría cargar el suyo."""
+    insert = text(
+        "insert into remitos_procesados (org_id, imagen_hash, renglones_count) "
+        "values (:o, :h, 1)"
+    )
+
+    _fijar_org(app_conn, tenants.a)
+    app_conn.execute(insert, {"o": tenants.a, "h": "c" * 64})
+
+    # Mismo hash, misma org → rebota contra el unique.
+    # El savepoint es necesario: el IntegrityError envenena la transacción, y sin aislarlo
+    # no se podría seguir usando la conexión para verificar la otra mitad.
+    sp = app_conn.begin_nested()
+    with pytest.raises(DBAPIError) as exc:
+        app_conn.execute(insert, {"o": tenants.a, "h": "c" * 64})
+    assert "uq_remitos_org_hash" in str(exc.value)
+    sp.rollback()
+
+    # Mismo hash, OTRA org → entra sin drama.
+    _fijar_org(app_conn, tenants.b)
+    app_conn.execute(insert, {"o": tenants.b, "h": "c" * 64})
+    assert app_conn.execute(text("select count(*) from remitos_procesados")).scalar_one() == 1
+
+
 def test_membresia_solo_ve_la_propia(app_conn, tenants):
     """`miembros` es la excepción: filtra por USUARIO, no por org (es la tabla que resuelve el
     org_id, se lee ANTES de conocerlo). Con dos membresías de usuarios distintos sembradas,
