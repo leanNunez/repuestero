@@ -12,12 +12,18 @@ from app.clientes import models as clientes_models
 from app.compatibilidad import models as compatibilidad_models
 from app.core import models as core_models
 from app.core.base import Base
+from app.ingesta_visual import models as ingesta_visual_models
 from app.inventario import models as inventario_models
 from app.proveedores import models as proveedores_models
 
 #: Tablas del dominio que llevan org_id y por lo tanto necesitan políticas de RLS.
 #: `organizaciones` no está: es la raíz del tenant, no tiene org_id propio.
 #: `miembros` tampoco: su política filtra por usuario, no por org (ver core/models.py).
+#:
+#: Esta tupla es la lista VIVA, y solo la usa `alembic/env.py` para el autogenerate.
+#: Las migraciones ya escritas NO la importan: cada una congela su propia copia y aplica
+#: RLS a las tablas que ella misma crea. Si una migración vieja iterara esta tupla,
+#: agregar un feature acá la haría fallar sobre una base nueva.
 TABLAS_TENANT: tuple[str, ...] = (
     "articulos",
     "listas_precio",
@@ -29,6 +35,7 @@ TABLAS_TENANT: tuple[str, ...] = (
     "articulo_proveedores",
     "vehiculos",
     "articulo_aplicaciones",
+    "remitos_procesados",
 )
 
 __all__ = [
@@ -38,6 +45,7 @@ __all__ = [
     "clientes_models",
     "compatibilidad_models",
     "core_models",
+    "ingesta_visual_models",
     "inventario_models",
     "proveedores_models",
 ]
