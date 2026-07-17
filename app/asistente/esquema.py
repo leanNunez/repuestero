@@ -18,6 +18,8 @@ articulos(id, codigo, detalle, costo numeric, alicuota_iva numeric, punto_pedido
   -- catálogo de repuestos. costo es el costo de compra. punto_pedido = umbral de reposición.
 
 listas_precio(id, codigo, nombre)
+  -- nombre lleva el prefijo 'Lista ' (ej: codigo 'MOST' -> nombre 'Lista Mostrador'). Para
+  --   filtrar por lista preferí codigo, o usá ILIKE sobre nombre ('%mostrador%').
 articulo_precios(id, articulo_id -> articulos.id, lista_id -> listas_precio.id,
                  precio numeric, margen numeric)
   -- precio de venta de cada artículo por lista.
