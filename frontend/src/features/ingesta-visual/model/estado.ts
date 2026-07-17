@@ -114,10 +114,15 @@ export function renglonValido(r: RenglonEditable): boolean {
   );
 }
 
+/** Máximo del código de proveedor. Espeja `proveedor_codigo` en el schema del backend
+ * (ConfirmarRequest, max_length=20): validarlo acá evita el 422 que el front esconde. */
+export const MAX_CODIGO_PROVEEDOR = 20;
+
 export function puedeConfirmar(estado: Estado): boolean {
   const incluidos = estado.renglones.filter((r) => r.incluir);
   return (
     estado.deposito.trim().length > 0 &&
+    estado.proveedorCodigo.trim().length <= MAX_CODIGO_PROVEEDOR &&
     incluidos.length > 0 &&
     incluidos.every(renglonValido)
   );

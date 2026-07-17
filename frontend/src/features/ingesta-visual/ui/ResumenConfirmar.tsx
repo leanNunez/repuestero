@@ -4,7 +4,7 @@ import type { ConfirmarResponse } from "@/entities/remito/schema";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 
-import { flagsDeAtencion, type Estado } from "../model/estado";
+import { flagsDeAtencion, MAX_CODIGO_PROVEEDOR, type Estado } from "../model/estado";
 
 const inputClass =
   "h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -56,12 +56,14 @@ export function ResumenConfirmar({
             value={estado.proveedorCodigo}
             onChange={(e) => onCampo("proveedorCodigo", e.target.value)}
             placeholder="DIST-SUR"
+            maxLength={MAX_CODIGO_PROVEEDOR}
             className={inputClass}
           />
           <p className="text-[11px] text-muted-foreground">
+            Código corto interno (opcional).{" "}
             {estado.propuesta?.proveedor_nombre
-              ? `Repu leyó: ${estado.propuesta.proveedor_nombre}`
-              : "Opcional."}
+              ? `El proveedor «${estado.propuesta.proveedor_nombre}» se guarda solo.`
+              : ""}
           </p>
         </div>
 
