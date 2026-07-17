@@ -6,7 +6,7 @@
 
 ## Contexto
 
-RepuestOS es un ERP para casas de repuestos: comercios **de mostrador**, donde la venta y el
+Repuestero es un ERP para casas de repuestos: comercios **de mostrador**, donde la venta y el
 descuento de stock ocurren en tiempo real frente al cliente. El sistema hoy es un SPA + API en la
 nube: si se cae internet, la caja **deja de operar**. Para una demo no importa; para un producto
 real es una objeción de primer orden — la conectividad en Argentina (zonas industriales, pueblos,

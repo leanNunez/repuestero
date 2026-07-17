@@ -1,6 +1,6 @@
-# RepuestOS — Blueprint de un sistema de gestión AI‑native para casas de repuestos
+# Repuestero — Blueprint de un sistema de gestión AI‑native para casas de repuestos
 
-> Documento vivo. Sintetiza (1) el análisis del sistema legacy `Buloneria.exe`, (2) research de repos y librerías, y (3) el stack que ya venís manejando (FastAPI, Supabase/Postgres+pgvector, LangGraph, Groq, React). Nombre tentativo: **RepuestOS**.
+> Documento vivo. Sintetiza (1) el análisis del sistema legacy `Buloneria.exe`, (2) research de repos y librerías, y (3) el stack que ya venís manejando (FastAPI, Supabase/Postgres+pgvector, LangGraph, Groq, React). Nombre tentativo: **Repuestero**.
 
 ---
 

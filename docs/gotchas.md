@@ -1,4 +1,4 @@
-# Gotchas de RepuestOS
+# Gotchas de Repuestero
 
 Trampas reales que nos mordieron (o casi) construyendo el sistema, con el fix. Sirve para no
 tropezar dos veces y como checklist al montar el entorno en otra máquina o en CI.

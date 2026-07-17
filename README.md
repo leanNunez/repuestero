@@ -1,4 +1,4 @@
-# RepuestOS
+# Repuestero
 
 **ERP AI-native multi-tenant para casas de repuestos.** Backend FastAPI + Postgres con aislamiento por RLS, un asistente conversacional NL2SQL con defensa en profundidad, e ingesta de remitos por foto con revisión humana obligatoria.
 
