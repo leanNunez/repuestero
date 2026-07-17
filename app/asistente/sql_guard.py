@@ -13,8 +13,14 @@ from sqlglot import exp
 # Nodos que NO pueden aparecer en el árbol. `Command` cubre SET/COPY/GRANT/VACUUM y demás comandos
 # que sqlglot no modela como expresiones estructuradas.
 _PROHIBIDOS = (
-    exp.Insert, exp.Update, exp.Delete, exp.Merge,
-    exp.Create, exp.Drop, exp.Alter, exp.TruncateTable,
+    exp.Insert,
+    exp.Update,
+    exp.Delete,
+    exp.Merge,
+    exp.Create,
+    exp.Drop,
+    exp.Alter,
+    exp.TruncateTable,
     exp.Command,
 )
 

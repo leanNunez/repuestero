@@ -89,16 +89,14 @@ def codigos_duplicados(renglones: list[RenglonExtraido]) -> set[str]:
     Puede ser legítimo (el mismo artículo en dos renglones con distinto costo) o un error de
     lectura. No se decide acá: se marca y se muestra.
     """
-    cuenta = Counter(
-        (r.codigo or "").strip() for r in renglones if (r.codigo or "").strip()
-    )
+    cuenta = Counter((r.codigo or "").strip() for r in renglones if (r.codigo or "").strip())
     return {codigo for codigo, n in cuenta.items() if n > 1}
 
 
 def total_calculado(renglones: list[RenglonExtraido]) -> Decimal:
-    return sum(
-        (r.cantidad * r.costo_unitario for r in renglones), start=Decimal("0")
-    ).quantize(Decimal("0.01"))
+    return sum((r.cantidad * r.costo_unitario for r in renglones), start=Decimal("0")).quantize(
+        Decimal("0.01")
+    )
 
 
 def advertencias_de_remito(

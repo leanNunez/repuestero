@@ -4,8 +4,11 @@ repos:
     hooks:
       - id: gitleaks
 
+  # Esta rev DEBE coincidir con el ruff pineado en pyproject.toml ([dev] → ruff==0.15.22).
+  # Si divergen, el hook y la CI juzgan el mismo código con reglas distintas y uno de los dos
+  # miente. Al subir uno, subir el otro.
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.8.4
+    rev: v0.15.22
     hooks:
       - id: ruff
         args: [--fix]

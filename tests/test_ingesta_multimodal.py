@@ -37,6 +37,7 @@ class _ModeloFake:
 
 # --------------------------------------------------------------------------- el invariante
 
+
 def test_system_y_user_van_separados_y_la_imagen_es_del_turno_humano(monkeypatch):
     """EL test de seguridad del camino multimodal.
 
@@ -99,6 +100,7 @@ def test_extraer_devuelve_el_texto_crudo(monkeypatch):
 
 # --------------------------------------------------------------------------- validación
 
+
 @pytest.mark.parametrize(
     ("datos", "mime"),
     [(_JPEG, "image/jpeg"), (_PNG, "image/png"), (_WEBP, "image/webp")],
@@ -143,6 +145,7 @@ def test_imagen_vacia_se_rechaza():
 
 # --------------------------------------------------------------------------- hash
 
+
 def test_hash_es_de_los_bytes_no_del_string_base64():
     """El mismo archivo puede llegar con distinto whitespace en el base64. Si el hash fuera
     del string, el candado de idempotencia dejaría pasar el mismo remito dos veces."""
@@ -166,6 +169,7 @@ def test_hash_tiene_forma_de_sha256():
 
 
 # --------------------------------------------------------------------------- techo de tamaño
+
 
 def test_max_chars_base64_deja_pasar_el_limite_y_frena_lo_de_arriba():
     """El techo se calcula sobre el STRING base64 porque es lo que llega por la red: hay que

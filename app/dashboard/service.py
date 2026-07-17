@@ -65,18 +65,14 @@ def reposicion(session: Session, org_id: UUID) -> list[dict]:
     ]
 
 
-def margenes(
-    session: Session, org_id: UUID, umbral: Decimal = UMBRAL_MARGEN_DEFAULT
-) -> list[dict]:
+def margenes(session: Session, org_id: UUID, umbral: Decimal = UMBRAL_MARGEN_DEFAULT) -> list[dict]:
     """Margen real por artículo, tomando el PEOR margen entre sus listas (la venta más flaca).
 
     Como el margen crece con el precio (margen = 1 - costo/precio), el mínimo margen coincide con
     el mínimo precio: por eso `min(precio)` y `min(margen)` son la misma fila.
     """
     margen_expr = (
-        (ArticuloPrecio.precio - Articulo.costo)
-        / func.nullif(ArticuloPrecio.precio, 0)
-        * 100
+        (ArticuloPrecio.precio - Articulo.costo) / func.nullif(ArticuloPrecio.precio, 0) * 100
     )
     stmt = (
         select(
@@ -98,7 +94,9 @@ def margenes(
     )
     filas = []
     for r in session.execute(stmt):
-        margen = Decimal(r.margen).quantize(Decimal("0.01")) if r.margen is not None else Decimal("0")
+        margen = (
+            Decimal(r.margen).quantize(Decimal("0.01")) if r.margen is not None else Decimal("0")
+        )
         filas.append(
             {
                 "codigo": r.codigo,

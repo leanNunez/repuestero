@@ -21,8 +21,12 @@ import pytest
 from sqlalchemy import create_engine, text
 
 # Bases de conexión (sin nombre de db). Overridables por env para CI o puertos distintos.
-_OWNER_BASE = os.environ.get("TEST_OWNER_URL", "postgresql+psycopg://postgres:postgres@localhost:5432")
-_APP_BASE = os.environ.get("TEST_APP_URL", "postgresql+psycopg://app_user:app_password@localhost:5432")
+_OWNER_BASE = os.environ.get(
+    "TEST_OWNER_URL", "postgresql+psycopg://postgres:postgres@localhost:5432"
+)
+_APP_BASE = os.environ.get(
+    "TEST_APP_URL", "postgresql+psycopg://app_user:app_password@localhost:5432"
+)
 _READONLY_BASE = os.environ.get(
     "TEST_READONLY_URL", "postgresql+psycopg://app_readonly:readonly_password@localhost:5432"
 )
@@ -94,8 +98,9 @@ def migrated_db():
     owner.dispose()
 
     # Migración real: mismo camino que en prod (env.py lee MIGRATIONS_DATABASE_URL → base test).
-    from alembic import command
     from alembic.config import Config
+
+    from alembic import command
 
     command.upgrade(Config("alembic.ini"), "head")
 

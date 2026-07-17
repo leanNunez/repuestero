@@ -47,8 +47,11 @@ def catalogo(migrated_db):
         # Artículo EXCLUSIVO de org B, con texto que matchearía la búsqueda de A si RLS fallara.
         s.add(
             Articulo(
-                org_id=org_b, codigo="SECRET-B",
-                detalle="FILTRO DE ACEITE SECRETO ORG B", marca="Mann", rubro="FILTROS",
+                org_id=org_b,
+                codigo="SECRET-B",
+                detalle="FILTRO DE ACEITE SECRETO ORG B",
+                marca="Mann",
+                rubro="FILTROS",
             )
         )
         s.flush()
@@ -73,7 +76,7 @@ def _codigos(resultados):
 
 
 def test_busqueda_semantica_por_significado(sesion_a, catalogo):
-    """"para frenar el auto" no comparte palabra con "PASTILLA DE FRENO"... salvo el sentido."""
+    """ "para frenar el auto" no comparte palabra con "PASTILLA DE FRENO"... salvo el sentido."""
     res = service.buscar_articulos(sesion_a, catalogo.a, q="con qué freno el auto", limite=4)
     assert "PAST-F" in _codigos(res)
 

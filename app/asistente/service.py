@@ -53,7 +53,9 @@ def consultar_stream(tenant: TenantContext, mensaje: str) -> Iterator[ServerSent
     datos = grafo.responder_datos(mensaje, ejecutar)
 
     if datos["filas"] is None:
-        yield _evento("error", mensaje="No pude armar una consulta válida para esa pregunta. ¿La reformulás?")
+        yield _evento(
+            "error", mensaje="No pude armar una consulta válida para esa pregunta. ¿La reformulás?"
+        )
         yield _evento("fin")
         return
 

@@ -95,8 +95,7 @@ def extraer_de_imagen(
     """
     if proveedor != OPENAI:
         raise ValueError(
-            f"La visión requiere OPENAI: {proveedor!r} no es multimodal "
-            "(groq_model es text-only)."
+            f"La visión requiere OPENAI: {proveedor!r} no es multimodal (groq_model es text-only)."
         )
 
     modelo = _openai_vision()

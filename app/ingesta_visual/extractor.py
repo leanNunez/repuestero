@@ -63,8 +63,7 @@ REGLAS DE LECTURA:
 """
 
 USER = (
-    "Extraé los renglones de este remito de proveedor. "
-    "Devolvé solo el JSON del esquema indicado."
+    "Extraé los renglones de este remito de proveedor. Devolvé solo el JSON del esquema indicado."
 )
 
 _REPARAR = (

@@ -101,9 +101,7 @@ def _propuesta_de_renglon(
     # para MARCAR, nunca para bloquear ni para sumar strikes: ver la nota en `preparar_propuesta`.
     sospechoso = seguridad.es_injection(renglon.descripcion)
     if sospechoso:
-        logger.warning(
-            "Texto sospechoso en renglón de remito (org=%s, codigo=%r)", org_id, codigo
-        )
+        logger.warning("Texto sospechoso en renglón de remito (org=%s, codigo=%r)", org_id, codigo)
 
     atencion = flags.flags_de_renglon(
         renglon,
@@ -145,9 +143,7 @@ def armar_propuesta(
     duplicados = flags.codigos_duplicados(extraido.renglones)
 
     renglones = [
-        _propuesta_de_renglon(
-            session, org_id, r, duplicados=duplicados, umbral=umbral
-        )
+        _propuesta_de_renglon(session, org_id, r, duplicados=duplicados, umbral=umbral)
         for r in extraido.renglones
     ]
 
@@ -161,9 +157,7 @@ def armar_propuesta(
         total_declarado=extraido.total_declarado,
         total_calculado=flags.total_calculado(extraido.renglones),
         renglones=renglones,
-        advertencias=flags.advertencias_de_remito(
-            extraido.renglones, extraido.total_declarado
-        ),
+        advertencias=flags.advertencias_de_remito(extraido.renglones, extraido.total_declarado),
     )
 
 

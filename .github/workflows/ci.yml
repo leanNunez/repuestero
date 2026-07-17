@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Un push nuevo sobre la misma rama cancela la corrida anterior: nadie espera el resultado
+# de un commit que ya quedó viejo.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend:
+    name: backend (ruff + pytest)
+    runs-on: ubuntu-latest
+
+    services:
+      # pgvector, NO postgres pelado: el catálogo usa la extensión y la migración 0001 falla
+      # sin ella. Misma imagen que docker-compose.yml para que CI y dev prueben lo mismo.
+      db:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 3s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      # fastembed baja ~120MB la primera vez que algo embebe. Sin esto cachearía en un tmpdir
+      # que se evapora entre corridas.
+      FASTEMBED_CACHE_PATH: ${{ github.workspace }}/.fastembed_cache
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Cache del modelo de embeddings
+        uses: actions/cache@v6
+        with:
+          path: ${{ github.workspace }}/.fastembed_cache
+          # La key cuelga del módulo que fija el modelo: si cambia `MODELO`, el cache viejo
+          # deja de servir y se baja el nuevo.
+          key: fastembed-${{ hashFiles('app/core/embeddings.py') }}
+
+      - name: Instalar dependencias
+        run: uv sync --frozen --extra dev
+
+      - name: Ruff (lint)
+        run: uv run --frozen ruff check .
+
+      - name: Ruff (formato)
+        run: uv run --frozen ruff format --check .
+
+      # No hace falta sembrar roles ni correr scripts/init_db.sql: conftest crea `app_user`
+      # y la base de tests, y la migración 0003 crea `app_readonly` con sus grants. Los
+      # defaults de conftest ya apuntan a localhost:5432 con postgres/postgres.
+      - name: Tests
+        run: uv run --frozen pytest -q
+
+  frontend:
+    name: frontend (lint + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      # `ci` y no `install`: instala EXACTO lo que dice el lock y falla si package.json y el
+      # lock no coinciden. Es la diferencia entre probar lo que tenés y probar lo que había hoy.
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Oxlint
+        run: npm run lint
+
+      # `build` es `tsc -b && vite build`: typecheck completo + bundle. El front no tiene
+      # tests todavía, así que esto es lo que ataja imports rotos y errores de tipo.
+      - name: Build
+        run: npm run build

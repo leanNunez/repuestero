@@ -81,16 +81,25 @@ def _generar(estado: Estado) -> dict:
     except Exception as exc:  # noqa: BLE001 — el proveedor caído (auth/red/rate-limit) alimenta el
         # reintento y, agotado Groq, el cambio a OpenAI. NO se propaga: un proveedor abajo no es un 500.
         logger.warning(
-            "Proveedor %s falló al generar SQL (intento %d): %s", estado["proveedor"], estado["intentos"], exc
+            "Proveedor %s falló al generar SQL (intento %d): %s",
+            estado["proveedor"],
+            estado["intentos"],
+            exc,
         )
         # sql=None → el guard rechaza el SELECT vacío → _ruta reintenta y luego cambia de proveedor.
-        return {"sql": None, "intentos": estado["intentos"] + 1, "error": f"proveedor no disponible: {exc}"}
+        return {
+            "sql": None,
+            "intentos": estado["intentos"] + 1,
+            "error": f"proveedor no disponible: {exc}",
+        }
     return {"sql": _extraer_sql(texto), "intentos": estado["intentos"] + 1, "error": None}
 
 
 def _ejecutar(estado: Estado) -> dict:
     try:
-        sql_seguro = validar_y_acotar(estado["sql"] or "", max_filas=get_settings().asistente_max_filas)
+        sql_seguro = validar_y_acotar(
+            estado["sql"] or "", max_filas=get_settings().asistente_max_filas
+        )
         filas = estado["ejecutar"](sql_seguro)
         return {"filas": filas, "sql": sql_seguro, "error": None}
     except Exception as exc:  # noqa: BLE001 — el error alimenta el reintento; no se filtra al usuario
@@ -112,7 +121,9 @@ def _redactar(estado: Estado) -> dict:
     except Exception as exc:  # noqa: BLE001 — ya tenemos los datos; si el proveedor cae al narrar,
         # devolvemos las filas con un mensaje, nunca un 500. (Generar ya usa el proveedor vivo.)
         logger.warning("Proveedor %s falló al redactar: %s", estado["proveedor"], exc)
-        return {"respuesta": "Encontré resultados pero no pude redactar la respuesta. Te muestro los datos."}
+        return {
+            "respuesta": "Encontré resultados pero no pude redactar la respuesta. Te muestro los datos."
+        }
 
 
 def _ruta(estado: Estado) -> str:

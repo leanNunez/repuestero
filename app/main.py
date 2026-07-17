@@ -10,11 +10,11 @@ from app.asistente.router import router as asistente_router
 from app.catalogo.router import router as catalogo_router
 from app.clientes.router import router as clientes_router
 from app.compatibilidad.router import router as compatibilidad_router
-from app.dashboard.router import router as dashboard_router
-from app.ingesta_visual.router import router as ingesta_visual_router
 from app.core.config import get_settings
 from app.core.ratelimit import limiter
 from app.core.rls import TenantContext, get_tenant
+from app.dashboard.router import router as dashboard_router
+from app.ingesta_visual.router import router as ingesta_visual_router
 
 logger = logging.getLogger(__name__)
 _settings = get_settings()

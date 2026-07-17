@@ -27,7 +27,11 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.25",
-    "ruff>=0.8",
+    # Pineado EXACTO, y tiene que coincidir con la rev de .pre-commit-config.yaml. Un rango
+    # abierto hace que cada máquina resuelva un ruff distinto: reglas nuevas aparecen solas y
+    # el pre-commit y la CI se contradicen sobre el mismo código. Subir de versión es una
+    # decisión, no un efecto colateral de instalar.
+    "ruff==0.15.22",
     "pre-commit>=4.0",
 ]
 
@@ -44,6 +48,28 @@ target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
+
+#: El largo de línea lo controla el formatter (`line-length` arriba), que parte el código solo.
+#: E501 solo alcanza a gritar sobre lo que el formatter NO puede partir: strings largos y
+#: comentarios en prosa. Dos dueños para la misma regla es ruido, y acá el dueño es el formatter.
+ignore = ["E501"]
+
+[tool.ruff.lint.flake8-bugbear]
+#: FastAPI DEPENDE de llamar a estos en el default del argumento: así se declara la inyección.
+#: B008 existe para atrapar defaults mutables compartidos entre llamadas (`def f(x=[])`), no
+#: esto. Sin esta lista son 17 falsos positivos sobre código correcto — y un linter que grita
+#: en falso enseña a ignorarlo, que es peor que no tenerlo.
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Cookie",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+    "fastapi.Security",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

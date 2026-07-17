@@ -35,7 +35,9 @@ def consultar(
     ip = ip_cliente(request)
 
     if seguridad.esta_baneado(ip):
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Demasiados intentos. Probá más tarde.")
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS, "Demasiados intentos. Probá más tarde."
+        )
 
     if seguridad.es_injection(body.message):
         seguridad.registrar_intento(ip)
@@ -88,7 +90,9 @@ def stream(
     ip = ip_cliente(request)
 
     if seguridad.esta_baneado(ip):
-        raise HTTPException(status.HTTP_429_TOO_MANY_REQUESTS, "Demasiados intentos. Probá más tarde.")
+        raise HTTPException(
+            status.HTTP_429_TOO_MANY_REQUESTS, "Demasiados intentos. Probá más tarde."
+        )
 
     if seguridad.es_injection(body.message):
         seguridad.registrar_intento(ip)
