@@ -45,7 +45,9 @@ class Settings(BaseSettings):
 
     @property
     def is_prod(self) -> bool:
-        return self.env == "production"
+        # Acepta "prod" y "production": Render/HF suelen setear "prod" y no queremos que un
+        # typo deje Swagger abierto en producción. Normaliza mayúsculas por las dudas.
+        return self.env.strip().lower() in ("production", "prod")
 
     @property
     def origins(self) -> list[str]:
