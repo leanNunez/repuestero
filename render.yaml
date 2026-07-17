@@ -1,0 +1,31 @@
+# Deploy del backend de Repuestero en Render (plan free).
+# Los secretos NO viven acá: van en el dashboard de Render (sync: false).
+services:
+  - type: web
+    name: repuestero-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: ENV
+        value: prod
+      - key: FASTEMBED_CACHE_PATH
+        value: /app/.fastembed_cache
+      # --- Secretos (cargar en el dashboard) ---
+      - key: DATABASE_URL # app_user@supabase, conexión directa (5432)
+        sync: false
+      - key: DATABASE_READONLY_URL # app_readonly@supabase
+        sync: false
+      - key: MIGRATIONS_DATABASE_URL # owner@supabase (corre las migraciones)
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_JWKS_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: ALLOWED_ORIGINS # la URL de Vercel, sin barra final
+        sync: false

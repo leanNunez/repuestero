@@ -1,0 +1,15 @@
+# La imagen es sólo el backend: nada de front, docs ni basura de dev.
+.git
+.github
+frontend
+docs
+img
+scratchpad
+.venv
+**/__pycache__
+*.pyc
+.fastembed_cache
+.env
+.ruff_cache
+.pytest_cache
+tests
