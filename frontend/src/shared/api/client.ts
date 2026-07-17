@@ -11,7 +11,7 @@ export function authHeaders(): Record<string, string> {
 }
 
 /** Un 401 significa que el token no sirve (vencido o mal firmado). Se limpia para volver al
- * DevTokenGate, en vez de dejar la app "cargada pero vacía" con un token muerto en localStorage. */
+ * AuthGate, en vez de dejar la app "cargada pero vacía" con un token muerto en localStorage. */
 function bounceIf401(status: number): void {
   if (status === 401) useTokenStore.getState().clearToken();
 }
