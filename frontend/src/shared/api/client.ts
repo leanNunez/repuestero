@@ -10,6 +10,12 @@ export function authHeaders(): Record<string, string> {
   };
 }
 
+/** Un 401 significa que el token no sirve (vencido o mal firmado). Se limpia para volver al
+ * DevTokenGate, en vez de dejar la app "cargada pero vacía" con un token muerto en localStorage. */
+function bounceIf401(status: number): void {
+  if (status === 401) useTokenStore.getState().clearToken();
+}
+
 export const STREAM_URL = `${API_URL}/asistente/stream`;
 
 /** GET tipado contra el backend. Con `schema` (Zod) valida la respuesta en el boundary. */
@@ -18,6 +24,7 @@ export async function apiGet<T>(
   schema?: { parse: (v: unknown) => T },
 ): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, { headers: authHeaders() });
+  bounceIf401(res.status);
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
   const json: unknown = await res.json();
   return schema ? schema.parse(json) : (json as T);
@@ -55,6 +62,7 @@ export async function apiPost<T>(
   });
 
   if (!res.ok) {
+    bounceIf401(res.status);
     // El backend manda { detail: "..." }; los 422 de Pydantic mandan un array. Se intenta
     // rescatar un mensaje útil, pero nunca se rompe por no poder parsearlo.
     let detail = `HTTP ${res.status}`;

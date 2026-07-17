@@ -1,7 +1,7 @@
 [project]
-name = "repuestos"
+name = "repuestero"
 version = "0.1.0"
-description = "RepuestOS — ERP AI-native multi-tenant para casas de repuestos"
+description = "Repuestero — ERP AI-native multi-tenant para casas de repuestos"
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",

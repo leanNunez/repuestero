@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 _settings = get_settings()
 
 app = FastAPI(
-    title="RepuestOS",
+    title="Repuestero",
     description="ERP AI-native multi-tenant para casas de repuestos",
     version="0.2.0",
     # Swagger es un manual de ataque gratis: se apaga en producción (skill web-security).

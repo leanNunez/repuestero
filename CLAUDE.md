@@ -1,4 +1,4 @@
-# RepuestOS — ERP AI-native multi-tenant para casas de repuestos
+# Repuestero — ERP AI-native multi-tenant para casas de repuestos
 
 ## Objetivo ACTUAL
 Estamos en **Fase 0 (fundaciones)**. NO construir el ERP completo.
