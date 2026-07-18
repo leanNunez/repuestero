@@ -100,7 +100,9 @@ def test_embed_passages_vacio_no_llama_al_backend(monkeypatch):
     monkeypatch.setenv("EMBEDDINGS_BACKEND", "remote")
     get_settings.cache_clear()
     monkeypatch.setattr(
-        embeddings, "_cliente_remoto", lambda: pytest.fail("no debe llamar al backend si no hay textos")
+        embeddings,
+        "_cliente_remoto",
+        lambda: pytest.fail("no debe llamar al backend si no hay textos"),
     )
     assert embeddings.embed_passages([]) == []
 
