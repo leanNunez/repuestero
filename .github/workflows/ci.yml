@@ -79,21 +79,19 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v7
+      - uses: oven-sh/setup-bun@v2
         with:
-          node-version: "24"
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          bun-version: latest
 
-      # `ci` y no `install`: instala EXACTO lo que dice el lock y falla si package.json y el
+      # `--frozen-lockfile`: instala EXACTO lo que dice bun.lock y falla si package.json y el
       # lock no coinciden. Es la diferencia entre probar lo que tenés y probar lo que había hoy.
       - name: Instalar dependencias
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Oxlint
-        run: npm run lint
+        run: bun run lint
 
       # `build` es `tsc -b && vite build`: typecheck completo + bundle. El front no tiene
       # tests todavía, así que esto es lo que ataja imports rotos y errores de tipo.
       - name: Build
-        run: npm run build
+        run: bun run build
