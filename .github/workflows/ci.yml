@@ -70,7 +70,7 @@ jobs:
         run: uv run --frozen pytest -q
 
   frontend:
-    name: frontend (lint + build)
+    name: frontend (lint + test + build)
     runs-on: ubuntu-latest
     defaults:
       run:
