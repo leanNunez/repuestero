@@ -91,7 +91,12 @@ jobs:
       - name: Oxlint
         run: bun run lint
 
-      # `build` es `tsc -b && vite build`: typecheck completo + bundle. El front no tiene
-      # tests todavía, así que esto es lo que ataja imports rotos y errores de tipo.
+      # `bun run test` invoca el script `test` (vitest run) — NO `bun test`, que usaría el
+      # runner propio de Bun e ignoraría la config de vitest. `vitest run` corre una vez y sale.
+      - name: Tests
+        run: bun run test
+
+      # `build` es `tsc -b && vite build`: typecheck completo + bundle. Ataja imports rotos y
+      # errores de tipo que los tests unitarios no ven.
       - name: Build
         run: bun run build
