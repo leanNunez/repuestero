@@ -42,8 +42,8 @@ export function AssistantLauncher() {
           </span>
         </div>
 
-        {/* carrusel de preguntas (rota solo) */}
-        <div className="relative mt-1 h-5 overflow-hidden" aria-hidden="true">
+        {/* carrusel de preguntas (rota solo). Dos líneas en mobile para no cortar preguntas largas. */}
+        <div className="relative mt-1 h-10 overflow-hidden sm:h-5" aria-hidden="true">
           {PREGUNTAS.map((q, idx) => (
             <span
               key={q}
@@ -53,7 +53,9 @@ export function AssistantLauncher() {
                 opacity: idx === activa ? 1 : 0,
               }}
             >
-              <span className="w-full truncate text-sm text-accent-foreground/75">“{q}”</span>
+              <span className="line-clamp-2 w-full text-sm leading-snug text-accent-foreground/75 sm:line-clamp-1">
+                “{q}”
+              </span>
             </span>
           ))}
         </div>
