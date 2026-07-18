@@ -9,10 +9,12 @@ services:
     healthCheckPath: /health
     envVars:
       - key: ENV
-        value: prod
-      - key: FASTEMBED_CACHE_PATH
-        value: /app/.fastembed_cache
+        value: production # NO "prod": is_prod ahora acepta ambos, pero el estándar es production
+      - key: EMBEDDINGS_BACKEND
+        value: remote # embeddings vía HF Inference API → el backend entra en los 512MB del free
       # --- Secretos (cargar en el dashboard) ---
+      - key: HF_TOKEN # token de HF con permiso "Make calls to Inference Providers"
+        sync: false
       - key: DATABASE_URL # app_user@supabase, conexión directa (5432)
         sync: false
       - key: DATABASE_READONLY_URL # app_readonly@supabase
