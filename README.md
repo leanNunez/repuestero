@@ -118,9 +118,9 @@ Alcance actual: **solo el flujo de ENTRADA** (remito → alta/actualización de 
 
 **CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) en cada PR y push a `main`:
 - *Backend*: `ruff check` + `ruff format --check` + `pytest`, contra un Postgres `pgvector/pgvector:pg16` real (la misma imagen que dev), con cache del modelo de embeddings.
-- *Frontend*: `oxlint` + `build` (`tsc -b && vite build` → typecheck completo + bundle).
+- *Frontend* (`frontend (lint + test + build)`): `oxlint` + `vitest` (5 suites / 12 tests) + `build` (`tsc -b && vite build` → typecheck completo + bundle).
 
-> **Honestidad de estado:** los tests del frontend **existen pero todavía no están cableados a la CI** —el job de front corre lint y build, no `vitest`—. Es lo primero en la lista de pendientes de abajo. La CI ataja imports rotos y errores de tipo; no verifica todavía el comportamiento de las pantallas.
+Ambos jobs son **checks obligatorios**: `main` tiene branch protection y no se puede mergear con la CI en rojo (regla que aplica también al owner).
 
 Versión pineada de `ruff` compartida entre `pyproject.toml` y `.pre-commit-config.yaml`: subir de versión es una decisión, no un efecto colateral de instalar en otra máquina.
 
@@ -147,7 +147,7 @@ uv run uvicorn app.main:app --reload
 cd frontend && bun install && bun run dev
 ```
 
-Tests: `uv run pytest` (backend) · `cd frontend && bunx vitest` (frontend).
+Tests: `uv run pytest` (backend) · `cd frontend && bun run test` (frontend).
 
 ---
 
@@ -155,9 +155,8 @@ Tests: `uv run pytest` (backend) · `cd frontend && bunx vitest` (frontend).
 
 Este README no vende humo. Lo que falta, en orden de prioridad:
 
-- [ ] **Cablear los tests del front a la CI** (existen, no corren automáticamente).
-- [ ] **Branch protection en `main`** que obligue a los checks verdes.
 - [ ] El store de strikes anti-injection es in-memory → necesita Redis para más de un worker.
+- [ ] `pre-commit install` es manual por máquina (la CI ya cubre el lint, pero el hook local no protege por defecto).
 
 Fuera del alcance de esta fase (diseñado, no construido): ventas, compras, caja, cuenta corriente, integración AFIP, e importador de Paradox (Fase 2).
 
