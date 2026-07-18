@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     openai_api_key: str = ""
     groq_model: str = "llama-3.3-70b-versatile"
     openai_model: str = "gpt-4o-mini"
+
+    # Embeddings del catálogo. "local" = fastembed en el proceso (offline, sin costo, default,
+    # lo que usa dev y el futuro mostrador offline). "remote" = HF Inference API (MISMO modelo y
+    # MISMO vector) sin cargar el modelo de ~615MB en RAM → para deploys con poca RAM (Render free
+    # 512MB). Ver app/core/embeddings.py y docs/deploy.md.
+    embeddings_backend: str = "local"
+    #: Token de la HF Inference API (permiso "Make calls to Inference Providers"). Solo lo usa el
+    #: backend "remote".
+    hf_token: str = ""
     #: Techo de filas y tiempo para el SQL del asistente (segunda reja además del rol read-only).
     asistente_max_filas: int = 200
     asistente_timeout_ms: int = 5000
