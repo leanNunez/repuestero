@@ -1,4 +1,4 @@
-import { PackageX, TrendingDown } from "lucide-react";
+import { LayoutDashboard, PackageX, TrendingDown } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { AssistantLauncher } from "@/features/chat/ui/AssistantLauncher";
@@ -46,6 +46,33 @@ function Panel({
   );
 }
 
+/** Fecha larga en es-AR, con la inicial en mayúscula ("Sábado 18 de julio"). */
+function hoy(): string {
+  const f = new Intl.DateTimeFormat("es-AR", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  }).format(new Date());
+  return f.charAt(0).toUpperCase() + f.slice(1);
+}
+
+/** Cabecera de la página: le da identidad. Sin esto el dashboard no se anuncia como tal. */
+function DashboardHeader() {
+  return (
+    <div className="flex items-center gap-3">
+      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-primary/10 text-primary">
+        <LayoutDashboard className="h-6 w-6" />
+      </span>
+      <div className="min-w-0">
+        <h1 className="text-xl font-bold tracking-tight sm:text-2xl">Panel de control</h1>
+        <p className="truncate text-sm text-muted-foreground">
+          Tu negocio de un vistazo · {hoy()}
+        </p>
+      </div>
+    </div>
+  );
+}
+
 function TableSkeleton() {
   return (
     <div className="space-y-2 p-4">
@@ -64,6 +91,7 @@ export function DashboardPage() {
 
   return (
     <div className="flex h-full flex-col gap-4 p-4 md:p-5">
+      <DashboardHeader />
       <AssistantLauncher />
 
       {resumen.isLoading ? (
