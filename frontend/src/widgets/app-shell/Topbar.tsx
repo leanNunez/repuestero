@@ -10,7 +10,7 @@ import { Button } from "@/shared/ui/button";
 import { NAV_LABELS } from "./nav";
 
 function titulo(pathname: string): string {
-  if (pathname === "/") return "Panel de control";
+  if (pathname === "/") return "Inicio";
   const match = Object.entries(NAV_LABELS)
     .filter(([to]) => to !== "/" && pathname.startsWith(to))
     .sort((a, b) => b[0].length - a[0].length)[0];
