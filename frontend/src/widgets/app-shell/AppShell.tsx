@@ -1,6 +1,8 @@
 import { Wrench } from "lucide-react";
 import type { ReactNode } from "react";
 
+import { useDrawerStore } from "@/features/ui-shell/drawerStore";
+import { cn } from "@/shared/lib/cn";
 import { AssistantDrawer } from "@/widgets/assistant-drawer/AssistantDrawer";
 
 import { Sidebar } from "./Sidebar";
@@ -22,9 +24,28 @@ function OrgFooter() {
 }
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const navOpen = useDrawerStore((s) => s.navOpen);
+  const closeNav = useDrawerStore((s) => s.closeNav);
+
   return (
     <div className="flex h-dvh bg-muted/30">
-      <aside className="hidden w-60 shrink-0 flex-col bg-sidebar text-sidebar-foreground sm:flex">
+      {/* Backdrop del nav en mobile (en sm+ el sidebar es fijo, no hay overlay). */}
+      <div
+        className={cn(
+          "fixed inset-0 z-30 bg-black/30 transition-opacity sm:hidden",
+          navOpen ? "opacity-100" : "pointer-events-none opacity-0",
+        )}
+        onClick={closeNav}
+        aria-hidden
+      />
+
+      {/* Sidebar: drawer deslizante en mobile, fijo en sm+. */}
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-40 flex w-60 shrink-0 flex-col bg-sidebar text-sidebar-foreground transition-transform duration-200 sm:static sm:translate-x-0",
+          navOpen ? "translate-x-0" : "-translate-x-full",
+        )}
+      >
         <div className="flex items-center gap-2.5 px-4 py-3.5">
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-white/15 text-white">
             <Wrench className="h-4 w-4" />

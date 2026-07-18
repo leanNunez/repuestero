@@ -1,5 +1,5 @@
 import { useRouterState } from "@tanstack/react-router";
-import { Moon, Sun } from "lucide-react";
+import { Menu, Moon, Sun } from "lucide-react";
 
 import { RepuMascot } from "@/features/chat/ui/RepuMascot";
 import { useDrawerStore } from "@/features/ui-shell/drawerStore";
@@ -21,6 +21,7 @@ function titulo(pathname: string): string {
 
 export function Topbar() {
   const toggleAssistant = useDrawerStore((s) => s.toggleAssistant);
+  const toggleNav = useDrawerStore((s) => s.toggleNav);
   // El logout pasa por Supabase; el AuthGate limpia el token del store al detectar el signOut.
   const cerrarSesion = () => void supabase?.auth.signOut();
   const theme = useThemeStore((s) => s.theme);
@@ -29,7 +30,18 @@ export function Topbar() {
 
   return (
     <header className="flex items-center justify-between border-b border-border bg-background px-4 py-2.5">
-      <h1 className="text-sm font-semibold">{titulo(pathname)}</h1>
+      <div className="flex min-w-0 items-center gap-1.5">
+        <Button
+          variant="ghost"
+          size="icon"
+          onClick={toggleNav}
+          aria-label="Abrir menú de navegación"
+          className="h-8 w-8 sm:hidden"
+        >
+          <Menu className="h-4 w-4" />
+        </Button>
+        <h1 className="truncate text-sm font-semibold">{titulo(pathname)}</h1>
+      </div>
       <div className="flex items-center gap-1.5">
         <Button
           variant="ghost"
