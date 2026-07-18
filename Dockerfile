@@ -1,15 +1,16 @@
-# Backend de Repuestero para Render. La imagen trae el modelo fastembed YA baqueado, así el
-# arranque no baja ~120MB en cada cold start del plan free.
+# Backend de Repuestero. Deploy con EMBEDDINGS_BACKEND=remote: los embeddings los genera la HF
+# Inference API, así el modelo (~615MB en RAM) NO se carga en el proceso y la imagen tampoco lo
+# baquea. El backend baja de ~734MB a ~140MB de RSS → entra en hosts de 512MB. Ver docs/deploy.md.
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 
 # uv: compila bytecode y copia (no symlinks) → venv autocontenida en la imagen.
 ENV UV_COMPILE_BYTECODE=1 \
-    UV_LINK_MODE=copy \
-    FASTEMBED_CACHE_PATH=/app/.fastembed_cache
+    UV_LINK_MODE=copy
 
 WORKDIR /app
 
-# onnxruntime (lo usa fastembed) necesita libgomp1; la imagen slim no lo trae.
+# libgomp1: lo necesita onnxruntime SÓLO si se usa el backend local de embeddings. Con el remoto no
+# se carga; se deja instalado para que la misma imagen pueda correr también en modo local.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends libgomp1 \
     && rm -rf /var/lib/apt/lists/*
@@ -22,8 +23,5 @@ RUN uv sync --frozen --no-install-project --no-dev
 COPY . .
 RUN uv sync --frozen --no-dev
 
-# 3) Bakear el modelo de embeddings en la imagen (descarga en build, nunca en runtime).
-RUN uv run python -c "from app.core.embeddings import embed_query; embed_query('warmup')"
-
-# Render inyecta $PORT. Corre las migraciones (idempotente) y levanta el server.
+# El host inyecta $PORT. Corre las migraciones (idempotente) y levanta el server.
 CMD uv run alembic upgrade head && uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
