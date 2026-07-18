@@ -1,10 +1,13 @@
 import { Link } from "@tanstack/react-router";
 
+import { useDrawerStore } from "@/features/ui-shell/drawerStore";
 import { Badge } from "@/shared/ui/badge";
 
 import { NAV_GROUPS } from "./nav";
 
 export function Sidebar() {
+  const closeNav = useDrawerStore((s) => s.closeNav);
+
   return (
     <nav className="flex flex-1 flex-col gap-5 overflow-y-auto px-3 py-3">
       {NAV_GROUPS.map((group) => (
@@ -16,6 +19,7 @@ export function Sidebar() {
             <Link
               key={to}
               to={to}
+              onClick={closeNav}
               activeOptions={{ exact }}
               className="flex items-center gap-3 rounded-md px-3 py-2 text-sm text-white/80 transition-colors hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/60 active:scale-[0.98]"
               activeProps={{ className: "bg-white/20 !text-white font-medium" }}
