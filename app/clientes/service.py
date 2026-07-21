@@ -62,6 +62,10 @@ def crear_cliente(
     return cliente
 
 
+def obtener_cliente(session: Session, org_id: UUID, codigo: str) -> Cliente | None:
+    return session.scalar(select(Cliente).where(Cliente.org_id == org_id, Cliente.codigo == codigo))
+
+
 def listar_clientes(session: Session, org_id: UUID, *, limite: int = 50) -> list[Cliente]:
     return list(
         session.scalars(
