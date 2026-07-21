@@ -26,7 +26,7 @@ export function ArticuloPage() {
     <div className="mx-auto max-w-2xl space-y-4">
       <Link
         to="/catalogo"
-        search={{ q: "" }}
+        search={{ q: "", page: 1, rubro: "", marca: "" }}
         className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />
