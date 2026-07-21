@@ -30,8 +30,8 @@ articulo_proveedores(id, articulo_id -> articulos.id, proveedor_id -> proveedore
 
 clientes(id, codigo, denominacion, cuit, cond_fiscal, limite_cta_cte numeric,
          telefono, email, direccion, activo boolean)
-  -- limite_cta_cte = límite de crédito. La DEUDA de cuenta corriente todavía NO existe en el
-  --   sistema (es una fase futura): si te preguntan por deuda/saldo, aclará que no está disponible.
+  -- limite_cta_cte = límite de crédito. La DEUDA actual del cliente está en la vista
+  --   cliente_saldo (columna saldo), no acá.
 
 vehiculos(id, marca, modelo, anio_desde, anio_hasta, motor, version)
 articulo_aplicaciones(id, articulo_id -> articulos.id, vehiculo_id -> vehiculos.id,
@@ -43,4 +43,26 @@ stock(org_id, articulo_id, deposito_id, cantidad numeric)
   -- VISTA de solo lectura: stock actual por artículo y depósito. Para stock total de un artículo,
   --   sumá cantidad agrupando por articulo_id. Artículos "bajo punto de pedido" = el stock total
   --   es <= articulos.punto_pedido.
+
+comprobantes(id, cliente_id -> clientes.id, deposito_id -> depositos.id, tipo, pto_venta,
+             numero, fecha date, condicion, neto numeric, iva numeric, total numeric)
+  -- cada VENTA. tipo es 'FAC'/'PRE'/etc; condicion es 'contado' o 'cta_cte'; fecha es la fecha de
+  --   emisión; total = neto + iva. "Ventas de hoy" = sumá total where fecha = current_date. Un
+  --   cliente "compró" si tiene comprobantes; su "última compra" = max(fecha) de los suyos; los
+  --   "frecuentes" = los que más comprobantes tienen. "No compraron" = clientes sin comprobantes
+  --   (left join clientes ... where comprobantes.id is null).
+
+comprobante_items(id, comprobante_id -> comprobantes.id, articulo_id -> articulos.id,
+                  cantidad numeric, precio_unitario numeric, alicuota_iva numeric,
+                  importe_iva numeric, total_renglon numeric)
+  -- los renglones de cada comprobante. Para "lo más vendido" sumá cantidad agrupando por
+  --   articulo_id. precio_unitario es neto (sin IVA).
+
+cta_cte_movimientos(id, cliente_id -> clientes.id, fecha date, tipo, debe numeric, haber numeric)
+  -- libro mayor de cuenta corriente: una venta a crédito es un 'debe', una cobranza un 'haber'.
+  --   Para el SALDO de un cliente NO sumes acá a mano: usá la vista cliente_saldo.
+
+cliente_saldo(org_id, cliente_id, saldo numeric)
+  -- VISTA: saldo de cuenta corriente por cliente = suma(debe) - suma(haber). saldo > 0 = el
+  --   cliente debe esa plata. Un cliente sin movimientos no aparece (su saldo es 0).
 """

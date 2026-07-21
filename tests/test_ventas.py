@@ -5,6 +5,8 @@ stock insuficiente, la trazabilidad del movimiento al comprobante, la atomicidad
 el aislamiento por RLS entre orgs.
 """
 
+import random
+from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
@@ -13,6 +15,8 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
+from app.asistente import grafo, llm
+from app.asistente import service as asistente_service
 from app.catalogo.models import Articulo
 from app.clientes import service as clientes
 from app.core.db import ORG_GUC, set_guc
@@ -20,6 +24,7 @@ from app.core.models import Organizacion
 from app.inventario import service as inventario
 from app.ventas import service
 from app.ventas.schemas import RenglonVentaCrear, VentaCrear
+from seeds.generar_ventas_demo import generar_ventas
 from tests.conftest import APP_URL, OWNER_URL
 
 USUARIO = uuid4()
@@ -328,3 +333,103 @@ def test_cta_cte_es_append_only(sesion, org):
             text("delete from cta_cte_movimientos where cliente_id = :c"), {"c": cliente_id}
         )
     sp.rollback()
+
+
+# =========================================================== fecha histórica
+
+
+def test_venta_acepta_fecha_historica(sesion, org):
+    """El seed fecha ventas en el pasado; la fecha va en el INSERT (append-only)."""
+    comp = service.crear_venta(
+        sesion, org.id, datos=_venta(condicion="cta_cte"), fecha=date(2026, 3, 15)
+    )
+    assert comp.fecha == date(2026, 3, 15)
+    fecha_mov = sesion.execute(
+        text("select fecha from cta_cte_movimientos where ref_id = :id"), {"id": comp.id}
+    ).scalar_one()
+    assert fecha_mov == date(2026, 3, 15)
+
+
+# =========================================================== seed demo
+
+
+@pytest.fixture(scope="module")
+def org_seed(migrated_db):
+    """Org con clientes y artículos con stock generoso, para el smoke test del seed."""
+    org_id = uuid4()
+    eng = create_engine(OWNER_URL)
+    with Session(eng) as s:
+        s.add(Organizacion(id=org_id, nombre="Org Seed"))
+        s.flush()
+        dep = inventario.crear_deposito(s, org_id, codigo="CEN", nombre="Central")
+        for i in range(8):
+            clientes.crear_cliente(s, org_id, codigo=f"CS-{i}", denominacion=f"Cliente Seed {i}")
+        for i in range(4):
+            art = Articulo(
+                org_id=org_id, codigo=f"AS-{i}", detalle=f"Repuesto {i}", costo=Decimal("100")
+            )
+            s.add(art)
+            s.flush()
+            inventario.registrar_movimiento(
+                s,
+                org_id,
+                articulo_id=art.id,
+                deposito_id=dep.id,
+                cantidad=Decimal("200"),
+                motivo="inicial",
+            )
+        s.commit()
+    eng.dispose()
+    return SimpleNamespace(id=org_id)
+
+
+@pytest.fixture
+def sesion_seed(org_seed):
+    eng = create_engine(APP_URL)
+    conn = eng.connect()
+    trans = conn.begin()
+    with Session(bind=conn) as s:
+        set_guc(s, ORG_GUC, str(org_seed.id))
+        yield s
+    trans.rollback()
+    conn.close()
+    eng.dispose()
+
+
+def test_seed_genera_ventas_fechadas_en_2026(sesion_seed, org_seed):
+    creadas = generar_ventas(
+        sesion_seed,
+        org_seed.id,
+        cantidad_objetivo=10,
+        rng=random.Random(7),
+        hoy=date(2026, 7, 21),
+    )
+    assert creadas > 0
+
+    cnt = sesion_seed.execute(text("select count(*) from comprobantes")).scalar_one()
+    assert cnt == creadas
+
+    fmin, fmax = sesion_seed.execute(text("select min(fecha), max(fecha) from comprobantes")).one()
+    assert fmin >= date(2026, 1, 1)
+    assert fmax <= date(2026, 7, 21)
+
+
+# =========================================================== integración con Repu (NL2SQL)
+
+
+def test_repu_consulta_ventas_scopeado_por_rls(dos_orgs, monkeypatch):
+    """Con las ventas en el esquema, Repu genera y ejecuta un SELECT sobre comprobantes,
+    y el RLS lo encierra: la org A ve su venta, la B no ve ninguna. LLM stubbeado."""
+
+    def _fake_completar(system: str, user: str, *, proveedor: str = "groq") -> str:
+        if "generador de SQL" in system:
+            return "select count(*) as cantidad from comprobantes"
+        return "Ahí tenés las ventas."
+
+    monkeypatch.setattr(llm, "completar", _fake_completar)
+
+    ejec_a = asistente_service._hacer_ejecutor(dos_orgs.a, uuid4())
+    assert grafo.responder("cuántas ventas hay", ejec_a)["filas"][0]["cantidad"] == 1
+
+    ejec_b = asistente_service._hacer_ejecutor(dos_orgs.b, uuid4())
+    assert grafo.responder("cuántas ventas hay", ejec_b)["filas"][0]["cantidad"] == 0

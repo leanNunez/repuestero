@@ -9,6 +9,7 @@ movimientos de stock, o no entra nada. No abre sesión ni commitea — recibe la
 termina en flush(); el commit lo hace `get_tenant` (app/core/rls.py).
 """
 
+from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
@@ -81,12 +82,17 @@ def crear_venta(
     *,
     datos: VentaCrear,
     usuario_id: UUID | None = None,
+    fecha: date | None = None,
 ) -> Comprobante:
-    """Emite un comprobante de venta, descuenta el stock e imputa (en PR2) la cuenta corriente.
+    """Emite un comprobante de venta, descuenta el stock e imputa a la cuenta corriente.
 
     El orden NO es cosmético: PRIMERO se resuelve y valida todo (cliente, depósito, artículos,
     stock) sin escribir una sola fila. Recién cuando todo cierra se asigna el número y se
     escribe. Así un stock insuficiente en el último renglón no deja un comprobante a medias.
+
+    `fecha` es opcional: en la operación normal se omite y la base la pone en `current_date`.
+    El seed la usa para fechar ventas históricas — va en el INSERT porque el comprobante es
+    append-only y no se puede corregir después.
     """
     cliente = clientes.obtener_cliente(session, org_id, datos.cliente_codigo)
     if cliente is None:
@@ -140,6 +146,8 @@ def crear_venta(
         total=neto + iva,
         creado_por=usuario_id,
     )
+    if fecha is not None:
+        comprobante.fecha = fecha
     session.add(comprobante)
     session.flush()  # ⇐ acá pega el unique si el número ya existe: IntegrityError → 409
 
@@ -170,17 +178,18 @@ def crear_venta(
 
     # Venta a crédito → un Debe en la cuenta corriente. La venta al contado no la toca.
     if datos.condicion == "cta_cte":
-        session.add(
-            CtaCteMovimiento(
-                org_id=org_id,
-                cliente_id=cliente.id,
-                tipo="venta",
-                debe=comprobante.total,
-                ref_tipo="comprobante",
-                ref_id=comprobante.id,
-                creado_por=usuario_id,
-            )
+        movimiento = CtaCteMovimiento(
+            org_id=org_id,
+            cliente_id=cliente.id,
+            tipo="venta",
+            debe=comprobante.total,
+            ref_tipo="comprobante",
+            ref_id=comprobante.id,
+            creado_por=usuario_id,
         )
+        if fecha is not None:
+            movimiento.fecha = fecha
+        session.add(movimiento)
 
     session.flush()
     return comprobante
