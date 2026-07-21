@@ -15,6 +15,7 @@ from app.core.base import Base
 from app.ingesta_visual import models as ingesta_visual_models
 from app.inventario import models as inventario_models
 from app.proveedores import models as proveedores_models
+from app.ventas import models as ventas_models
 
 #: Tablas del dominio que llevan org_id y por lo tanto necesitan políticas de RLS.
 #: `organizaciones` no está: es la raíz del tenant, no tiene org_id propio.
@@ -36,6 +37,9 @@ TABLAS_TENANT: tuple[str, ...] = (
     "vehiculos",
     "articulo_aplicaciones",
     "remitos_procesados",
+    "numeradores",
+    "comprobantes",
+    "comprobante_items",
 )
 
 __all__ = [
@@ -48,4 +52,5 @@ __all__ = [
     "ingesta_visual_models",
     "inventario_models",
     "proveedores_models",
+    "ventas_models",
 ]
