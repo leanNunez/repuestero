@@ -13,6 +13,9 @@ from sqlalchemy.exc import IntegrityError
 from app.core.rls import TenantContext, get_tenant
 from app.ventas import service
 from app.ventas.schemas import (
+    CobranzaCrear,
+    CobranzaResponse,
+    SaldoLeer,
     VentaCrear,
     VentaDetalle,
     VentaItemLeer,
@@ -83,4 +86,43 @@ def obtener_venta(
     return VentaDetalle(
         **VentaLeer.model_validate(comprobante).model_dump(),
         items=[VentaItemLeer.model_validate(i) for i in items],
+    )
+
+
+@router.post("/cobranzas", response_model=CobranzaResponse, status_code=status.HTTP_201_CREATED)
+def registrar_cobranza(
+    body: CobranzaCrear,
+    tenant: TenantContext = Depends(get_tenant),
+) -> CobranzaResponse:
+    try:
+        movimiento = service.registrar_cobranza(
+            tenant.session,
+            tenant.org_id,
+            cliente_codigo=body.cliente_codigo,
+            monto=body.monto,
+            usuario_id=tenant.user_id,
+        )
+    except service.VentaInvalida as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from None
+    except Exception:  # noqa: BLE001 — nunca filtrar internals (skill web-security)
+        logger.exception("Error en POST /ventas/cobranzas")
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, "No pude registrar la cobranza."
+        ) from None
+
+    return CobranzaResponse(
+        movimiento_id=movimiento.id,
+        cliente_id=movimiento.cliente_id,
+        saldo=service.saldo_cliente(tenant.session, tenant.org_id, movimiento.cliente_id),
+    )
+
+
+@router.get("/clientes/{cliente_id}/saldo", response_model=SaldoLeer)
+def saldo_cliente(
+    cliente_id: int,
+    tenant: TenantContext = Depends(get_tenant),
+) -> SaldoLeer:
+    return SaldoLeer(
+        cliente_id=cliente_id,
+        saldo=service.saldo_cliente(tenant.session, tenant.org_id, cliente_id),
     )
