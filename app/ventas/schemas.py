@@ -82,3 +82,25 @@ class VentaResponse(BaseModel):
     total: Decimal
     movimientos: int = 0
     advertencias: list[str] = Field(default_factory=list)
+
+
+# --------------------------------------------------------------------------- cuenta corriente
+
+
+class CobranzaCrear(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    cliente_codigo: str = Field(min_length=1, max_length=20)
+    monto: Decimal = Field(gt=0)
+
+
+class CobranzaResponse(BaseModel):
+    movimiento_id: int
+    cliente_id: int
+    #: Saldo del cliente DESPUÉS de imputar la cobranza (positivo = debe, negativo = a favor).
+    saldo: Decimal
+
+
+class SaldoLeer(BaseModel):
+    cliente_id: int
+    saldo: Decimal

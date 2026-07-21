@@ -40,6 +40,7 @@ TABLAS_TENANT: tuple[str, ...] = (
     "numeradores",
     "comprobantes",
     "comprobante_items",
+    "cta_cte_movimientos",
 )
 
 __all__ = [

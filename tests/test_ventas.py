@@ -253,3 +253,78 @@ def test_venta_no_se_filtra_entre_orgs(dos_orgs):
     """La org A ve su comprobante; la org B no lo ve ni lo cuenta."""
     assert _contar_comprobantes(dos_orgs.a) == 1
     assert _contar_comprobantes(dos_orgs.b) == 0
+
+
+# =========================================================== cuenta corriente
+
+
+def _cliente_id(sesion, codigo="CLI-1") -> int:
+    return sesion.execute(
+        text("select id from clientes where codigo = :c"), {"c": codigo}
+    ).scalar_one()
+
+
+def test_venta_a_credito_genera_debe_y_saldo(sesion, org):
+    """Una venta a cuenta corriente carga un Debe; el saldo del cliente = total del comprobante."""
+    comp = service.crear_venta(sesion, org.id, datos=_venta(condicion="cta_cte"))
+    cliente_id = _cliente_id(sesion)
+
+    mov = sesion.execute(
+        text(
+            "select tipo, debe, haber, ref_tipo, ref_id from cta_cte_movimientos "
+            "where cliente_id = :c"
+        ),
+        {"c": cliente_id},
+    ).one()
+    assert mov.tipo == "venta"
+    assert mov.debe == comp.total
+    assert mov.haber == Decimal("0.00")
+    assert (mov.ref_tipo, mov.ref_id) == ("comprobante", comp.id)
+
+    assert service.saldo_cliente(sesion, org.id, cliente_id) == comp.total
+
+
+def test_venta_contado_no_toca_cta_cte(sesion, org):
+    """La venta al contado no genera movimiento de cuenta corriente."""
+    service.crear_venta(sesion, org.id, datos=_venta(condicion="contado"))
+    cliente_id = _cliente_id(sesion)
+
+    total = sesion.execute(
+        text("select count(*) from cta_cte_movimientos where cliente_id = :c"),
+        {"c": cliente_id},
+    ).scalar_one()
+    assert total == 0
+    assert service.saldo_cliente(sesion, org.id, cliente_id) == Decimal("0")
+
+
+def test_cobranza_baja_el_saldo(sesion, org):
+    """Una cobranza es un Haber: baja el saldo que dejó la venta a crédito."""
+    comp = service.crear_venta(sesion, org.id, datos=_venta(condicion="cta_cte"))
+    cliente_id = _cliente_id(sesion)
+
+    service.registrar_cobranza(sesion, org.id, cliente_codigo="CLI-1", monto=Decimal("42.00"))
+
+    assert service.saldo_cliente(sesion, org.id, cliente_id) == comp.total - Decimal("42.00")
+
+
+def test_cta_cte_es_append_only(sesion, org):
+    """El ledger no se edita ni se borra. Dos barreras: `app_user` tiene UPDATE/DELETE revocado
+    (choca con 'permission denied'), y el trigger es el backstop para quien igual tenga el grant
+    (el owner). La `sesion` corre como app_user, así que verificamos la primera barrera."""
+    service.crear_venta(sesion, org.id, datos=_venta(condicion="cta_cte"))
+    cliente_id = _cliente_id(sesion)
+
+    sp = sesion.begin_nested()
+    with pytest.raises(Exception, match="permission denied|append-only"):
+        sesion.execute(
+            text("update cta_cte_movimientos set debe = 0 where cliente_id = :c"),
+            {"c": cliente_id},
+        )
+    sp.rollback()
+
+    sp = sesion.begin_nested()
+    with pytest.raises(Exception, match="permission denied|append-only"):
+        sesion.execute(
+            text("delete from cta_cte_movimientos where cliente_id = :c"), {"c": cliente_id}
+        )
+    sp.rollback()

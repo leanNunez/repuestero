@@ -18,7 +18,13 @@ from sqlalchemy.orm import Session
 from app.catalogo import service as catalogo
 from app.clientes import service as clientes
 from app.inventario import service as inventario
-from app.ventas.models import Comprobante, ComprobanteItem, Numerador
+from app.ventas.models import (
+    ClienteSaldo,
+    Comprobante,
+    ComprobanteItem,
+    CtaCteMovimiento,
+    Numerador,
+)
 from app.ventas.schemas import VentaCrear
 
 _CENT = Decimal("0.01")
@@ -162,6 +168,20 @@ def crear_venta(
             usuario_id=usuario_id,
         )
 
+    # Venta a crédito → un Debe en la cuenta corriente. La venta al contado no la toca.
+    if datos.condicion == "cta_cte":
+        session.add(
+            CtaCteMovimiento(
+                org_id=org_id,
+                cliente_id=cliente.id,
+                tipo="venta",
+                debe=comprobante.total,
+                ref_tipo="comprobante",
+                ref_id=comprobante.id,
+                creado_por=usuario_id,
+            )
+        )
+
     session.flush()
     return comprobante
 
@@ -203,3 +223,51 @@ def listar_ventas(
         .offset(offset)
     )
     return list(items), total
+
+
+# --------------------------------------------------------------------------- cuenta corriente
+
+
+def saldo_cliente(session: Session, org_id: UUID, cliente_id: int) -> Decimal:
+    """Saldo actual leído de la VISTA `cliente_saldo` (positivo = el cliente debe).
+
+    Un cliente sin movimientos no tiene fila en la vista: su saldo es 0.
+    """
+    saldo = session.scalar(
+        select(ClienteSaldo.saldo).where(
+            ClienteSaldo.org_id == org_id, ClienteSaldo.cliente_id == cliente_id
+        )
+    )
+    return saldo if saldo is not None else Decimal("0")
+
+
+def registrar_cobranza(
+    session: Session,
+    org_id: UUID,
+    *,
+    cliente_codigo: str,
+    monto: Decimal,
+    usuario_id: UUID | None = None,
+) -> CtaCteMovimiento:
+    """Imputa un pago del cliente como un Haber en la cuenta corriente. Baja el saldo.
+
+    No abre sesión ni commitea (termina en flush), igual que el resto. El saldo se recalcula
+    solo desde la vista: no hay columna que actualizar.
+    """
+    if monto <= 0:
+        raise VentaInvalida("El monto de la cobranza debe ser mayor a cero.")
+
+    cliente = clientes.obtener_cliente(session, org_id, cliente_codigo)
+    if cliente is None:
+        raise VentaInvalida(f"No existe el cliente {cliente_codigo!r} en tu organización.")
+
+    movimiento = CtaCteMovimiento(
+        org_id=org_id,
+        cliente_id=cliente.id,
+        tipo="cobranza",
+        haber=monto,
+        creado_por=usuario_id,
+    )
+    session.add(movimiento)
+    session.flush()
+    return movimiento
