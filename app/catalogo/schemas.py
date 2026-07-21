@@ -53,6 +53,13 @@ class ResultadoBusqueda(ArticuloLeer):
     score: float
 
 
+class ArticuloPagina(BaseModel):
+    """Una página del listado + el total del resultado filtrado (para paginar en el front)."""
+
+    items: list[ArticuloLeer]
+    total: int
+
+
 class ListaPrecioCrear(BaseModel):
     codigo: str = Field(max_length=30)
     nombre: str = Field(max_length=80)

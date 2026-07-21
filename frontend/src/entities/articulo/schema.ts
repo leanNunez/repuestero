@@ -18,5 +18,15 @@ export const articuloItemSchema = articuloSchema.extend({ score: z.number().opti
 
 export const articuloListaSchema = z.array(articuloItemSchema);
 
+/** Espeja `ArticuloPagina` del backend: una página + el total del resultado filtrado. */
+export const articuloPaginaSchema = z.object({
+  items: articuloListaSchema,
+  total: z.number(),
+});
+
+/** Opciones de filtro (rubros, marcas): `/catalogo/rubros` y `/catalogo/marcas` → list[str]. */
+export const opcionesSchema = z.array(z.string());
+
 export type Articulo = z.infer<typeof articuloSchema>;
 export type ArticuloItem = z.infer<typeof articuloItemSchema>;
+export type ArticuloPagina = z.infer<typeof articuloPaginaSchema>;

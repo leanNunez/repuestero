@@ -32,9 +32,17 @@ const catalogoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/catalogo",
   component: CatalogoPage,
-  validateSearch: (search: Record<string, unknown>): { q: string } => ({
-    q: typeof search.q === "string" ? search.q : "",
-  }),
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): { q: string; page: number; rubro: string; marca: string } => {
+    const page = Number(search.page);
+    return {
+      q: typeof search.q === "string" ? search.q : "",
+      page: Number.isInteger(page) && page >= 1 ? page : 1,
+      rubro: typeof search.rubro === "string" ? search.rubro : "",
+      marca: typeof search.marca === "string" ? search.marca : "",
+    };
+  },
 });
 
 const articuloRoute = createRoute({

@@ -1,7 +1,7 @@
 from decimal import ROUND_HALF_UP, Decimal
 from uuid import UUID
 
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.catalogo.models import Articulo, ArticuloPrecio, ListaPrecio
@@ -10,25 +10,70 @@ from app.core.embeddings import embed_passages, embed_query
 
 
 def listar_articulos(
-    session: Session, org_id: UUID, *, buscar: str | None = None, limite: int = 50
-) -> list[Articulo]:
-    """Los filtros por org_id son explícitos A PROPÓSITO, aunque RLS ya los garantice.
+    session: Session,
+    org_id: UUID,
+    *,
+    buscar: str | None = None,
+    rubro: str | None = None,
+    marca: str | None = None,
+    limite: int = 50,
+    offset: int = 0,
+) -> tuple[list[Articulo], int]:
+    """Lista paginada + total. Devuelve `(items, total)` para que el front pueda paginar.
 
-    RLS es la RED DE SEGURIDAD, no el filtro primario. Si el día de mañana alguien corre
-    esta query con un rol mal configurado, el `where` explícito la salva igual. Dos
-    barreras independientes: una en el código, otra en el motor.
+    Los filtros por org_id son explícitos A PROPÓSITO, aunque RLS ya los garantice. RLS es la
+    RED DE SEGURIDAD, no el filtro primario. Si el día de mañana alguien corre esta query con
+    un rol mal configurado, el `where` explícito la salva igual. Dos barreras independientes:
+    una en el código, otra en el motor.
+
+    El `total` aplica los MISMOS filtros que la página: es la cuenta real del resultado
+    filtrado, no del catálogo entero. `rubro`/`marca` son exact-match: sus valores salen de
+    los dropdowns que pueblan `listar_rubros`/`listar_marcas`, así que siempre coinciden.
     """
-    stmt = (
-        select(Articulo)
-        .where(Articulo.org_id == org_id, Articulo.activo.is_(True))
-        .order_by(Articulo.codigo)
-    )
-
+    filtros = [Articulo.org_id == org_id, Articulo.activo.is_(True)]
+    if rubro:
+        filtros.append(Articulo.rubro == rubro)
+    if marca:
+        filtros.append(Articulo.marca == marca)
     if buscar:
         patron = f"%{buscar}%"
-        stmt = stmt.where(Articulo.detalle.ilike(patron) | Articulo.codigo.ilike(patron))
+        filtros.append(Articulo.detalle.ilike(patron) | Articulo.codigo.ilike(patron))
 
-    return list(session.scalars(stmt.limit(limite)))
+    # Orden por descripción (lo que el usuario lee), con `codigo` de desempate: `detalle` puede
+    # repetirse y sin un segundo criterio la paginación derivaría (una fila saltando de página).
+    total = session.scalar(select(func.count()).select_from(Articulo).where(*filtros)) or 0
+    items = session.scalars(
+        select(Articulo)
+        .where(*filtros)
+        .order_by(Articulo.detalle, Articulo.codigo)
+        .limit(limite)
+        .offset(offset)
+    )
+    return list(items), total
+
+
+def _valores_distintos(session: Session, org_id: UUID, columna) -> list[str]:
+    """Valores distintos de una columna del catálogo del tenant (para poblar filtros).
+
+    Solo artículos activos, sin NULL, ordenados. Se lee de TODO el catálogo del tenant —no de
+    una página— para que el dropdown ofrezca siempre todas las opciones reales.
+    """
+    return list(
+        session.scalars(
+            select(columna)
+            .where(Articulo.org_id == org_id, Articulo.activo.is_(True), columna.is_not(None))
+            .distinct()
+            .order_by(columna)
+        )
+    )
+
+
+def listar_rubros(session: Session, org_id: UUID) -> list[str]:
+    return _valores_distintos(session, org_id, Articulo.rubro)
+
+
+def listar_marcas(session: Session, org_id: UUID) -> list[str]:
+    return _valores_distintos(session, org_id, Articulo.marca)
 
 
 def obtener_articulo(session: Session, org_id: UUID, codigo: str) -> Articulo | None:
