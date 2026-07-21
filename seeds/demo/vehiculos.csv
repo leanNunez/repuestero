@@ -1,13 +1,57 @@
 marca,modelo,anio_desde,anio_hasta,motor,version
 Volkswagen,Gol Trend,2013,2019,1.6 MSI,Comfortline
+Volkswagen,Gol Power,2009,2013,1.6 Nafta,Base
+Volkswagen,Suran,2010,2019,1.6 Nafta,Highline
 Volkswagen,Amarok,2011,2022,2.0 TDI,Highline
+Volkswagen,Vento,2011,2018,2.5 Nafta,Luxury
+Volkswagen,Polo,2018,2024,1.6 MSI,Comfortline
+Volkswagen,Saveiro,2010,2021,1.6 Nafta,Cabina Doble
+Volkswagen,Fox,2010,2018,1.6 Nafta,Trendline
 Toyota,Hilux,2016,2023,2.8 TDI,SRV
 Toyota,Etios,2013,2021,1.5 Nafta,XLS
+Toyota,Corolla,2014,2019,1.8 Nafta,XEI
+Toyota,Yaris,2018,2024,1.5 Nafta,XS
+Toyota,SW4,2016,2023,2.8 TDI,SRX
 Chevrolet,Corsa Classic,2009,2016,1.4 Nafta,LS
 Chevrolet,Onix,2016,2023,1.4 Nafta,LT
+Chevrolet,Prisma,2013,2019,1.4 Nafta,LT
+Chevrolet,Cruze,2016,2023,1.4 Turbo,LT
+Chevrolet,S10,2012,2022,2.8 TDI,LTZ
+Chevrolet,Agile,2009,2016,1.4 Nafta,LT
+Chevrolet,Spin,2013,2020,1.8 Nafta,LTZ
+Chevrolet,Tracker,2013,2020,1.8 Nafta,LTZ
 Ford,Ka,2015,2021,1.5 Nafta,SE
+Ford,Fiesta,2011,2019,1.6 Nafta,Titanium
+Ford,Focus,2013,2019,2.0 Nafta,SE
 Ford,Ranger,2013,2022,3.2 TDI,XLT
+Ford,EcoSport,2013,2021,1.6 Nafta,SE
+Ford,Territory,2021,2024,1.5 Turbo,Titanium
+Fiat,Palio,2012,2017,1.4 Nafta,Attractive
+Fiat,Siena,2010,2016,1.4 Nafta,EL
 Fiat,Cronos,2018,2024,1.3 Nafta,Drive
-Renault,Kangoo,2010,2018,1.6 Nafta,Confort
-Peugeot,208,2013,2020,1.6 Nafta,Allure
+Fiat,Argo,2018,2024,1.3 Nafta,Drive
+Fiat,Uno,2011,2020,1.4 Nafta,Way
+Fiat,Toro,2016,2023,2.0 TDI,Freedom
+Fiat,Strada,2014,2020,1.4 Nafta,Working
+Fiat,Mobi,2017,2023,1.0 Nafta,Easy
 Renault,Clio,2012,2016,1.2 Nafta,Mío
+Renault,Kangoo,2010,2018,1.6 Nafta,Confort
+Renault,Sandero,2015,2022,1.6 Nafta,Privilege
+Renault,Logan,2014,2021,1.6 Nafta,Privilege
+Renault,Duster,2012,2022,1.6 Nafta,Dynamique
+Renault,Stepway,2016,2023,1.6 Nafta,Dynamique
+Renault,Master,2015,2023,2.3 TDI,L2H2
+Renault,Oroch,2018,2023,1.6 Nafta,Outsider
+Peugeot,206,2009,2013,1.4 Nafta,XR
+Peugeot,207 Compact,2011,2016,1.4 Nafta,Allure
+Peugeot,208,2013,2020,1.6 Nafta,Allure
+Peugeot,308,2013,2020,1.6 Nafta,Allure
+Peugeot,Partner,2012,2020,1.6 HDI,Confort
+Peugeot,2008,2016,2023,1.6 Nafta,Allure
+Citroën,C3,2012,2020,1.6 Nafta,Feel
+Citroën,Berlingo,2012,2020,1.6 HDI,Multispace
+Citroën,C4 Lounge,2014,2020,1.6 Turbo,Feel
+Nissan,Frontier,2016,2023,2.3 TDI,XE
+Nissan,Versa,2015,2022,1.6 Nafta,Sense
+Nissan,March,2014,2021,1.6 Nafta,Sense
+Nissan,Kicks,2017,2023,1.6 Nafta,Sense
