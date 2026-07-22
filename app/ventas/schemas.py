@@ -3,8 +3,9 @@
 `*Crear` = lo que el mostrador manda (input hostil, se valida como cualquier POST).
 `*Leer` = lo que se devuelve. `VentaResponse` es el acuse del alta.
 
-El `precio_unitario` lo pone el operador (es NETO, sin IVA). El sistema no lo saca solo de la
-lista de precios en este slice: se toma tal cual viene y se le calcula el IVA por renglón.
+El `precio_unitario` lo pone el operador (es NETO, sin IVA): la venta lo toma tal cual viene y
+le calcula el IVA por renglón. `GET /ventas/precio-sugerido` propone un precio (el de la lista
+del cliente, o Mostrador) para precargar el renglón, pero es solo sugerencia editable.
 """
 
 from datetime import date
@@ -82,6 +83,14 @@ class VentaResponse(BaseModel):
     total: Decimal
     movimientos: int = 0
     advertencias: list[str] = Field(default_factory=list)
+
+
+class PrecioSugeridoLeer(BaseModel):
+    articulo_codigo: str
+    #: Precio neto sugerido, o None si esa lista no tiene precio fijado (el operador lo tipea).
+    precio: Decimal | None = None
+    #: Código de la lista de la que salió el precio ('MOST', etc.), para mostrar de dónde viene.
+    lista_codigo: str | None = None
 
 
 # --------------------------------------------------------------------------- cuenta corriente

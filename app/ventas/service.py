@@ -29,6 +29,7 @@ from app.ventas.models import (
 from app.ventas.schemas import VentaCrear
 
 _CENT = Decimal("0.01")
+_LISTA_DEFECTO = "MOST"  # lista Mostrador: el precio de mostrador cuando el cliente no tiene lista
 
 
 class VentaInvalida(ValueError):
@@ -193,6 +194,41 @@ def crear_venta(
 
     session.flush()
     return comprobante
+
+
+def precio_sugerido(
+    session: Session,
+    org_id: UUID,
+    *,
+    articulo_codigo: str,
+    cliente_codigo: str | None = None,
+) -> tuple[Decimal, str] | None:
+    """Precio a proponer para un renglón: el de la lista del cliente, o la lista Mostrador.
+
+    Devuelve `(precio, lista_codigo)`, o `None` si el artículo no existe o esa lista no tiene
+    precio fijado para él (el mostrador lo tipea a mano). El precio es sugerencia editable: la
+    venta lo toma del payload, no de acá.
+    """
+    articulo = catalogo.obtener_articulo(session, org_id, articulo_codigo)
+    if articulo is None:
+        return None
+
+    lista = None
+    if cliente_codigo:
+        cliente = clientes.obtener_cliente(session, org_id, cliente_codigo)
+        if cliente is not None and cliente.lista_precio_id is not None:
+            lista = catalogo.obtener_lista_precio_por_id(session, org_id, cliente.lista_precio_id)
+    if lista is None:
+        lista = catalogo.obtener_lista_precio(session, org_id, _LISTA_DEFECTO)
+    if lista is None:
+        return None
+
+    precio = catalogo.precio_de_articulo(
+        session, org_id, articulo_id=articulo.id, lista_id=lista.id
+    )
+    if precio is None:
+        return None
+    return precio.precio, lista.codigo
 
 
 def obtener_venta(session: Session, org_id: UUID, comprobante_id: int) -> Comprobante | None:

@@ -15,6 +15,7 @@ from app.ventas import service
 from app.ventas.schemas import (
     CobranzaCrear,
     CobranzaResponse,
+    PrecioSugeridoLeer,
     SaldoLeer,
     VentaCrear,
     VentaDetalle,
@@ -72,6 +73,28 @@ def listar_ventas(
         tenant.session, tenant.org_id, limite=limite, offset=offset
     )
     return VentaPagina(items=[VentaLeer.model_validate(v) for v in ventas], total=total)
+
+
+@router.get("/precio-sugerido", response_model=PrecioSugeridoLeer)
+def precio_sugerido(
+    articulo_codigo: str = Query(min_length=1, max_length=40),
+    cliente_codigo: str | None = Query(default=None, max_length=20),
+    tenant: TenantContext = Depends(get_tenant),
+) -> PrecioSugeridoLeer:
+    """Precio a precargar en un renglón: el de la lista del cliente, o Mostrador. Sugerencia
+    editable — la venta usa el precio del payload, no este."""
+    sugerido = service.precio_sugerido(
+        tenant.session,
+        tenant.org_id,
+        articulo_codigo=articulo_codigo,
+        cliente_codigo=cliente_codigo,
+    )
+    if sugerido is None:
+        return PrecioSugeridoLeer(articulo_codigo=articulo_codigo)
+    precio, lista_codigo = sugerido
+    return PrecioSugeridoLeer(
+        articulo_codigo=articulo_codigo, precio=precio, lista_codigo=lista_codigo
+    )
 
 
 @router.get("/{venta_id}", response_model=VentaDetalle)
