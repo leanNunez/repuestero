@@ -122,6 +122,14 @@ def obtener_lista_precio(session: Session, org_id: UUID, codigo: str) -> ListaPr
     )
 
 
+def obtener_lista_precio_por_id(
+    session: Session, org_id: UUID, lista_id: int
+) -> ListaPrecio | None:
+    return session.scalar(
+        select(ListaPrecio).where(ListaPrecio.org_id == org_id, ListaPrecio.id == lista_id)
+    )
+
+
 def fijar_precio(
     session: Session,
     org_id: UUID,
@@ -160,6 +168,22 @@ def listar_precios_de_articulo(
         .order_by(ListaPrecio.codigo)
     ).all()
     return [(precio, lista) for precio, lista in filas]
+
+
+def precio_de_articulo(
+    session: Session, org_id: UUID, *, articulo_id: int, lista_id: int
+) -> ArticuloPrecio | None:
+    """El precio de un (articulo, lista) puntual, o None si esa lista no tiene precio fijado.
+
+    Read-only. Lo usa la venta para sugerir el precio del renglón según la lista del cliente.
+    """
+    return session.scalar(
+        select(ArticuloPrecio).where(
+            ArticuloPrecio.org_id == org_id,
+            ArticuloPrecio.articulo_id == articulo_id,
+            ArticuloPrecio.lista_id == lista_id,
+        )
+    )
 
 
 def upsert_precio(

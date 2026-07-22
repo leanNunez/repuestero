@@ -17,7 +17,9 @@ from sqlalchemy.orm import Session
 
 from app.asistente import grafo, llm
 from app.asistente import service as asistente_service
+from app.catalogo import service as catalogo
 from app.catalogo.models import Articulo
+from app.catalogo.schemas import ListaPrecioCrear
 from app.clientes import service as clientes
 from app.core.db import ORG_GUC, set_guc
 from app.core.models import Organizacion
@@ -112,6 +114,57 @@ def test_venta_calcula_iva_y_descuenta_stock(sesion, org):
     assert comp.iva == Decimal("42.00")  # 21% de 200
     assert comp.total == Decimal("242.00")
     assert _stock(sesion, "BUJIA-1") == Decimal("8.00")  # 10 - 2
+
+
+# =========================================================== precio sugerido (precarga del renglón)
+
+
+def _fijar_precio(sesion, org, *, lista_codigo, lista_nombre, precio, codigo_art="BUJIA-1"):
+    lista = catalogo.obtener_lista_precio(
+        sesion, org.id, lista_codigo
+    ) or catalogo.crear_lista_precio(
+        sesion, org.id, ListaPrecioCrear(codigo=lista_codigo, nombre=lista_nombre)
+    )
+    art = catalogo.obtener_articulo(sesion, org.id, codigo_art)
+    catalogo.upsert_precio(
+        sesion, org.id, articulo_id=art.id, lista_id=lista.id, precio=Decimal(precio)
+    )
+    sesion.flush()
+    return lista
+
+
+def test_precio_sugerido_toma_la_lista_mostrador(sesion, org):
+    _fijar_precio(sesion, org, lista_codigo="MOST", lista_nombre="Mostrador", precio="150.00")
+
+    precio, lista_codigo = service.precio_sugerido(sesion, org.id, articulo_codigo="BUJIA-1")
+
+    assert precio == Decimal("150.00")
+    assert lista_codigo == "MOST"
+
+
+def test_precio_sugerido_prefiere_la_lista_del_cliente(sesion, org):
+    mayorista = _fijar_precio(
+        sesion, org, lista_codigo="MAY", lista_nombre="Mayorista", precio="120.00"
+    )
+    _fijar_precio(sesion, org, lista_codigo="MOST", lista_nombre="Mostrador", precio="150.00")
+    cliente = clientes.obtener_cliente(sesion, org.id, "CLI-1")
+    cliente.lista_precio_id = mayorista.id
+    sesion.flush()
+
+    precio, lista_codigo = service.precio_sugerido(
+        sesion, org.id, articulo_codigo="BUJIA-1", cliente_codigo="CLI-1"
+    )
+
+    assert precio == Decimal("120.00")  # la del cliente, NO la Mostrador
+    assert lista_codigo == "MAY"
+
+
+def test_precio_sugerido_none_si_la_lista_no_tiene_precio(sesion, org):
+    assert service.precio_sugerido(sesion, org.id, articulo_codigo="BUJIA-1") is None
+
+
+def test_precio_sugerido_none_si_no_existe_el_articulo(sesion, org):
+    assert service.precio_sugerido(sesion, org.id, articulo_codigo="NO-EXISTE") is None
 
 
 def test_movimiento_apunta_al_comprobante(sesion, org):
