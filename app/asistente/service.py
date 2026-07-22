@@ -60,7 +60,7 @@ def consultar_stream(tenant: TenantContext, mensaje: str) -> Iterator[ServerSent
         return
 
     yield _evento("progreso", fase="redactando")
-    for token in grafo.narrar_stream(mensaje, datos["filas"], datos["proveedor"]):
+    for token in grafo.narrar_stream(mensaje, datos["filas"], datos["proveedor"], sql=datos["sql"]):
         yield _evento("token", texto=token)
 
     yield _evento("resultado", sql=datos["sql"], filas=datos["filas"])
