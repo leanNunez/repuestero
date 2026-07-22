@@ -40,7 +40,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Operaciones",
     items: [
       { to: "/ingesta-visual", label: "Cargar remito", icon: Camera, fase: 1 },
-      { to: "/ventas", label: "Ventas", icon: ShoppingCart, fase: 2 },
+      { to: "/ventas", label: "Ventas", icon: ShoppingCart, fase: 1 },
       { to: "/facturacion", label: "Facturación", icon: FileText, fase: 2 },
       { to: "/caja", label: "Caja", icon: Banknote, fase: 2 },
       { to: "/cuenta-corriente", label: "Cuenta corriente", icon: Wallet, fase: 2 },

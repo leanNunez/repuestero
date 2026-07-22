@@ -12,6 +12,7 @@ import { CompatibilidadPage } from "@/pages/compatibilidad/CompatibilidadPage";
 import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { IngestaVisualPage } from "@/pages/ingesta-visual/IngestaVisualPage";
 import { ProximamentePage } from "@/pages/proximamente/ProximamentePage";
+import { VentasPage } from "@/pages/ventas/VentasPage";
 import { AppShell } from "@/widgets/app-shell/AppShell";
 
 const rootRoute = createRootRoute({
@@ -69,16 +70,15 @@ const ingestaVisualRoute = createRoute({
   component: IngestaVisualPage,
 });
 
-// Módulos de Fase 2: navegables, pero todos caen en la pantalla "próximamente".
-// `/productos/nuevo` salió de acá: cargar un remito por foto ES el alta de productos y
-// ya funciona de verdad contra el backend.
-const FASE2_PATHS = [
-  "/ventas",
-  "/facturacion",
-  "/caja",
-  "/cuenta-corriente",
-  "/compras",
-] as const;
+const ventasRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/ventas",
+  component: VentasPage,
+});
+
+// Módulos de Fase 2 todavía sin backend: navegables, pero caen en la pantalla "próximamente".
+// `/ventas` salió de acá: el mostrador ya emite comprobantes de verdad contra el backend.
+const FASE2_PATHS = ["/facturacion", "/caja", "/cuenta-corriente", "/compras"] as const;
 
 const fase2Routes = FASE2_PATHS.map((path) =>
   createRoute({ getParentRoute: () => rootRoute, path, component: ProximamentePage }),
@@ -91,6 +91,7 @@ const routeTree = rootRoute.addChildren([
   compatibilidadRoute,
   clientesRoute,
   ingestaVisualRoute,
+  ventasRoute,
   ...fase2Routes,
 ]);
 
