@@ -15,7 +15,14 @@ from app.ventas import service
 from app.ventas.schemas import (
     CobranzaCrear,
     CobranzaResponse,
+    NotaCreditoCrear,
+    NotaCreditoDetalle,
+    NotaCreditoItemLeer,
+    NotaCreditoLeer,
+    NotaCreditoPagina,
+    NotaCreditoResponse,
     PrecioSugeridoLeer,
+    RenglonAcreditableLeer,
     SaldoLeer,
     VentaCrear,
     VentaDetalle,
@@ -97,6 +104,74 @@ def precio_sugerido(
     )
 
 
+# --- Notas de crédito. Las rutas literales van ANTES de `/{venta_id}`: si no, el conversor int
+# --- de venta_id rechaza "notas-credito" con un 422 en vez de dejar pasar a estas.
+
+
+@router.post(
+    "/notas-credito", response_model=NotaCreditoResponse, status_code=status.HTTP_201_CREATED
+)
+def crear_nota_credito(
+    body: NotaCreditoCrear,
+    tenant: TenantContext = Depends(get_tenant),
+) -> NotaCreditoResponse:
+    try:
+        nota = service.crear_nota_credito(
+            tenant.session, tenant.org_id, datos=body, usuario_id=tenant.user_id
+        )
+    except service.NotaCreditoInvalida as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from None
+    except IntegrityError as exc:
+        # Choque de numeración concurrente: el unique de la NC es el árbitro, no un `if`.
+        logger.info("NC duplicada/colisión de numeración (org=%s): %s", tenant.org_id, exc)
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "No se pudo asignar el número. Reintentá."
+        ) from None
+    except Exception:  # noqa: BLE001 — nunca filtrar internals (skill web-security)
+        logger.exception("Error en POST /ventas/notas-credito")
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, "No pude registrar la nota de crédito."
+        ) from None
+
+    items = service.items_de_nota_credito(tenant.session, tenant.org_id, nota.id)
+    return NotaCreditoResponse(
+        nota_credito_id=nota.id,
+        ref_comprobante_id=nota.ref_comprobante_id,
+        tipo=nota.tipo,
+        pto_venta=nota.pto_venta,
+        numero=nota.numero,
+        total=nota.total,
+        movimientos=len(items),
+    )
+
+
+@router.get("/notas-credito", response_model=NotaCreditoPagina)
+def listar_notas_credito(
+    limite: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    tenant: TenantContext = Depends(get_tenant),
+) -> NotaCreditoPagina:
+    notas, total = service.listar_notas_credito(
+        tenant.session, tenant.org_id, limite=limite, offset=offset
+    )
+    return NotaCreditoPagina(items=[NotaCreditoLeer.model_validate(n) for n in notas], total=total)
+
+
+@router.get("/notas-credito/{nc_id}", response_model=NotaCreditoDetalle)
+def obtener_nota_credito(
+    nc_id: int,
+    tenant: TenantContext = Depends(get_tenant),
+) -> NotaCreditoDetalle:
+    nota = service.obtener_nota_credito(tenant.session, tenant.org_id, nc_id)
+    if nota is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No existe esa nota de crédito.")
+    items = service.items_de_nota_credito(tenant.session, tenant.org_id, nc_id)
+    return NotaCreditoDetalle(
+        **NotaCreditoLeer.model_validate(nota).model_dump(),
+        items=[NotaCreditoItemLeer.model_validate(i) for i in items],
+    )
+
+
 @router.get("/{venta_id}", response_model=VentaDetalle)
 def obtener_venta(
     venta_id: int,
@@ -110,6 +185,19 @@ def obtener_venta(
         **VentaLeer.model_validate(comprobante).model_dump(),
         items=[VentaItemLeer.model_validate(i) for i in items],
     )
+
+
+@router.get("/{venta_id}/acreditable", response_model=list[RenglonAcreditableLeer])
+def renglones_acreditables(
+    venta_id: int,
+    tenant: TenantContext = Depends(get_tenant),
+) -> list[RenglonAcreditableLeer]:
+    """Lo que resta acreditar de cada renglón de una venta — la UI lo usa para fijar los máximos
+    del flujo de NC. Una venta inexistente devuelve lista vacía (no hay nada para acreditar)."""
+    if service.obtener_venta(tenant.session, tenant.org_id, venta_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No existe esa venta.")
+    renglones = service.renglones_acreditables(tenant.session, tenant.org_id, venta_id)
+    return [RenglonAcreditableLeer(**r._asdict()) for r in renglones]
 
 
 @router.post("/cobranzas", response_model=CobranzaResponse, status_code=status.HTTP_201_CREATED)

@@ -119,7 +119,8 @@ class CtaCteMovimiento(Base, OrgMixin):
         ForeignKey("clientes.id", ondelete="RESTRICT"), index=True
     )
     fecha: Mapped[date] = mapped_column(Date, server_default=func.current_date())
-    tipo: Mapped[str] = mapped_column(String(10))  # 'venta' | 'cobranza' | 'ajuste'
+    #: 'venta' | 'cobranza' | 'ajuste' | 'nota_credito'
+    tipo: Mapped[str] = mapped_column(String(20))
     debe: Mapped[Money2] = mapped_column(default=Decimal("0"))
     haber: Mapped[Money2] = mapped_column(default=Decimal("0"))
     ref_tipo: Mapped[str | None] = mapped_column(String(30))
@@ -144,3 +145,69 @@ class ClienteSaldo(Base):
     org_id: Mapped[UUID] = mapped_column(primary_key=True)
     cliente_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     saldo: Mapped[Money2]
+
+
+class NotaCredito(Base, OrgMixin, TimestampMixin):
+    """Cabecera de una nota de crédito. APPEND-ONLY, como el comprobante que corrige.
+
+    Es la forma correcta —y única— de revertir una venta ya emitida: el comprobante no se edita
+    ni se borra, se le emite una NC que devuelve el stock y (si era a crédito) baja la deuda.
+    `ref_comprobante_id` apunta a la venta original; `condicion` la espeja para saber si toca la
+    cuenta corriente. Los totales son un snapshot congelado, igual que en `Comprobante`.
+
+    Tiene su propia numeración correlativa (`tipo='NC'`), asignada con el mismo `Numerador` que
+    las ventas. La suma de NCs de una venta nunca puede exceder lo vendido (lo valida el service).
+    """
+
+    __tablename__ = "notas_credito"
+    __table_args__ = (
+        UniqueConstraint(
+            "org_id", "tipo", "pto_venta", "numero", name="uq_notas_credito_org_tipo_pv_num"
+        ),
+    )
+
+    id: Mapped[BigIntPk]
+    ref_comprobante_id: Mapped[int] = mapped_column(
+        ForeignKey("comprobantes.id", ondelete="RESTRICT"), index=True
+    )
+    cliente_id: Mapped[int] = mapped_column(
+        ForeignKey("clientes.id", ondelete="RESTRICT"), index=True
+    )
+    deposito_id: Mapped[int] = mapped_column(
+        ForeignKey("depositos.id", ondelete="RESTRICT"), index=True
+    )
+    tipo: Mapped[str] = mapped_column(String(10))  # 'NC'
+    pto_venta: Mapped[int] = mapped_column(Integer)
+    numero: Mapped[int] = mapped_column(BigInteger)
+    fecha: Mapped[date] = mapped_column(Date, server_default=func.current_date())
+    condicion: Mapped[str] = mapped_column(String(10))  # espejo del original: 'contado' | 'cta_cte'
+
+    neto: Mapped[Money2]
+    iva: Mapped[Money2]
+    total: Mapped[Money2]
+
+    creado_por: Mapped[UUID | None]
+
+
+class NotaCreditoItem(Base, OrgMixin, TimestampMixin):
+    """Un renglón de nota de crédito. APPEND-ONLY.
+
+    El `precio_unitario` y la `alicuota_iva` se COPIAN del renglón original de la venta: no se
+    puede acreditar a un precio distinto al que se cobró. `cantidad` es lo que se acredita de ese
+    artículo (total o parcial).
+    """
+
+    __tablename__ = "nota_credito_items"
+
+    id: Mapped[BigIntPk]
+    nota_credito_id: Mapped[int] = mapped_column(
+        ForeignKey("notas_credito.id", ondelete="CASCADE"), index=True
+    )
+    articulo_id: Mapped[int] = mapped_column(
+        ForeignKey("articulos.id", ondelete="RESTRICT"), index=True
+    )
+    cantidad: Mapped[Cantidad]
+    precio_unitario: Mapped[Money2]  # copiado del renglón original, neto sin IVA
+    alicuota_iva: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("21.00"))
+    importe_iva: Mapped[Money2]
+    total_renglon: Mapped[Money2]
