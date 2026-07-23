@@ -11,6 +11,7 @@ termina en flush(); el commit lo hace `get_tenant` (app/core/rls.py).
 
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
+from typing import NamedTuple
 from uuid import UUID
 
 from sqlalchemy import func, select
@@ -24,9 +25,11 @@ from app.ventas.models import (
     Comprobante,
     ComprobanteItem,
     CtaCteMovimiento,
+    NotaCredito,
+    NotaCreditoItem,
     Numerador,
 )
-from app.ventas.schemas import VentaCrear
+from app.ventas.schemas import NotaCreditoCrear, VentaCrear
 
 _CENT = Decimal("0.01")
 _LISTA_DEFECTO = "MOST"  # lista Mostrador: el precio de mostrador cuando el cliente no tiene lista
@@ -35,6 +38,11 @@ _LISTA_DEFECTO = "MOST"  # lista Mostrador: el precio de mostrador cuando el cli
 class VentaInvalida(ValueError):
     """Algo del payload no existe o no cierra (cliente/depósito/artículo inexistente, stock
     insuficiente). El router lo traduce a un 422."""
+
+
+class NotaCreditoInvalida(ValueError):
+    """La NC no cierra: la venta no existe, el artículo no está en ella, se acredita más de lo
+    vendido, o ya está totalmente acreditada. El router lo traduce a un 422."""
 
 
 def asignar_numero(session: Session, org_id: UUID, *, tipo: str, pto_venta: int) -> int:
@@ -316,3 +324,269 @@ def registrar_cobranza(
     session.add(movimiento)
     session.flush()
     return movimiento
+
+
+# --------------------------------------------------------------------------- notas de crédito
+
+
+class _RenglonVendido(NamedTuple):
+    """Lo vendido de un artículo en una venta, agregado. Precio e IVA congelados del original."""
+
+    articulo_id: int
+    precio_unitario: Decimal
+    alicuota_iva: Decimal
+    cantidad_vendida: Decimal
+
+
+class RenglonAcreditable(NamedTuple):
+    """Lo que resta acreditar de un renglón de una venta (para precargar el flujo de NC)."""
+
+    articulo_id: int
+    articulo_codigo: str
+    descripcion: str
+    precio_unitario: Decimal
+    alicuota_iva: Decimal
+    cantidad_vendida: Decimal
+    cantidad_acreditable: Decimal
+
+
+def _acreditado_por_articulo(
+    session: Session, org_id: UUID, comprobante_id: int
+) -> dict[int, Decimal]:
+    """Cuánto ya se acreditó por artículo, sumando todas las NCs previas de ese comprobante."""
+    filas = session.execute(
+        select(NotaCreditoItem.articulo_id, func.sum(NotaCreditoItem.cantidad))
+        .join(NotaCredito, NotaCredito.id == NotaCreditoItem.nota_credito_id)
+        .where(
+            NotaCredito.org_id == org_id,
+            NotaCredito.ref_comprobante_id == comprobante_id,
+        )
+        .group_by(NotaCreditoItem.articulo_id)
+    )
+    return {articulo_id: cantidad for articulo_id, cantidad in filas}
+
+
+def _vendido_por_articulo(
+    session: Session, org_id: UUID, comprobante_id: int
+) -> dict[int, _RenglonVendido]:
+    """Lo vendido por artículo en una venta, agregado. Si un artículo aparece en varios renglones
+    se suman las cantidades y se toma el precio/IVA del primero (el mostrador arma un renglón por
+    artículo; el caso repetido es defensivo)."""
+    vendido: dict[int, _RenglonVendido] = {}
+    for item in items_de_venta(session, org_id, comprobante_id):
+        actual = vendido.get(item.articulo_id)
+        if actual is None:
+            vendido[item.articulo_id] = _RenglonVendido(
+                articulo_id=item.articulo_id,
+                precio_unitario=item.precio_unitario,
+                alicuota_iva=item.alicuota_iva,
+                cantidad_vendida=item.cantidad,
+            )
+        else:
+            vendido[item.articulo_id] = actual._replace(
+                cantidad_vendida=actual.cantidad_vendida + item.cantidad
+            )
+    return vendido
+
+
+def renglones_acreditables(
+    session: Session, org_id: UUID, comprobante_id: int
+) -> list[RenglonAcreditable]:
+    """Por cada artículo de la venta, cuánto resta acreditar (vendido menos NCs previas).
+
+    Es lo que la UI carga al abrir el flujo de NC: fija los máximos de cada renglón. Un artículo
+    ya totalmente acreditado aparece con `cantidad_acreditable = 0`.
+    """
+    vendido = _vendido_por_articulo(session, org_id, comprobante_id)
+    ya = _acreditado_por_articulo(session, org_id, comprobante_id)
+
+    renglones: list[RenglonAcreditable] = []
+    for articulo_id, v in vendido.items():
+        articulo = catalogo.obtener_articulo_por_id(session, org_id, articulo_id)
+        if articulo is None:  # el artículo fue borrado: no debería pasar (FK RESTRICT), defensivo
+            continue
+        restante = v.cantidad_vendida - ya.get(articulo_id, Decimal("0"))
+        renglones.append(
+            RenglonAcreditable(
+                articulo_id=articulo_id,
+                articulo_codigo=articulo.codigo,
+                descripcion=articulo.detalle,
+                precio_unitario=v.precio_unitario,
+                alicuota_iva=v.alicuota_iva,
+                cantidad_vendida=v.cantidad_vendida,
+                cantidad_acreditable=restante,
+            )
+        )
+    return renglones
+
+
+def crear_nota_credito(
+    session: Session,
+    org_id: UUID,
+    *,
+    datos: NotaCreditoCrear,
+    usuario_id: UUID | None = None,
+    fecha: date | None = None,
+) -> NotaCredito:
+    """Emite una NC que revierte (total o parcialmente) una venta: devuelve stock y, si la venta
+    era a crédito, baja la deuda con un Haber.
+
+    Igual que la venta, valida TODO antes de escribir: la venta existe, los artículos están en
+    ella, y no se acredita más de lo que resta. El precio y el IVA se copian del renglón original
+    (no se puede acreditar a otro precio). Numeración propia `tipo='NC'`. No commitea (flush).
+    """
+    original = obtener_venta(session, org_id, datos.comprobante_id)
+    if original is None:
+        raise NotaCreditoInvalida(f"No existe la venta {datos.comprobante_id} en tu organización.")
+
+    vendido = _vendido_por_articulo(session, org_id, original.id)
+    ya = _acreditado_por_articulo(session, org_id, original.id)
+
+    def _restante(articulo_id: int) -> Decimal:
+        return vendido[articulo_id].cantidad_vendida - ya.get(articulo_id, Decimal("0"))
+
+    # (articulo_id, cantidad_a_acreditar) ya validados.
+    a_acreditar: list[tuple[int, Decimal]] = []
+    if not datos.renglones:
+        # Total: todo lo que reste de cada renglón.
+        for articulo_id in vendido:
+            restante = _restante(articulo_id)
+            if restante > 0:
+                a_acreditar.append((articulo_id, restante))
+    else:
+        # Parcial: subconjunto validado renglón por renglón.
+        for renglon in datos.renglones:
+            articulo = catalogo.obtener_articulo(session, org_id, renglon.articulo_codigo)
+            if articulo is None:
+                raise NotaCreditoInvalida(
+                    f"No existe el artículo {renglon.articulo_codigo!r} en tu organización."
+                )
+            if articulo.id not in vendido:
+                raise NotaCreditoInvalida(
+                    f"El artículo {articulo.codigo} no está en la venta {original.id}."
+                )
+            restante = _restante(articulo.id)
+            if renglon.cantidad > restante:
+                raise NotaCreditoInvalida(
+                    f"No podés acreditar {renglon.cantidad} de {articulo.codigo}: "
+                    f"restan {restante} (vendido {vendido[articulo.id].cantidad_vendida})."
+                )
+            a_acreditar.append((articulo.id, renglon.cantidad))
+
+    if not a_acreditar:
+        raise NotaCreditoInvalida(f"La venta {original.id} ya está totalmente acreditada.")
+
+    # Congelar precio/IVA del original y calcular importes (mismo redondeo que la venta).
+    resueltos: list[tuple[int, Decimal, Decimal, Decimal, Decimal]] = []
+    for articulo_id, cantidad in a_acreditar:
+        v = vendido[articulo_id]
+        base = (cantidad * v.precio_unitario).quantize(_CENT, ROUND_HALF_UP)
+        importe_iva = (base * v.alicuota_iva / Decimal(100)).quantize(_CENT, ROUND_HALF_UP)
+        resueltos.append((articulo_id, cantidad, v.precio_unitario, base, importe_iva))
+
+    neto = sum((base for _a, _c, _p, base, _iv in resueltos), Decimal("0"))
+    iva = sum((importe_iva for _a, _c, _p, _b, importe_iva in resueltos), Decimal("0"))
+
+    numero = asignar_numero(session, org_id, tipo="NC", pto_venta=original.pto_venta)
+
+    nota = NotaCredito(
+        org_id=org_id,
+        ref_comprobante_id=original.id,
+        cliente_id=original.cliente_id,
+        deposito_id=original.deposito_id,
+        tipo="NC",
+        pto_venta=original.pto_venta,
+        numero=numero,
+        condicion=original.condicion,
+        neto=neto,
+        iva=iva,
+        total=neto + iva,
+        creado_por=usuario_id,
+    )
+    if fecha is not None:
+        nota.fecha = fecha
+    session.add(nota)
+    session.flush()  # ⇐ acá pega el unique si el número ya existe: IntegrityError → 409
+
+    for articulo_id, cantidad, precio_unitario, base, importe_iva in resueltos:
+        session.add(
+            NotaCreditoItem(
+                org_id=org_id,
+                nota_credito_id=nota.id,
+                articulo_id=articulo_id,
+                cantidad=cantidad,
+                precio_unitario=precio_unitario,
+                alicuota_iva=vendido[articulo_id].alicuota_iva,
+                importe_iva=importe_iva,
+                total_renglon=base + importe_iva,
+            )
+        )
+        inventario.registrar_movimiento(
+            session,
+            org_id,
+            articulo_id=articulo_id,
+            deposito_id=original.deposito_id,
+            cantidad=cantidad,  # positivo: vuelve al stock
+            motivo="devolucion",
+            ref_tipo="nota_credito",
+            ref_id=nota.id,
+            usuario_id=usuario_id,
+        )
+
+    # NC de una venta a crédito → un Haber que baja la deuda. La de contado no toca la cta cte
+    # (el reintegro es plata de caja, fase futura).
+    if original.condicion == "cta_cte":
+        movimiento = CtaCteMovimiento(
+            org_id=org_id,
+            cliente_id=original.cliente_id,
+            tipo="nota_credito",
+            haber=nota.total,
+            ref_tipo="nota_credito",
+            ref_id=nota.id,
+            creado_por=usuario_id,
+        )
+        if fecha is not None:
+            movimiento.fecha = fecha
+        session.add(movimiento)
+
+    session.flush()
+    return nota
+
+
+def obtener_nota_credito(session: Session, org_id: UUID, nota_id: int) -> NotaCredito | None:
+    return session.scalar(
+        select(NotaCredito).where(NotaCredito.org_id == org_id, NotaCredito.id == nota_id)
+    )
+
+
+def items_de_nota_credito(session: Session, org_id: UUID, nota_id: int) -> list[NotaCreditoItem]:
+    return list(
+        session.scalars(
+            select(NotaCreditoItem)
+            .where(
+                NotaCreditoItem.org_id == org_id,
+                NotaCreditoItem.nota_credito_id == nota_id,
+            )
+            .order_by(NotaCreditoItem.id)
+        )
+    )
+
+
+def listar_notas_credito(
+    session: Session, org_id: UUID, *, limite: int = 50, offset: int = 0
+) -> tuple[list[NotaCredito], int]:
+    """Lista paginada + total, más reciente primero. Filtro por org_id explícito además del RLS."""
+    total = (
+        session.scalar(
+            select(func.count()).select_from(NotaCredito).where(NotaCredito.org_id == org_id)
+        )
+        or 0
+    )
+    items = session.scalars(
+        select(NotaCredito)
+        .where(NotaCredito.org_id == org_id)
+        .order_by(NotaCredito.fecha.desc(), NotaCredito.id.desc())
+        .limit(limite)
+        .offset(offset)
+    )
+    return list(items), total

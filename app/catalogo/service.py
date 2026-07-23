@@ -82,6 +82,12 @@ def obtener_articulo(session: Session, org_id: UUID, codigo: str) -> Articulo | 
     )
 
 
+def obtener_articulo_por_id(session: Session, org_id: UUID, articulo_id: int) -> Articulo | None:
+    return session.scalar(
+        select(Articulo).where(Articulo.org_id == org_id, Articulo.id == articulo_id)
+    )
+
+
 def crear_articulo(session: Session, org_id: UUID, datos: ArticuloCrear) -> Articulo:
     articulo = Articulo(org_id=org_id, **datos.model_dump())
     session.add(articulo)

@@ -113,3 +113,83 @@ class CobranzaResponse(BaseModel):
 class SaldoLeer(BaseModel):
     cliente_id: int
     saldo: Decimal
+
+
+# --------------------------------------------------------------------------- notas de crédito
+
+
+class RenglonNotaCreditoCrear(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    articulo_codigo: str = Field(min_length=1, max_length=40)
+    #: Cuánto se acredita de este artículo. El precio y el IVA NO se mandan: se copian del
+    #: renglón original de la venta (no se puede acreditar a un precio distinto al que se cobró).
+    cantidad: Decimal = Field(gt=0)
+
+
+class NotaCreditoCrear(BaseModel):
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    #: Id del comprobante de venta que se corrige.
+    comprobante_id: int = Field(gt=0)
+    #: Renglones a acreditar (parcial). Si viene None/vacío = anulación TOTAL: se acredita todo
+    #: lo que reste de cada renglón de la venta.
+    renglones: list[RenglonNotaCreditoCrear] | None = Field(default=None, max_length=_MAX_RENGLONES)
+
+
+class NotaCreditoItemLeer(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    articulo_id: int
+    cantidad: Decimal
+    precio_unitario: Decimal
+    alicuota_iva: Decimal
+    importe_iva: Decimal
+    total_renglon: Decimal
+
+
+class NotaCreditoLeer(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    ref_comprobante_id: int
+    cliente_id: int
+    tipo: str
+    pto_venta: int
+    numero: int
+    fecha: date
+    condicion: str
+    neto: Decimal
+    iva: Decimal
+    total: Decimal
+
+
+class NotaCreditoDetalle(NotaCreditoLeer):
+    items: list[NotaCreditoItemLeer] = Field(default_factory=list)
+
+
+class NotaCreditoPagina(BaseModel):
+    items: list[NotaCreditoLeer]
+    total: int
+
+
+class NotaCreditoResponse(BaseModel):
+    nota_credito_id: int
+    ref_comprobante_id: int
+    tipo: str
+    pto_venta: int
+    numero: int
+    total: Decimal
+    movimientos: int = 0
+
+
+class RenglonAcreditableLeer(BaseModel):
+    """Lo que resta acreditar de un renglón de una venta, para precargar el flujo de NC."""
+
+    articulo_id: int
+    articulo_codigo: str
+    descripcion: str
+    precio_unitario: Decimal
+    alicuota_iva: Decimal
+    cantidad_vendida: Decimal
+    cantidad_acreditable: Decimal

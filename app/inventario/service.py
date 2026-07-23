@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.inventario.models import Deposito, Stock, StockMovimiento
 
-MOTIVOS_VALIDOS = frozenset({"inicial", "compra", "venta", "ajuste", "transferencia"})
+MOTIVOS_VALIDOS = frozenset({"inicial", "compra", "venta", "ajuste", "transferencia", "devolucion"})
 
 
 def crear_deposito(session: Session, org_id: UUID, *, codigo: str, nombre: str) -> Deposito:
