@@ -198,35 +198,6 @@ class DatoInvalido(ValueError):
     """Algo del payload no existe o no cierra. El router lo traduce a un 422."""
 
 
-def _recalcular_precios(
-    session: Session, org_id: UUID, *, articulo_id: int, costo: Decimal
-) -> tuple[int, bool]:
-    """Recalcula los precios de venta con el margen de CADA lista. Devuelve (cuántos, hubo_sin_margen).
-
-    La regla, literal: si una lista no tiene margen cargado, su precio NO SE TOCA. No se
-    inventa un margen ni se hereda el de otra lista — un precio de venta inventado por una
-    máquina es exactamente lo que nadie quiere en un mostrador.
-    """
-    recalculados = 0
-    sin_margen = False
-
-    for precio_fila, _lista in catalogo.listar_precios_de_articulo(session, org_id, articulo_id):
-        if precio_fila.margen is None:
-            sin_margen = True
-            continue
-        catalogo.upsert_precio(
-            session,
-            org_id,
-            articulo_id=articulo_id,
-            lista_id=precio_fila.lista_id,
-            precio=catalogo.calcular_precio(costo, precio_fila.margen),
-            margen=precio_fila.margen,
-        )
-        recalculados += 1
-
-    return recalculados, sin_margen
-
-
 def confirmar(
     session: Session,
     org_id: UUID,
@@ -312,7 +283,7 @@ def confirmar(
             )
             actualizados.append(renglon.codigo)
 
-            n, hubo_sin_margen = _recalcular_precios(
+            n, hubo_sin_margen = catalogo.recalcular_precios_por_costo(
                 session, org_id, articulo_id=articulo.id, costo=renglon.costo_unitario
             )
             recalculados += n
