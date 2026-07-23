@@ -23,9 +23,8 @@ export function ProximamentePage() {
           <Badge variant="warning">Fase 2</Badge>
         </div>
         <p className="max-w-md text-sm text-muted-foreground">
-          Ventas, facturación, caja y cuenta corriente llegan en la Fase 2 — con numeración
-          fiscal correcta y libro mayor append-only. Hoy el foco está en el catálogo, los
-          tableros y el asistente.
+          Facturación, caja y cuenta corriente llegan más adelante — con numeración fiscal
+          correcta y libro mayor append-only. Ventas y compras ya funcionan de verdad.
         </p>
       </div>
       <Button variant="outline" size="sm" onClick={toggleAssistant}>
