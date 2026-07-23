@@ -36,6 +36,17 @@ def obtener_proveedor(session: Session, org_id: UUID, codigo: str) -> Proveedor 
     )
 
 
+def listar_proveedores(session: Session, org_id: UUID, *, limite: int = 50) -> list[Proveedor]:
+    return list(
+        session.scalars(
+            select(Proveedor)
+            .where(Proveedor.org_id == org_id, Proveedor.activo.is_(True))
+            .order_by(Proveedor.razon_social)
+            .limit(limite)
+        )
+    )
+
+
 def obtener_o_crear_proveedor(
     session: Session,
     org_id: UUID,
