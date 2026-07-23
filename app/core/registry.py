@@ -10,6 +10,7 @@ Lo importa `alembic/env.py`. Cuando agregues un feature, sumá su import acá.
 from app.catalogo import models as catalogo_models
 from app.clientes import models as clientes_models
 from app.compatibilidad import models as compatibilidad_models
+from app.compras import models as compras_models
 from app.core import models as core_models
 from app.core.base import Base
 from app.ingesta_visual import models as ingesta_visual_models
@@ -43,6 +44,9 @@ TABLAS_TENANT: tuple[str, ...] = (
     "cta_cte_movimientos",
     "notas_credito",
     "nota_credito_items",
+    "compras",
+    "compra_items",
+    "prov_cta_cte_movimientos",
 )
 
 __all__ = [
@@ -51,6 +55,7 @@ __all__ = [
     "catalogo_models",
     "clientes_models",
     "compatibilidad_models",
+    "compras_models",
     "core_models",
     "ingesta_visual_models",
     "inventario_models",

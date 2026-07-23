@@ -254,6 +254,36 @@ def calcular_precio(costo: Decimal, margen: Decimal) -> Decimal:
     )
 
 
+def recalcular_precios_por_costo(
+    session: Session, org_id: UUID, *, articulo_id: int, costo: Decimal
+) -> tuple[int, bool]:
+    """Recalcula los precios de venta con el margen de CADA lista. Devuelve (cuántos, hubo_sin_margen).
+
+    La regla, literal: si una lista no tiene margen cargado, su precio NO SE TOCA. No se inventa un
+    margen ni se hereda el de otra lista — un precio de venta inventado por una máquina es
+    exactamente lo que nadie quiere en un mostrador. Lo usan la ingesta de remitos y las compras:
+    cuando entra mercadería y sube el costo, los precios de venta se recalculan solos.
+    """
+    recalculados = 0
+    sin_margen = False
+
+    for precio_fila, _lista in listar_precios_de_articulo(session, org_id, articulo_id):
+        if precio_fila.margen is None:
+            sin_margen = True
+            continue
+        upsert_precio(
+            session,
+            org_id,
+            articulo_id=articulo_id,
+            lista_id=precio_fila.lista_id,
+            precio=calcular_precio(costo, precio_fila.margen),
+            margen=precio_fila.margen,
+        )
+        recalculados += 1
+
+    return recalculados, sin_margen
+
+
 # --------------------------------------------------------------------------- búsqueda híbrida
 
 #: Constante de RRF (Reciprocal Rank Fusion). 60 es el valor estándar del paper original: aplana

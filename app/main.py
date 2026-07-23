@@ -10,11 +10,13 @@ from app.asistente.router import router as asistente_router
 from app.catalogo.router import router as catalogo_router
 from app.clientes.router import router as clientes_router
 from app.compatibilidad.router import router as compatibilidad_router
+from app.compras.router import router as compras_router
 from app.core.config import get_settings
 from app.core.ratelimit import limiter
 from app.core.rls import TenantContext, get_tenant
 from app.dashboard.router import router as dashboard_router
 from app.ingesta_visual.router import router as ingesta_visual_router
+from app.proveedores.router import router as proveedores_router
 from app.ventas.router import router as ventas_router
 
 logger = logging.getLogger(__name__)
@@ -52,6 +54,8 @@ app.include_router(asistente_router)
 app.include_router(dashboard_router)
 app.include_router(ingesta_visual_router)
 app.include_router(ventas_router)
+app.include_router(compras_router)
+app.include_router(proveedores_router)
 
 
 @app.on_event("startup")
