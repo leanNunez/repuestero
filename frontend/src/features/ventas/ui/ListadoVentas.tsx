@@ -1,5 +1,8 @@
+import { Undo2 } from "lucide-react";
+
 import { pesos } from "@/entities/remito/formato";
 import type { VentaLeer } from "@/entities/venta/schema";
+import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { EmptyState, ErrorState } from "@/shared/ui/states";
@@ -14,9 +17,10 @@ interface Props {
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
+  onNotaCredito: (venta: VentaLeer) => void;
 }
 
-export function ListadoVentas({ ventas, isLoading, isError, onRetry }: Props) {
+export function ListadoVentas({ ventas, isLoading, isError, onRetry, onNotaCredito }: Props) {
   if (isLoading) {
     return (
       <div className="space-y-2">
@@ -41,7 +45,18 @@ export function ListadoVentas({ ventas, isLoading, isError, onRetry }: Props) {
               {v.fecha} · {v.condicion === "cta_cte" ? "Cuenta corriente" : "Contado"}
             </p>
           </div>
-          <span className="font-medium tabular-nums">{pesos(v.total)}</span>
+          <div className="flex flex-col items-end gap-1">
+            <span className="font-medium tabular-nums">{pesos(v.total)}</span>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => onNotaCredito(v)}
+              className="text-muted-foreground"
+            >
+              <Undo2 className="h-3.5 w-3.5" />
+              Nota de crédito
+            </Button>
+          </div>
         </div>
       ))}
     </Card>
