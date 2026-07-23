@@ -1,8 +1,10 @@
 import { CheckCircle2 } from "lucide-react";
-import { useReducer } from "react";
+import { useReducer, useState } from "react";
 
 import type { ArticuloItem } from "@/entities/articulo/schema";
 import { pesos } from "@/entities/remito/formato";
+import type { VentaLeer } from "@/entities/venta/schema";
+import { NotaCreditoDialog } from "@/features/notas-credito/ui/NotaCreditoDialog";
 import { ESTADO_INICIAL, puedeEmitir, reducer, totales } from "@/features/ventas/model/estado";
 import { fetchPrecioSugerido, useEmitirVenta, useVentas } from "@/features/ventas/model/hooks";
 import { BuscadorArticulo } from "@/features/ventas/ui/BuscadorArticulo";
@@ -19,6 +21,7 @@ function comprobanteLabel(tipo: string, ptoVenta: number, numero: number): strin
 
 export function VentasPage() {
   const [estado, dispatch] = useReducer(reducer, ESTADO_INICIAL);
+  const [ncVenta, setNcVenta] = useState<VentaLeer | null>(null);
   const emitir = useEmitirVenta();
   const ventas = useVentas();
 
@@ -132,9 +135,12 @@ export function VentasPage() {
             isLoading={ventas.isLoading}
             isError={ventas.isError}
             onRetry={() => void ventas.refetch()}
+            onNotaCredito={setNcVenta}
           />
         </div>
       </div>
+
+      <NotaCreditoDialog venta={ncVenta} onClose={() => setNcVenta(null)} />
     </div>
   );
 }
