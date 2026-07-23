@@ -9,6 +9,7 @@ import { ArticuloPage } from "@/pages/catalogo/ArticuloPage";
 import { CatalogoPage } from "@/pages/catalogo/CatalogoPage";
 import { ClientesPage } from "@/pages/clientes/ClientesPage";
 import { CompatibilidadPage } from "@/pages/compatibilidad/CompatibilidadPage";
+import { ComprasPage } from "@/pages/compras/ComprasPage";
 import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { IngestaVisualPage } from "@/pages/ingesta-visual/IngestaVisualPage";
 import { ProximamentePage } from "@/pages/proximamente/ProximamentePage";
@@ -76,9 +77,15 @@ const ventasRoute = createRoute({
   component: VentasPage,
 });
 
+const comprasRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/compras",
+  component: ComprasPage,
+});
+
 // Módulos de Fase 2 todavía sin backend: navegables, pero caen en la pantalla "próximamente".
-// `/ventas` salió de acá: el mostrador ya emite comprobantes de verdad contra el backend.
-const FASE2_PATHS = ["/facturacion", "/caja", "/cuenta-corriente", "/compras"] as const;
+// `/ventas` y `/compras` salieron de acá: ya tienen su mostrador de verdad contra el backend.
+const FASE2_PATHS = ["/facturacion", "/caja", "/cuenta-corriente"] as const;
 
 const fase2Routes = FASE2_PATHS.map((path) =>
   createRoute({ getParentRoute: () => rootRoute, path, component: ProximamentePage }),
@@ -92,6 +99,7 @@ const routeTree = rootRoute.addChildren([
   clientesRoute,
   ingestaVisualRoute,
   ventasRoute,
+  comprasRoute,
   ...fase2Routes,
 ]);
 
