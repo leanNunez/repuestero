@@ -66,6 +66,12 @@ def obtener_cliente(session: Session, org_id: UUID, codigo: str) -> Cliente | No
     return session.scalar(select(Cliente).where(Cliente.org_id == org_id, Cliente.codigo == codigo))
 
 
+def obtener_cliente_por_id(session: Session, org_id: UUID, cliente_id: int) -> Cliente | None:
+    """Por id, no por código. Lo necesita la cuenta corriente: el listado devuelve ids y el
+    extracto se pide por id, mientras que las cobranzas siguen resolviendo por código."""
+    return session.scalar(select(Cliente).where(Cliente.org_id == org_id, Cliente.id == cliente_id))
+
+
 def listar_clientes(session: Session, org_id: UUID, *, limite: int = 50) -> list[Cliente]:
     return list(
         session.scalars(

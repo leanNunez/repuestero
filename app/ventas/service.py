@@ -11,14 +11,15 @@ termina en flush(); el commit lo hace `get_tenant` (app/core/rls.py).
 
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
-from typing import NamedTuple
+from typing import Any, NamedTuple
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import Row, and_, func, join, or_, select
 from sqlalchemy.orm import Session
 
 from app.catalogo import service as catalogo
 from app.clientes import service as clientes
+from app.clientes.models import Cliente
 from app.inventario import service as inventario
 from app.ventas.models import (
     ClienteSaldo,
@@ -324,6 +325,126 @@ def registrar_cobranza(
     session.add(movimiento)
     session.flush()
     return movimiento
+
+
+def listar_cuentas_clientes(
+    session: Session,
+    org_id: UUID,
+    *,
+    buscar: str | None = None,
+    solo_con_saldo: bool = True,
+    limite: int = 50,
+    offset: int = 0,
+) -> tuple[list[Row[Any]], int, Decimal]:
+    """Cuentas corrientes de clientes con su saldo: página, total y suma del conjunto filtrado.
+
+    Excepción consciente a la regla de arriba ("nunca toca las tablas de otro módulo"): esto lee
+    `clientes` directo. Filtrar, ordenar por saldo y paginar exige que el JOIN lo resuelva el
+    motor; delegarlo a `clientes.listar_clientes` significaría traer los 900 clientes a memoria
+    para ordenarlos en Python. Es SOLO lectura — ninguna escritura a `clientes` pasa por acá.
+
+    El `saldo_total` sale en la misma llamada y no en un endpoint aparte: se calcula con los
+    MISMOS filtros que `total`. Partirlo obliga a reconstruir los filtros en dos lugares, que es
+    justo donde se cuela el bug de "el total no coincide con lo que muestra la página".
+    """
+    saldo = func.coalesce(ClienteSaldo.saldo, Decimal("0"))
+
+    filtros = [Cliente.org_id == org_id, Cliente.activo.is_(True)]
+    if buscar:
+        patron = f"%{buscar}%"
+        filtros.append(or_(Cliente.denominacion.ilike(patron), Cliente.codigo.ilike(patron)))
+    if solo_con_saldo:
+        filtros.append(saldo != 0)
+
+    # LEFT JOIN obligatorio: `cliente_saldo` es un group by sobre los movimientos, así que un
+    # cliente que nunca operó a cuenta corriente NO tiene fila. Con INNER JOIN desaparecería.
+    origen = join(
+        Cliente,
+        ClienteSaldo,
+        and_(ClienteSaldo.org_id == Cliente.org_id, ClienteSaldo.cliente_id == Cliente.id),
+        isouter=True,
+    )
+
+    total, suma = session.execute(
+        select(func.count(), func.coalesce(func.sum(saldo), Decimal("0")))
+        .select_from(origen)
+        .where(*filtros)
+    ).one()
+
+    filas = session.execute(
+        select(
+            Cliente.id,
+            Cliente.codigo,
+            Cliente.denominacion.label("nombre"),
+            saldo.label("saldo"),
+            Cliente.limite_cta_cte.label("limite"),
+        )
+        .select_from(origen)
+        .where(*filtros)
+        # Mayor deuda primero. El desempate por nombre e id no es cosmético: sin él, dos cuentas
+        # con el mismo saldo pueden bailar entre páginas y aparecer repetidas o desaparecer.
+        .order_by(saldo.desc(), Cliente.denominacion, Cliente.id)
+        .limit(limite)
+        .offset(offset)
+    ).all()
+
+    return list(filas), total or 0, suma if suma is not None else Decimal("0")
+
+
+def movimientos_cliente(
+    session: Session, org_id: UUID, cliente_id: int, *, limite: int = 50, offset: int = 0
+) -> tuple[list[Row[Any]], int]:
+    """Extracto paginado, más reciente primero, con el saldo acumulado de cada renglón.
+
+    El acumulado se calcula acá y NUNCA en el front: el front recibe una ventana
+    [offset, offset+limite) y el acumulado de su primera fila depende de todas las páginas
+    anteriores. Calcularlo del lado del cliente exigiría traer el ledger entero, que es
+    exactamente lo que la paginación existe para evitar.
+    """
+    acumulado = (
+        func.sum(CtaCteMovimiento.debe - CtaCteMovimiento.haber)
+        .over(
+            partition_by=(CtaCteMovimiento.org_id, CtaCteMovimiento.cliente_id),
+            order_by=(CtaCteMovimiento.fecha, CtaCteMovimiento.id),
+            # ROWS explícito. El frame por defecto es RANGE, y en RANGE todas las filas con la
+            # misma `fecha` son peers y comparten el acumulado de cierre del día: dos ventas del
+            # mismo día —el caso normal en un mostrador— mostrarían el mismo saldo.
+            rows=(None, 0),
+        )
+        .label("saldo_acumulado")
+    )
+
+    filtros = (CtaCteMovimiento.org_id == org_id, CtaCteMovimiento.cliente_id == cliente_id)
+
+    total = session.scalar(select(func.count()).select_from(CtaCteMovimiento).where(*filtros)) or 0
+
+    # La window va en una subquery y el orden de lectura afuera. Hoy daría lo mismo en un solo
+    # nivel (Postgres evalúa las window functions después del WHERE y antes del LIMIT), pero el
+    # día que se filtre por rango de fechas el WHERE recortaría filas ANTES de acumular y el
+    # saldo arrancaría de cero en el rango, mal y en silencio.
+    ledger = (
+        select(
+            CtaCteMovimiento.id,
+            CtaCteMovimiento.fecha,
+            CtaCteMovimiento.tipo,
+            CtaCteMovimiento.debe,
+            CtaCteMovimiento.haber,
+            CtaCteMovimiento.ref_tipo,
+            CtaCteMovimiento.ref_id,
+            acumulado,
+        )
+        .where(*filtros)
+        .subquery()
+    )
+
+    filas = session.execute(
+        select(ledger)
+        .order_by(ledger.c.fecha.desc(), ledger.c.id.desc())
+        .limit(limite)
+        .offset(offset)
+    ).all()
+
+    return list(filas), total
 
 
 # --------------------------------------------------------------------------- notas de crédito

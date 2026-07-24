@@ -10,11 +10,16 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 
+from app.clientes import service as clientes
 from app.core.rls import TenantContext, get_tenant
 from app.ventas import service
 from app.ventas.schemas import (
     CobranzaCrear,
     CobranzaResponse,
+    CuentaLeer,
+    CuentaPagina,
+    MovimientoLeer,
+    MovimientoPagina,
     NotaCreditoCrear,
     NotaCreditoDetalle,
     NotaCreditoItemLeer,
@@ -169,6 +174,60 @@ def obtener_nota_credito(
     return NotaCreditoDetalle(
         **NotaCreditoLeer.model_validate(nota).model_dump(),
         items=[NotaCreditoItemLeer.model_validate(i) for i in items],
+    )
+
+
+# --- Cuenta corriente. `/cuenta-corriente` es UN solo segmento, así que la captura
+# --- `/{venta_id}` de más abajo: va declarada antes, por el mismo motivo que las de NC.
+
+
+@router.get("/cuenta-corriente", response_model=CuentaPagina)
+def listar_cuenta_corriente(
+    buscar: str | None = Query(default=None, max_length=80),
+    solo_con_saldo: bool = Query(default=True),
+    limite: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    tenant: TenantContext = Depends(get_tenant),
+) -> CuentaPagina:
+    cuentas, total, saldo_total = service.listar_cuentas_clientes(
+        tenant.session,
+        tenant.org_id,
+        buscar=buscar,
+        solo_con_saldo=solo_con_saldo,
+        limite=limite,
+        offset=offset,
+    )
+    return CuentaPagina(
+        items=[CuentaLeer(**c._asdict()) for c in cuentas],
+        total=total,
+        saldo_total=saldo_total,
+    )
+
+
+@router.get("/clientes/{cliente_id}/movimientos", response_model=MovimientoPagina)
+def listar_movimientos_cliente(
+    cliente_id: int,
+    limite: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    tenant: TenantContext = Depends(get_tenant),
+) -> MovimientoPagina:
+    cliente = clientes.obtener_cliente_por_id(tenant.session, tenant.org_id, cliente_id)
+    if cliente is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No existe ese cliente.")
+
+    movimientos, total = service.movimientos_cliente(
+        tenant.session, tenant.org_id, cliente_id, limite=limite, offset=offset
+    )
+    return MovimientoPagina(
+        items=[MovimientoLeer(**m._asdict()) for m in movimientos],
+        total=total,
+        cuenta=CuentaLeer(
+            id=cliente.id,
+            codigo=cliente.codigo,
+            nombre=cliente.denominacion,
+            saldo=service.saldo_cliente(tenant.session, tenant.org_id, cliente_id),
+            limite=cliente.limite_cta_cte,
+        ),
     )
 
 
