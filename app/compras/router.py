@@ -18,11 +18,16 @@ from app.compras.schemas import (
     CompraLeer,
     CompraPagina,
     CompraResponse,
+    CuentaLeer,
+    CuentaPagina,
+    MovimientoLeer,
+    MovimientoPagina,
     PagoProveedorCrear,
     PagoProveedorResponse,
     SaldoProveedorLeer,
 )
 from app.core.rls import TenantContext, get_tenant
+from app.proveedores import service as proveedores
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +115,59 @@ def saldo_proveedor(
     return SaldoProveedorLeer(
         proveedor_id=proveedor_id,
         saldo=service.saldo_proveedor(tenant.session, tenant.org_id, proveedor_id),
+    )
+
+
+# --- Cuenta corriente. `/cuenta-corriente` es UN solo segmento, así que la captura
+# --- `/{compra_id}` de más abajo: va declarada antes.
+
+
+@router.get("/cuenta-corriente", response_model=CuentaPagina)
+def listar_cuenta_corriente(
+    buscar: str | None = Query(default=None, max_length=80),
+    solo_con_saldo: bool = Query(default=True),
+    limite: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    tenant: TenantContext = Depends(get_tenant),
+) -> CuentaPagina:
+    cuentas, total, saldo_total = service.listar_cuentas_proveedores(
+        tenant.session,
+        tenant.org_id,
+        buscar=buscar,
+        solo_con_saldo=solo_con_saldo,
+        limite=limite,
+        offset=offset,
+    )
+    return CuentaPagina(
+        items=[CuentaLeer(**c._asdict()) for c in cuentas],
+        total=total,
+        saldo_total=saldo_total,
+    )
+
+
+@router.get("/proveedores/{proveedor_id}/movimientos", response_model=MovimientoPagina)
+def listar_movimientos_proveedor(
+    proveedor_id: int,
+    limite: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    tenant: TenantContext = Depends(get_tenant),
+) -> MovimientoPagina:
+    proveedor = proveedores.obtener_proveedor_por_id(tenant.session, tenant.org_id, proveedor_id)
+    if proveedor is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No existe ese proveedor.")
+
+    movimientos, total = service.movimientos_proveedor(
+        tenant.session, tenant.org_id, proveedor_id, limite=limite, offset=offset
+    )
+    return MovimientoPagina(
+        items=[MovimientoLeer(**m._asdict()) for m in movimientos],
+        total=total,
+        cuenta=CuentaLeer(
+            id=proveedor.id,
+            codigo=proveedor.codigo,
+            nombre=proveedor.razon_social,
+            saldo=service.saldo_proveedor(tenant.session, tenant.org_id, proveedor_id),
+        ),
     )
 
 
