@@ -11,9 +11,10 @@ recibe la del request y termina en flush(); el commit lo hace `get_tenant` (app/
 
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import Row, and_, func, join, or_, select
 from sqlalchemy.orm import Session
 
 from app.catalogo import service as catalogo
@@ -22,6 +23,7 @@ from app.compras.models import Compra, CompraItem, ProvCtaCteMovimiento, Proveed
 from app.compras.schemas import CompraCrear
 from app.inventario import service as inventario
 from app.proveedores import service as proveedores
+from app.proveedores.models import Proveedor
 
 _CENT = Decimal("0.01")
 
@@ -227,3 +229,120 @@ def registrar_pago(
     session.add(movimiento)
     session.flush()
     return movimiento
+
+
+def listar_cuentas_proveedores(
+    session: Session,
+    org_id: UUID,
+    *,
+    buscar: str | None = None,
+    solo_con_saldo: bool = True,
+    limite: int = 50,
+    offset: int = 0,
+) -> tuple[list[Row[Any]], int, Decimal]:
+    """Cuentas corrientes de proveedores con su saldo: página, total y suma del conjunto filtrado.
+
+    Espejo de `ventas.listar_cuentas_clientes`, incluida la excepción consciente a la regla de
+    arriba: esto lee `proveedores` directo porque filtrar, ordenar por saldo y paginar exige que
+    el JOIN lo resuelva el motor. Es SOLO lectura.
+    """
+    saldo = func.coalesce(ProveedorSaldo.saldo, Decimal("0"))
+
+    filtros = [Proveedor.org_id == org_id, Proveedor.activo.is_(True)]
+    if buscar:
+        patron = f"%{buscar}%"
+        filtros.append(or_(Proveedor.razon_social.ilike(patron), Proveedor.codigo.ilike(patron)))
+    if solo_con_saldo:
+        filtros.append(saldo != 0)
+
+    # LEFT JOIN obligatorio: `proveedor_saldo` es un group by sobre los movimientos, así que un
+    # proveedor al que siempre se le pagó al contado NO tiene fila.
+    origen = join(
+        Proveedor,
+        ProveedorSaldo,
+        and_(
+            ProveedorSaldo.org_id == Proveedor.org_id,
+            ProveedorSaldo.proveedor_id == Proveedor.id,
+        ),
+        isouter=True,
+    )
+
+    total, suma = session.execute(
+        select(func.count(), func.coalesce(func.sum(saldo), Decimal("0")))
+        .select_from(origen)
+        .where(*filtros)
+    ).one()
+
+    filas = session.execute(
+        select(
+            Proveedor.id,
+            Proveedor.codigo,
+            Proveedor.razon_social.label("nombre"),
+            saldo.label("saldo"),
+        )
+        .select_from(origen)
+        .where(*filtros)
+        # Mayor deuda primero, con desempate explícito: sin él dos cuentas con el mismo saldo
+        # pueden bailar entre páginas y aparecer repetidas o desaparecer.
+        .order_by(saldo.desc(), Proveedor.razon_social, Proveedor.id)
+        .limit(limite)
+        .offset(offset)
+    ).all()
+
+    return list(filas), total or 0, suma if suma is not None else Decimal("0")
+
+
+def movimientos_proveedor(
+    session: Session, org_id: UUID, proveedor_id: int, *, limite: int = 50, offset: int = 0
+) -> tuple[list[Row[Any]], int]:
+    """Extracto paginado, más reciente primero, con el saldo acumulado de cada renglón.
+
+    Espejo de `ventas.movimientos_cliente`: el acumulado se calcula acá y nunca en el front,
+    que solo ve una página y no puede conocer el acumulado de las anteriores.
+    """
+    acumulado = (
+        func.sum(ProvCtaCteMovimiento.debe - ProvCtaCteMovimiento.haber)
+        .over(
+            partition_by=(ProvCtaCteMovimiento.org_id, ProvCtaCteMovimiento.proveedor_id),
+            order_by=(ProvCtaCteMovimiento.fecha, ProvCtaCteMovimiento.id),
+            # ROWS explícito: el frame RANGE por defecto le daría el mismo acumulado a todos los
+            # movimientos de la misma fecha (son peers), y dos remitos el mismo día es normal.
+            rows=(None, 0),
+        )
+        .label("saldo_acumulado")
+    )
+
+    filtros = (
+        ProvCtaCteMovimiento.org_id == org_id,
+        ProvCtaCteMovimiento.proveedor_id == proveedor_id,
+    )
+
+    total = (
+        session.scalar(select(func.count()).select_from(ProvCtaCteMovimiento).where(*filtros)) or 0
+    )
+
+    # La window en una subquery y el orden de lectura afuera: si mañana se filtra por rango de
+    # fechas, el WHERE no puede recortar el ledger ANTES de acumular.
+    ledger = (
+        select(
+            ProvCtaCteMovimiento.id,
+            ProvCtaCteMovimiento.fecha,
+            ProvCtaCteMovimiento.tipo,
+            ProvCtaCteMovimiento.debe,
+            ProvCtaCteMovimiento.haber,
+            ProvCtaCteMovimiento.ref_tipo,
+            ProvCtaCteMovimiento.ref_id,
+            acumulado,
+        )
+        .where(*filtros)
+        .subquery()
+    )
+
+    filas = session.execute(
+        select(ledger)
+        .order_by(ledger.c.fecha.desc(), ledger.c.id.desc())
+        .limit(limite)
+        .offset(offset)
+    ).all()
+
+    return list(filas), total

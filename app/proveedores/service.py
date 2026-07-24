@@ -36,6 +36,14 @@ def obtener_proveedor(session: Session, org_id: UUID, codigo: str) -> Proveedor 
     )
 
 
+def obtener_proveedor_por_id(session: Session, org_id: UUID, proveedor_id: int) -> Proveedor | None:
+    """Por id, no por código. Lo necesita la cuenta corriente: el listado devuelve ids y el
+    extracto se pide por id, mientras que los pagos siguen resolviendo por código."""
+    return session.scalar(
+        select(Proveedor).where(Proveedor.org_id == org_id, Proveedor.id == proveedor_id)
+    )
+
+
 def listar_proveedores(session: Session, org_id: UUID, *, limite: int = 50) -> list[Proveedor]:
     return list(
         session.scalars(

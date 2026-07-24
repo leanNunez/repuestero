@@ -100,3 +100,49 @@ class PagoProveedorResponse(BaseModel):
 class SaldoProveedorLeer(BaseModel):
     proveedor_id: int
     saldo: Decimal
+
+
+class CuentaLeer(BaseModel):
+    """Una cuenta corriente con su saldo.
+
+    Mismo shape que la de clientes (`app/ventas/schemas.py`) a propósito: el front tiene UN
+    schema, UNA tabla y UN hook para las dos solapas. Por eso `nombre` y no `razon_social`.
+    """
+
+    id: int
+    #: Los pagos se imputan por CÓDIGO, no por id: viaja para que el front pueda postear.
+    codigo: str
+    nombre: str
+    #: Positivo = le debemos al proveedor. Negativo = le pagamos de más o tenemos crédito.
+    saldo: Decimal
+    #: Existe solo para espejar el shape de clientes: los proveedores no tienen límite de
+    #: crédito cargado en el sistema. Siempre None.
+    limite: Decimal | None = None
+
+
+class CuentaPagina(BaseModel):
+    items: list[CuentaLeer]
+    total: int
+    #: Suma de saldos del conjunto FILTRADO, no de la página. Mezcla signos: es el neto a pagar.
+    saldo_total: Decimal
+
+
+class MovimientoLeer(BaseModel):
+    id: int
+    fecha: date
+    tipo: str  # 'compra' | 'pago' | 'ajuste'
+    debe: Decimal
+    haber: Decimal
+    ref_tipo: str | None = None
+    ref_id: int | None = None
+    #: Saldo DESPUÉS de este movimiento, en orden cronológico. Lo calcula el SQL sobre todo el
+    #: ledger: el front solo ve una página y no puede conocer el acumulado de las anteriores.
+    saldo_acumulado: Decimal
+
+
+class MovimientoPagina(BaseModel):
+    items: list[MovimientoLeer]
+    total: int
+    #: Cabecera de la cuenta, para que un deep link pinte nombre y saldo sin depender de que
+    #: esa cuenta haya caído en la página del listado.
+    cuenta: CuentaLeer
