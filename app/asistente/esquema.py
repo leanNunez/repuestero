@@ -58,11 +58,38 @@ comprobante_items(id, comprobante_id -> comprobantes.id, articulo_id -> articulo
   -- los renglones de cada comprobante. Para "lo más vendido" sumá cantidad agrupando por
   --   articulo_id. precio_unitario es neto (sin IVA).
 
-cta_cte_movimientos(id, cliente_id -> clientes.id, fecha date, tipo, debe numeric, haber numeric)
-  -- libro mayor de cuenta corriente: una venta a crédito es un 'debe', una cobranza un 'haber'.
-  --   Para el SALDO de un cliente NO sumes acá a mano: usá la vista cliente_saldo.
+cta_cte_movimientos(id, cliente_id -> clientes.id, fecha date, tipo, debe numeric, haber numeric,
+                    ref_tipo, ref_id)
+  -- libro mayor de cuenta corriente de CLIENTES: una venta a crédito es un 'debe', una cobranza
+  --   un 'haber'. tipo es 'venta'|'cobranza'|'nota_credito'|'ajuste'. ref_tipo/ref_id apuntan al
+  --   documento que lo generó (ej: 'comprobante' + comprobantes.id), y están vacíos en las
+  --   cobranzas. Para el SALDO de un cliente NO sumes acá a mano: usá la vista cliente_saldo.
 
 cliente_saldo(org_id, cliente_id, saldo numeric)
   -- VISTA: saldo de cuenta corriente por cliente = suma(debe) - suma(haber). saldo > 0 = el
-  --   cliente debe esa plata. Un cliente sin movimientos no aparece (su saldo es 0).
+  --   cliente debe esa plata. Un cliente sin movimientos no aparece (su saldo es 0), así que para
+  --   listar clientes con y sin deuda usá left join desde clientes.
+
+compras(id, proveedor_id -> proveedores.id, deposito_id -> depositos.id, numero_comprobante,
+        fecha date, condicion, neto numeric, iva numeric, total numeric)
+  -- cada COMPRA a un proveedor: la contraparte de comprobantes del otro lado del mostrador.
+  --   numero_comprobante es el número de la factura DEL PROVEEDOR, no un correlativo nuestro.
+  --   condicion es 'contado' o 'cta_cte'. "Lo que le compré a X" = compras de ese proveedor.
+
+compra_items(id, compra_id -> compras.id, articulo_id -> articulos.id, cantidad numeric,
+             costo_unitario numeric, alicuota_iva numeric, importe_iva numeric,
+             total_renglon numeric)
+  -- los renglones de cada compra. costo_unitario es neto (sin IVA).
+
+prov_cta_cte_movimientos(id, proveedor_id -> proveedores.id, fecha date, tipo, debe numeric,
+                         haber numeric, ref_tipo, ref_id)
+  -- libro mayor de cuenta corriente de PROVEEDORES: una compra a crédito es un 'debe', un pago
+  --   un 'haber'. tipo es 'compra'|'pago'|'ajuste'. Mismo criterio que el de clientes, pero al
+  --   revés: acá el saldo es lo que NOSOTROS debemos.
+
+proveedor_saldo(org_id, proveedor_id, saldo numeric)
+  -- VISTA: saldo por proveedor = suma(debe) - suma(haber). saldo > 0 = LE DEBEMOS esa plata a
+  --   ese proveedor. Un proveedor sin movimientos no aparece (su saldo es 0).
+  --   Ojo con la dirección: cliente_saldo es plata que nos deben, proveedor_saldo es plata que
+  --   debemos. "¿A quién le debo?" se responde con esta vista, no con cliente_saldo.
 """
