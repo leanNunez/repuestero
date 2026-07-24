@@ -1,0 +1,64 @@
+import { z } from "zod";
+
+/** Espeja los contratos de cuenta corriente de `app/ventas/schemas.py` y `app/compras/schemas.py`.
+ *
+ * UN solo juego de schemas para las dos solapas: el backend devuelve deliberadamente las mismas
+ * claves para clientes y proveedores (`nombre`, no `denominacion`/`razon_social`), justamente para
+ * que acá no haya que duplicar nada.
+ *
+ * La plata viaja como STRING de punta a punta, igual que en ventas y compras: nunca pasa por
+ * Number en el camino de escritura, para no perder centavos. `pesos()` la formatea solo para
+ * mostrar. */
+
+/** Una cuenta con su saldo (`CuentaLeer`). Saldo positivo = nos debe / le debemos. */
+export const cuentaSchema = z.object({
+  id: z.number(),
+  /** Las cobranzas y pagos se imputan por CÓDIGO, no por id. */
+  codigo: z.string(),
+  nombre: z.string(),
+  saldo: z.string(),
+  /** Límite de crédito. Siempre null en proveedores: no tienen. */
+  limite: z.string().nullable(),
+});
+
+export const cuentaPaginaSchema = z.object({
+  items: z.array(cuentaSchema),
+  total: z.number(),
+  /** Neto del conjunto FILTRADO, no de la página. Mezcla signos. */
+  saldo_total: z.string(),
+});
+
+/** Un renglón del extracto (`MovimientoLeer`). */
+export const movimientoSchema = z.object({
+  id: z.number(),
+  fecha: z.string(),
+  tipo: z.string(),
+  debe: z.string(),
+  haber: z.string(),
+  ref_tipo: z.string().nullable(),
+  ref_id: z.number().nullable(),
+  /** Saldo después de este movimiento. Lo calcula el backend sobre TODO el ledger: no se
+   *  recalcula acá, porque el front solo tiene una página. */
+  saldo_acumulado: z.string(),
+});
+
+export const movimientoPaginaSchema = z.object({
+  items: z.array(movimientoSchema),
+  total: z.number(),
+  cuenta: cuentaSchema,
+});
+
+/** Acuse de una cobranza o un pago.
+ *
+ * `CobranzaResponse` y `PagoProveedorResponse` solo difieren en `cliente_id`/`proveedor_id`, y
+ * Zod descarta las claves que no declara: un schema alcanza para las dos mutaciones. */
+export const imputacionResponseSchema = z.object({
+  movimiento_id: z.number(),
+  saldo: z.string(),
+});
+
+export type Cuenta = z.infer<typeof cuentaSchema>;
+export type CuentaPagina = z.infer<typeof cuentaPaginaSchema>;
+export type Movimiento = z.infer<typeof movimientoSchema>;
+export type MovimientoPagina = z.infer<typeof movimientoPaginaSchema>;
+export type ImputacionResponse = z.infer<typeof imputacionResponseSchema>;
