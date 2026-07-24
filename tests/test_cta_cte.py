@@ -26,11 +26,15 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.clientes import service as clientes
+from app.compras import service as compras
+from app.compras.models import ProvCtaCteMovimiento
+from app.compras.schemas import CuentaLeer as CuentaProveedorLeer
 from app.core import db as core_db
 from app.core.config import get_settings
 from app.core.db import ORG_GUC, set_guc
 from app.core.models import Miembro, Organizacion
 from app.main import app
+from app.proveedores import service as proveedores
 from app.ventas import service
 from app.ventas.models import CtaCteMovimiento
 from tests.conftest import APP_URL, OWNER_URL
@@ -47,6 +51,16 @@ LEDGER = [
 ]
 ACUMULADOS_ASC = [Decimal(v) for v in ("1000", "700", "1200", "1400", "1300")]
 SALDO_DEUDA = Decimal("1300")
+
+#: Ledger de PROV-DEUDA. Mismo criterio: dos movimientos el 2026-03-25 a propósito.
+LEDGER_PROV = [
+    ("2026-01-12", "compra", "2000", "0"),  # 2000
+    ("2026-02-20", "pago", "0", "500"),  # 1500
+    ("2026-03-25", "compra", "300", "0"),  # 1800
+    ("2026-03-25", "compra", "700", "0"),  # 2500
+]
+ACUMULADOS_PROV_ASC = [Decimal(v) for v in ("2000", "1500", "1800", "2500")]
+SALDO_PROV = Decimal("2500")
 
 
 @pytest.fixture(scope="module")
@@ -101,11 +115,44 @@ def org(migrated_db):
             )
         )
 
+        prov = proveedores.crear_proveedor(
+            s, org_id, codigo="PROV-DEUDA", razon_social="Bosch Argentina"
+        )
+        proveedores.crear_proveedor(
+            s, org_id, codigo="PROV-CERO", razon_social="Distribuidora Norte"
+        )
+        prov_favor = proveedores.crear_proveedor(
+            s, org_id, codigo="PROV-FAVOR", razon_social="Repuestos Sur"
+        )
+
+        for fecha, tipo, debe, haber in LEDGER_PROV:
+            s.add(
+                ProvCtaCteMovimiento(
+                    org_id=org_id,
+                    proveedor_id=prov.id,
+                    fecha=date.fromisoformat(fecha),
+                    tipo=tipo,
+                    debe=Decimal(debe),
+                    haber=Decimal(haber),
+                )
+            )
+        # Le pagamos de más: saldo a favor nuestro.
+        s.add(
+            ProvCtaCteMovimiento(
+                org_id=org_id,
+                proveedor_id=prov_favor.id,
+                fecha=date(2026, 5, 2),
+                tipo="pago",
+                haber=Decimal("200"),
+            )
+        )
+
         s.add(Miembro(org_id=org_id, user_id=user_id, rol="admin"))  # sin esto get_tenant da 403
         s.commit()
         ids = SimpleNamespace(deuda=deuda.id, favor=favor.id)
+        prov_ids = SimpleNamespace(deuda=prov.id, favor=prov_favor.id)
     eng.dispose()
-    return SimpleNamespace(id=org_id, user=user_id, vecina=vecina_id, cli=ids)
+    return SimpleNamespace(id=org_id, user=user_id, vecina=vecina_id, cli=ids, prov=prov_ids)
 
 
 @pytest.fixture
@@ -247,6 +294,79 @@ def test_cuentas_no_cruza_orgs(sesion, org):
     assert saldo_total == Decimal("800")
 
 
+# =========================================================================== proveedores
+# Espejo explícito de los de arriba, sin parametrizar: las fixtures difieren y en tests la
+# claridad gana. Son la otra mitad del circuito — sin esto, compras registra deuda que nadie ve.
+
+
+def test_prov_saldo_acumulado_es_cronologico(sesion, org):
+    filas, _ = compras.movimientos_proveedor(sesion, org.id, org.prov.deuda)
+    assert [f.saldo_acumulado for f in filas] == list(reversed(ACUMULADOS_PROV_ASC))
+
+
+def test_prov_saldo_acumulado_no_depende_de_la_pagina(sesion, org):
+    completo, _ = compras.movimientos_proveedor(sesion, org.id, org.prov.deuda, limite=100)
+    pagina, _ = compras.movimientos_proveedor(sesion, org.id, org.prov.deuda, limite=2, offset=1)
+
+    assert [f.saldo_acumulado for f in pagina] == [f.saldo_acumulado for f in completo[1:3]]
+
+
+def test_prov_movimientos_del_mismo_dia_no_comparten_acumulado(sesion, org):
+    filas, _ = compras.movimientos_proveedor(sesion, org.id, org.prov.deuda)
+    del_25 = [f.saldo_acumulado for f in filas if f.fecha == date(2026, 3, 25)]
+
+    assert sorted(del_25) == [Decimal("1800"), Decimal("2500")]
+
+
+def test_prov_acumulado_del_mas_reciente_iguala_la_vista(sesion, org):
+    filas, _ = compras.movimientos_proveedor(sesion, org.id, org.prov.deuda)
+    assert filas[0].saldo_acumulado == compras.saldo_proveedor(sesion, org.id, org.prov.deuda)
+    assert filas[0].saldo_acumulado == SALDO_PROV
+
+
+def test_prov_filtra_saldo_cero_por_defecto(sesion, org):
+    cuentas, total, saldo_total = compras.listar_cuentas_proveedores(sesion, org.id)
+
+    assert set(c.codigo for c in cuentas) == {"PROV-DEUDA", "PROV-FAVOR"}
+    assert total == 2
+    assert saldo_total == Decimal("2300")  # 2500 - 200: neto a pagar, mezcla signos
+
+
+def test_prov_incluye_cuenta_sin_movimientos_con_saldo_cero(sesion, org):
+    """Valida el LEFT JOIN: a un proveedor al que siempre se le pagó al contado no le
+    corresponde ninguna fila en `proveedor_saldo`."""
+    cuentas, total, _ = compras.listar_cuentas_proveedores(sesion, org.id, solo_con_saldo=False)
+    por_codigo = {c.codigo: c for c in cuentas}
+
+    assert total == 3
+    assert por_codigo["PROV-CERO"].saldo == Decimal("0")
+
+
+def test_prov_ordena_por_mayor_deuda_primero(sesion, org):
+    cuentas, _, _ = compras.listar_cuentas_proveedores(sesion, org.id, solo_con_saldo=False)
+    assert [c.codigo for c in cuentas] == ["PROV-DEUDA", "PROV-CERO", "PROV-FAVOR"]
+
+
+def test_prov_busca_por_razon_social(sesion, org):
+    cuentas, total, _ = compras.listar_cuentas_proveedores(sesion, org.id, buscar="bosch")
+
+    assert [c.codigo for c in cuentas] == ["PROV-DEUDA"]
+    assert total == 1
+
+
+def test_prov_limite_siempre_es_none(sesion, org):
+    """Los proveedores no tienen límite de crédito. El campo existe solo para que el front
+    tenga UN schema para las dos solapas, y el default del schema lo tiene que llenar.
+
+    Se arma el `CuentaLeer` de verdad —no se mira la Row— porque lo que se está protegiendo es
+    que la query pueda no traer la columna sin romper la serialización.
+    """
+    cuentas, _, _ = compras.listar_cuentas_proveedores(sesion, org.id)
+    leidas = [CuentaProveedorLeer(**c._asdict()) for c in cuentas]
+
+    assert leidas and all(c.limite is None for c in leidas)
+
+
 # =========================================================================== HTTP (contrato)
 
 
@@ -333,4 +453,48 @@ def test_endpoint_cobranza_registra_y_devuelve_saldo(cliente, org):
 
 def test_endpoint_cobranza_monto_cero_es_422(cliente):
     r = cliente.post("/ventas/cobranzas", json={"cliente_codigo": "CLI-DEUDA", "monto": "0"})
+    assert r.status_code == 422
+
+
+def test_endpoint_cuenta_corriente_proveedores_shape(cliente):
+    r = cliente.get("/compras/cuenta-corriente?limite=1")
+    assert r.status_code == 200
+    body = r.json()
+
+    assert set(body) == {"items", "total", "saldo_total"}
+    assert body["total"] == 2
+    # Mismas claves que la de clientes: el front tiene UN schema para las dos solapas.
+    assert set(body["items"][0]) == {"id", "codigo", "nombre", "saldo", "limite"}
+
+
+def test_endpoint_movimientos_proveedor_shape(cliente, org):
+    r = cliente.get(f"/compras/proveedores/{org.prov.deuda}/movimientos")
+    assert r.status_code == 200
+    body = r.json()
+
+    assert set(body) == {"items", "total", "cuenta"}
+    assert body["total"] == len(LEDGER_PROV)
+    assert body["cuenta"]["codigo"] == "PROV-DEUDA"
+    assert body["cuenta"]["saldo"] == "2500.00"
+    assert body["cuenta"]["limite"] is None
+
+
+def test_endpoint_movimientos_de_proveedor_inexistente_404(cliente):
+    assert cliente.get("/compras/proveedores/999999/movimientos").status_code == 404
+
+
+def test_endpoint_pago_registra_y_devuelve_saldo(cliente, org):
+    """El POST existía desde el slice 3 y no tenía un solo test HTTP."""
+    antes = Decimal(
+        cliente.get(f"/compras/proveedores/{org.prov.deuda}/movimientos").json()["cuenta"]["saldo"]
+    )
+
+    r = cliente.post("/compras/pagos", json={"proveedor_codigo": "PROV-DEUDA", "monto": "500.00"})
+    assert r.status_code == 201
+
+    assert Decimal(r.json()["saldo"]) == antes - Decimal("500")
+
+
+def test_endpoint_pago_monto_cero_es_422(cliente):
+    r = cliente.post("/compras/pagos", json={"proveedor_codigo": "PROV-DEUDA", "monto": "0"})
     assert r.status_code == 422
