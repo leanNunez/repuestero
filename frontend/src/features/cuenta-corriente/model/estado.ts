@@ -123,6 +123,8 @@ export interface AjustePayload {
   debe?: string;
   haber?: string;
   revierte_movimiento_id?: number;
+  /** Cuándo corresponde el ajuste, como string ISO. `undefined` = hoy. */
+  fecha?: string;
 }
 
 // Acá NO vive ninguna lista de tipos reversibles: cada movimiento llega con su `reversible`

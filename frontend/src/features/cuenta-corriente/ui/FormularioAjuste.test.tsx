@@ -1,8 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Movimiento } from "@/entities/cuenta-corriente/schema";
+import { hoyISO } from "@/shared/lib/format";
 
 import type { ModoAjuste } from "../model/estado";
 import { FormularioAjuste } from "./FormularioAjuste";
@@ -19,6 +20,7 @@ function mov(over: Partial<Movimiento> = {}): Movimiento {
     motivo: null,
     anulado: false,
     reversible: true,
+    creado_en: "2026-03-20T14:32:00Z",
     saldo_acumulado: "700.00",
     ...over,
   };
@@ -79,7 +81,27 @@ describe("FormularioAjuste", () => {
       expect(onAjustar).toHaveBeenCalledWith({
         motivo: "saldo inicial Paradox",
         debe: "1200.50",
+        fecha: hoyISO(),
       });
+    });
+
+    it("puede fechar el ajuste para atrás", async () => {
+      // El caso real: un saldo inicial de migración no es de hoy.
+      const { onAjustar } = pintar({ kind: "libre" });
+
+      await userEvent.type(screen.getByLabelText("Importe"), "500");
+      await userEvent.type(screen.getByLabelText("Motivo"), "saldo inicial Paradox");
+      fireEvent.change(screen.getByLabelText("Fecha"), { target: { value: "2026-07-01" } });
+      await userEvent.click(screen.getByRole("button", { name: "Registrar ajuste" }));
+
+      expect(onAjustar).toHaveBeenCalledWith(
+        expect.objectContaining({ fecha: "2026-07-01" }),
+      );
+    });
+
+    it("no deja elegir una fecha futura", () => {
+      pintar({ kind: "libre" });
+      expect(screen.getByLabelText("Fecha")).toHaveAttribute("max", hoyISO());
     });
 
     it("puede ajustar en el Haber", async () => {
@@ -93,6 +115,7 @@ describe("FormularioAjuste", () => {
       expect(onAjustar).toHaveBeenCalledWith({
         motivo: "condonación de intereses",
         haber: "50",
+        fecha: hoyISO(),
       });
     });
   });

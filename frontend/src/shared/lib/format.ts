@@ -25,3 +25,17 @@ export function fechaCorta(v: string | null | undefined): string {
   const [a, m, d] = v.slice(0, 10).split("-");
   return a && m && d ? `${d}/${m}/${a}` : v;
 }
+
+/** Hoy como `YYYY-MM-DD` LOCAL, para precargar y topear un `<input type="date">`.
+ *
+ * `new Date().toISOString().slice(0, 10)` sería el bug del docstring de arriba al revés: da la
+ * fecha UTC, así que a las 21:00 en Argentina devuelve MAÑANA. Con eso el input se precargaría en
+ * el futuro y el backend rechazaría la cobranza con un 422 incomprensible.
+ *
+ * `getFullYear`/`getMonth`/`getDate` son locales, que es justo lo que se necesita. */
+export function hoyISO(): string {
+  const d = new Date();
+  const dosDigitos = (n: number) => String(n).padStart(2, "0");
+
+  return `${d.getFullYear()}-${dosDigitos(d.getMonth() + 1)}-${dosDigitos(d.getDate())}`;
+}

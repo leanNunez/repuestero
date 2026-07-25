@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import { pesos } from "@/entities/remito/formato";
+import { hoyISO } from "@/shared/lib/format";
 import { Button } from "@/shared/ui/button";
 import { CampoMoneda } from "@/shared/ui/campo-moneda";
 import { Card } from "@/shared/ui/card";
@@ -51,6 +52,8 @@ export function FormularioAjuste({
   const [motivo, setMotivo] = useState("");
   const [columna, setColumna] = useState<Columna>("debe");
   const [importe, setImporte] = useState("");
+  const hoy = hoyISO();
+  const [fecha, setFecha] = useState(hoy);
 
   if (modo === null) {
     return (
@@ -73,6 +76,7 @@ export function FormularioAjuste({
     setMotivo("");
     setImporte("");
     setColumna("debe");
+    setFecha(hoy);
   }
 
   function cerrar() {
@@ -86,8 +90,11 @@ export function FormularioAjuste({
 
     onAjustar(
       actual.kind === "storno"
-        ? { motivo: motivo.trim(), revierte_movimiento_id: actual.movimiento.id }
-        : { motivo: motivo.trim(), [columna]: importe.trim() },
+        ? // Una reversa se fecha CUANDO SE CORRIGE, siempre hoy. Fecharla el día del movimiento
+          // original haría que los acumulados intermedios se vieran como si el error nunca hubiera
+          // existido, y eso es borrar historia en un ledger que existe para no borrarla.
+          { motivo: motivo.trim(), revierte_movimiento_id: actual.movimiento.id }
+        : { motivo: motivo.trim(), [columna]: importe.trim(), fecha },
     );
     limpiar();
   }
@@ -151,6 +158,21 @@ export function FormularioAjuste({
                 value={importe}
                 onChange={setImporte}
                 placeholder="0,00"
+                disabled={cargando}
+                className={inputClass}
+              />
+            </div>
+
+            <div className="sm:w-44">
+              <label htmlFor="ajuste-fecha" className="mb-1 block text-xs text-muted-foreground">
+                Fecha
+              </label>
+              <input
+                id="ajuste-fecha"
+                type="date"
+                value={fecha}
+                max={hoy}
+                onChange={(e) => setFecha(e.target.value)}
                 disabled={cargando}
                 className={inputClass}
               />

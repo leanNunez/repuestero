@@ -82,8 +82,16 @@ export function ExtractoTable({ movimientos, isLoading, isError, onRetry, onReve
         <tbody>
           {movimientos.map((m) => (
             <tr key={m.id} className="border-b border-border last:border-0 hover:bg-muted/50">
+              {/* Cuándo PASÓ arriba y, solo si difiere, cuándo se CARGÓ abajo. Sin esa segunda
+                  fecha el retroactivo sería una forma prolija de reescribir el pasado; mostrarla
+                  siempre sería ruido en todas las filas, que es la enorme mayoría. */}
               <td className="whitespace-nowrap px-4 py-2.5 align-top tabular-nums">
                 {fechaCorta(m.fecha)}
+                {m.creado_en.slice(0, 10) !== m.fecha.slice(0, 10) && (
+                  <span className="mt-0.5 block text-xs font-normal text-muted-foreground">
+                    cargado el {fechaCorta(m.creado_en)}
+                  </span>
+                )}
               </td>
               <td className="px-4 py-2.5 align-top">
                 <span className={m.anulado ? "text-muted-foreground line-through" : undefined}>

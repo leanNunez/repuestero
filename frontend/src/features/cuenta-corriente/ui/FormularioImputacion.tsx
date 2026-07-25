@@ -1,6 +1,7 @@
 import { useState } from "react";
 
 import type { Cuenta } from "@/entities/cuenta-corriente/schema";
+import { fechaCorta, hoyISO } from "@/shared/lib/format";
 import { Button } from "@/shared/ui/button";
 import { CampoMoneda } from "@/shared/ui/campo-moneda";
 import { Card } from "@/shared/ui/card";
@@ -15,23 +16,28 @@ interface Props {
   cuenta: Cuenta;
   cargando: boolean;
   error: string | null;
-  onImputar: (monto: string) => void;
+  onImputar: (monto: string, fecha: string) => void;
 }
 
 /** Registrar una cobranza (clientes) o un pago (proveedores).
  *
- * Un solo campo, así que no hay reducer: `useState` local y la validación pura en `estado.ts`. */
+ * Dos campos, así que sigue sin haber reducer: `useState` local y la validación pura en
+ * `estado.ts`. La fecha es CUÁNDO ENTRÓ la plata, no cuándo se carga: la del viernes tipeada el
+ * lunes va con la del viernes. */
 export function FormularioImputacion({ tab, cuenta, cargando, error, onImputar }: Props) {
   const [monto, setMonto] = useState("");
+  const hoy = hoyISO();
+  const [fecha, setFecha] = useState(hoy);
 
   const accion = tab === "clientes" ? "Registrar cobranza" : "Registrar pago";
-  const puede = montoValido(monto) && !cargando;
+  const puede = montoValido(monto) && fecha !== "" && !cargando;
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!puede) return;
-    onImputar(monto.trim());
+    onImputar(monto.trim(), fecha);
     setMonto("");
+    setFecha(hoy);
   }
 
   return (
@@ -55,6 +61,24 @@ export function FormularioImputacion({ tab, cuenta, cargando, error, onImputar }
           </p>
         </div>
 
+        <div className="sm:w-44">
+          <label htmlFor="fecha-imputacion" className="mb-1 block text-xs text-muted-foreground">
+            {tab === "clientes" ? "Fecha del cobro" : "Fecha del pago"}
+          </label>
+          {/* `max` = hoy: no se puede fechar en el futuro, y eso es evidente en el input. El
+              mínimo de 90 días NO se replica acá — es política del backend, que devuelve un 422
+              con el mensaje puesto. Duplicar esa regla sería repetir la trampa de `reversible`. */}
+          <input
+            id="fecha-imputacion"
+            type="date"
+            value={fecha}
+            max={hoy}
+            onChange={(e) => setFecha(e.target.value)}
+            disabled={cargando}
+            className={inputClass}
+          />
+        </div>
+
         <Button type="submit" disabled={!puede} className="shrink-0">
           {cargando ? "Registrando…" : accion}
         </Button>
@@ -67,8 +91,8 @@ export function FormularioImputacion({ tab, cuenta, cargando, error, onImputar }
       )}
 
       <p className="mt-2 text-xs text-muted-foreground">
-        Se imputa a la cuenta de <span className="font-medium">{cuenta.nombre}</span> con fecha de
-        hoy.
+        Se imputa a la cuenta de <span className="font-medium">{cuenta.nombre}</span> con fecha{" "}
+        <span className="font-medium">{fecha === hoy ? "de hoy" : fechaCorta(fecha)}</span>.
       </p>
     </Card>
   );
