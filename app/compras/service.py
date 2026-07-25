@@ -15,7 +15,7 @@ from typing import Any
 from uuid import UUID
 
 from sqlalchemy import Row, and_, func, join, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.catalogo import service as catalogo
 from app.catalogo.schemas import ArticuloActualizar
@@ -186,6 +186,14 @@ def listar_compras(
 
 # --------------------------------------------------------------------------- cuenta corriente
 
+#: `ref_tipo` de un ajuste que revierte a otro movimiento; su `ref_id` apunta al original.
+REF_REVERSA = "ajuste_de"
+
+#: Qué se puede revertir con un storno. NO está 'compra': ese movimiento ESPEJA un documento de
+#: compra, y cancelar su efecto desde el ledger dejaría la compra viva con la cuenta en cero, en
+#: silencio. Espejo de `ventas.MOVIMIENTOS_REVERSIBLES`, donde está la explicación larga.
+MOVIMIENTOS_REVERSIBLES = frozenset({"pago", "ajuste"})
+
 
 def saldo_proveedor(session: Session, org_id: UUID, proveedor_id: int) -> Decimal:
     """Saldo actual leído de la VISTA `proveedor_saldo` (positivo = le debemos).
@@ -224,6 +232,98 @@ def registrar_pago(
         proveedor_id=proveedor.id,
         tipo="pago",
         haber=monto,
+        creado_por=usuario_id,
+    )
+    session.add(movimiento)
+    session.flush()
+    return movimiento
+
+
+def registrar_ajuste(
+    session: Session,
+    org_id: UUID,
+    *,
+    proveedor_id: int,
+    motivo: str,
+    debe: Decimal | None = None,
+    haber: Decimal | None = None,
+    revierte_movimiento_id: int | None = None,
+    usuario_id: UUID | None = None,
+) -> ProvCtaCteMovimiento:
+    """Corrige la cuenta corriente del proveedor con una fila NUEVA. El pasado no se toca.
+
+    Espejo exacto de `ventas.registrar_ajuste`, donde está la explicación completa de los dos
+    modos (reversa con importe calculado por el service, o ajuste manual) y de por qué el motivo
+    es obligatorio. Acá el significado va invertido: un debe sube lo que le debemos.
+
+    No abre sesión ni commitea (termina en flush). El saldo sale solo de la vista.
+    """
+    motivo = motivo.strip()
+    if not motivo:
+        raise CompraInvalida("El ajuste necesita un motivo: sin él la corrección no se puede leer.")
+
+    proveedor = proveedores.obtener_proveedor_por_id(session, org_id, proveedor_id)
+    if proveedor is None:
+        raise CompraInvalida("No existe ese proveedor en tu organización.")
+
+    ref_tipo: str | None = None
+    ref_id: int | None = None
+
+    if revierte_movimiento_id is not None:
+        if debe is not None or haber is not None:
+            raise CompraInvalida(
+                "Una reversa no lleva importe: lo calcula el sistema desde el movimiento original."
+            )
+
+        # El filtro por `proveedor_id` no es redundante con el de org: sin él se podría revertir el
+        # movimiento de OTRO proveedor de la misma organización pasando su id a mano.
+        original = session.scalar(
+            select(ProvCtaCteMovimiento).where(
+                ProvCtaCteMovimiento.org_id == org_id,
+                ProvCtaCteMovimiento.id == revierte_movimiento_id,
+                ProvCtaCteMovimiento.proveedor_id == proveedor_id,
+            )
+        )
+        if original is None:
+            raise CompraInvalida("No existe ese movimiento en la cuenta de este proveedor.")
+
+        if original.tipo not in MOVIMIENTOS_REVERSIBLES:
+            raise CompraInvalida(
+                f"Un movimiento de tipo {original.tipo!r} no se revierte desde la cuenta "
+                "corriente porque refleja un documento de compra."
+            )
+
+        # Chequeo previo solo para dar un error legible: la garantía REAL es el índice único
+        # parcial de la 0009, porque entre este SELECT y el INSERT entra otra transacción.
+        if session.scalar(
+            select(ProvCtaCteMovimiento.id).where(
+                ProvCtaCteMovimiento.org_id == org_id,
+                ProvCtaCteMovimiento.ref_tipo == REF_REVERSA,
+                ProvCtaCteMovimiento.ref_id == original.id,
+            )
+        ):
+            raise CompraInvalida("Ese movimiento ya fue revertido con un ajuste.")
+
+        debe, haber = original.haber, original.debe
+        ref_tipo, ref_id = REF_REVERSA, original.id
+    else:
+        importes = [m for m in (debe, haber) if m is not None]
+        if not importes:
+            raise CompraInvalida("Un ajuste manual lleva un importe en Debe o en Haber.")
+        if len(importes) == 2:
+            raise CompraInvalida("Un ajuste va en Debe o en Haber, no en los dos a la vez.")
+        if importes[0] <= 0:
+            raise CompraInvalida("El importe del ajuste debe ser mayor a cero.")
+
+    movimiento = ProvCtaCteMovimiento(
+        org_id=org_id,
+        proveedor_id=proveedor_id,
+        tipo="ajuste",
+        debe=debe if debe is not None else Decimal("0"),
+        haber=haber if haber is not None else Decimal("0"),
+        ref_tipo=ref_tipo,
+        ref_id=ref_id,
+        motivo=motivo,
         creado_por=usuario_id,
     )
     session.add(movimiento)
@@ -298,7 +398,8 @@ def movimientos_proveedor(
     """Extracto paginado, más reciente primero, con el saldo acumulado de cada renglón.
 
     Espejo de `ventas.movimientos_cliente`: el acumulado se calcula acá y nunca en el front,
-    que solo ve una página y no puede conocer el acumulado de las anteriores.
+    que solo ve una página y no puede conocer el acumulado de las anteriores. También trae
+    `motivo` y `anulado`, para que el extracto pueda mostrar qué movimiento quedó revertido.
     """
     acumulado = (
         func.sum(ProvCtaCteMovimiento.debe - ProvCtaCteMovimiento.haber)
@@ -312,6 +413,20 @@ def movimientos_proveedor(
         .label("saldo_acumulado")
     )
 
+    # ¿Alguien ya revirtió esta fila? EXISTS correlacionado sobre el MISMO ledger, así que hace
+    # falta un alias para distinguir la reversa del movimiento revertido.
+    reversa = aliased(ProvCtaCteMovimiento)
+    anulado = (
+        select(reversa.id)
+        .where(
+            reversa.org_id == ProvCtaCteMovimiento.org_id,
+            reversa.ref_tipo == REF_REVERSA,
+            reversa.ref_id == ProvCtaCteMovimiento.id,
+        )
+        .exists()
+        .label("anulado")
+    )
+
     filtros = (
         ProvCtaCteMovimiento.org_id == org_id,
         ProvCtaCteMovimiento.proveedor_id == proveedor_id,
@@ -322,7 +437,8 @@ def movimientos_proveedor(
     )
 
     # La window en una subquery y el orden de lectura afuera: si mañana se filtra por rango de
-    # fechas, el WHERE no puede recortar el ledger ANTES de acumular.
+    # fechas, el WHERE no puede recortar el ledger ANTES de acumular. El EXISTS va acá adentro por
+    # lo mismo: afuera se evaluaría sobre la ventana ya recortada.
     ledger = (
         select(
             ProvCtaCteMovimiento.id,
@@ -332,6 +448,8 @@ def movimientos_proveedor(
             ProvCtaCteMovimiento.haber,
             ProvCtaCteMovimiento.ref_tipo,
             ProvCtaCteMovimiento.ref_id,
+            ProvCtaCteMovimiento.motivo,
+            anulado,
             acumulado,
         )
         .where(*filtros)

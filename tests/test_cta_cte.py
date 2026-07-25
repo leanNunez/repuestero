@@ -371,6 +371,207 @@ def test_prov_limite_siempre_es_none(sesion, org):
     assert leidas and all(c.limite is None for c in leidas)
 
 
+# ==================================================================== ajustes de proveedor
+# Espejo de la sección de clientes. Lo que cambia es el signo del significado, no la mecánica.
+
+
+def _primer_movimiento_prov(sesion, org_id, proveedor_id, tipo) -> ProvCtaCteMovimiento:
+    mov = sesion.scalars(
+        select(ProvCtaCteMovimiento)
+        .where(
+            ProvCtaCteMovimiento.org_id == org_id,
+            ProvCtaCteMovimiento.proveedor_id == proveedor_id,
+            ProvCtaCteMovimiento.tipo == tipo,
+        )
+        .order_by(ProvCtaCteMovimiento.id)
+    ).first()
+    assert mov is not None, f"el fixture tiene que sembrar un movimiento {tipo!r}"
+    return mov
+
+
+def test_prov_storno_deja_el_saldo_igual_que_antes_del_pago(sesion, org):
+    """El test que importa, del lado proveedor: la reversa cierra exacto contra la vista."""
+    antes = compras.saldo_proveedor(sesion, org.id, org.prov.deuda)
+
+    pago = compras.registrar_pago(
+        sesion, org.id, proveedor_codigo="PROV-DEUDA", monto=Decimal("3000")
+    )
+    assert compras.saldo_proveedor(sesion, org.id, org.prov.deuda) == antes - Decimal("3000")
+
+    compras.registrar_ajuste(
+        sesion,
+        org.id,
+        proveedor_id=org.prov.deuda,
+        motivo="pago cargado dos veces",
+        revierte_movimiento_id=pago.id,
+    )
+    assert compras.saldo_proveedor(sesion, org.id, org.prov.deuda) == antes
+
+
+def test_prov_storno_espeja_el_monto_y_referencia_el_original(sesion, org):
+    pago = _primer_movimiento_prov(sesion, org.id, org.prov.deuda, "pago")
+
+    ajuste = compras.registrar_ajuste(
+        sesion,
+        org.id,
+        proveedor_id=org.prov.deuda,
+        motivo="duplicado",
+        revierte_movimiento_id=pago.id,
+    )
+
+    assert ajuste.tipo == "ajuste"
+    assert (ajuste.debe, ajuste.haber) == (pago.haber, pago.debe)
+    assert (ajuste.ref_tipo, ajuste.ref_id) == (compras.REF_REVERSA, pago.id)
+    assert ajuste.motivo == "duplicado"
+
+
+def test_prov_no_se_puede_revertir_dos_veces(sesion, org):
+    pago = _primer_movimiento_prov(sesion, org.id, org.prov.deuda, "pago")
+    compras.registrar_ajuste(
+        sesion,
+        org.id,
+        proveedor_id=org.prov.deuda,
+        motivo="primera",
+        revierte_movimiento_id=pago.id,
+    )
+
+    with pytest.raises(compras.CompraInvalida, match="ya fue revertido"):
+        compras.registrar_ajuste(
+            sesion,
+            org.id,
+            proveedor_id=org.prov.deuda,
+            motivo="segunda",
+            revierte_movimiento_id=pago.id,
+        )
+
+
+def test_prov_el_indice_unico_ataja_la_doble_reversa_simultanea(sesion, org):
+    """La garantía real es el índice de la 0009, no el chequeo del service."""
+    pago = _primer_movimiento_prov(sesion, org.id, org.prov.deuda, "pago")
+    compras.registrar_ajuste(
+        sesion,
+        org.id,
+        proveedor_id=org.prov.deuda,
+        motivo="primera",
+        revierte_movimiento_id=pago.id,
+    )
+
+    sesion.add(
+        ProvCtaCteMovimiento(
+            org_id=org.id,
+            proveedor_id=org.prov.deuda,
+            tipo="ajuste",
+            debe=pago.haber,
+            ref_tipo=compras.REF_REVERSA,
+            ref_id=pago.id,
+            motivo="segunda, por atrás del service",
+        )
+    )
+    with pytest.raises(IntegrityError):
+        sesion.flush()
+
+
+def test_prov_no_se_puede_revertir_una_compra(sesion, org):
+    """Espeja un documento de compra: se corrige por su propio flujo, no desde el ledger."""
+    compra = _primer_movimiento_prov(sesion, org.id, org.prov.deuda, "compra")
+
+    with pytest.raises(compras.CompraInvalida, match="documento de compra"):
+        compras.registrar_ajuste(
+            sesion,
+            org.id,
+            proveedor_id=org.prov.deuda,
+            motivo="anular la compra",
+            revierte_movimiento_id=compra.id,
+        )
+
+
+def test_prov_no_se_puede_revertir_el_movimiento_de_otro_proveedor(sesion, org):
+    ajeno = _primer_movimiento_prov(sesion, org.id, org.prov.favor, "pago")
+
+    with pytest.raises(compras.CompraInvalida, match="No existe ese movimiento"):
+        compras.registrar_ajuste(
+            sesion,
+            org.id,
+            proveedor_id=org.prov.deuda,
+            motivo="reversa cruzada",
+            revierte_movimiento_id=ajeno.id,
+        )
+
+
+def test_prov_ajuste_manual_mueve_el_saldo_en_los_dos_sentidos(sesion, org):
+    antes = compras.saldo_proveedor(sesion, org.id, org.prov.deuda)
+
+    compras.registrar_ajuste(
+        sesion, org.id, proveedor_id=org.prov.deuda, motivo="saldo inicial", debe=Decimal("400")
+    )
+    assert compras.saldo_proveedor(sesion, org.id, org.prov.deuda) == antes + Decimal("400")
+
+    compras.registrar_ajuste(
+        sesion, org.id, proveedor_id=org.prov.deuda, motivo="nos bonificaron", haber=Decimal("100")
+    )
+    assert compras.saldo_proveedor(sesion, org.id, org.prov.deuda) == antes + Decimal("300")
+
+
+def test_prov_ajuste_manual_exige_exactamente_un_importe(sesion, org):
+    with pytest.raises(compras.CompraInvalida, match="Debe o en Haber"):
+        compras.registrar_ajuste(sesion, org.id, proveedor_id=org.prov.deuda, motivo="sin importe")
+
+    with pytest.raises(compras.CompraInvalida, match="no en los dos"):
+        compras.registrar_ajuste(
+            sesion,
+            org.id,
+            proveedor_id=org.prov.deuda,
+            motivo="los dos",
+            debe=Decimal("10"),
+            haber=Decimal("10"),
+        )
+
+
+def test_prov_ajuste_sin_motivo_se_rechaza(sesion, org):
+    with pytest.raises(compras.CompraInvalida, match="motivo"):
+        compras.registrar_ajuste(
+            sesion, org.id, proveedor_id=org.prov.deuda, motivo="   ", debe=Decimal("10")
+        )
+
+
+def test_prov_el_check_de_la_base_exige_motivo_en_los_ajustes(sesion, org):
+    sesion.add(
+        ProvCtaCteMovimiento(
+            org_id=org.id, proveedor_id=org.prov.deuda, tipo="ajuste", debe=Decimal("100")
+        )
+    )
+    with pytest.raises(IntegrityError):
+        sesion.flush()
+
+
+def test_prov_ajuste_a_proveedor_inexistente_se_rechaza(sesion, org):
+    with pytest.raises(compras.CompraInvalida, match="No existe ese proveedor"):
+        compras.registrar_ajuste(
+            sesion, org.id, proveedor_id=999999, motivo="fantasma", debe=Decimal("10")
+        )
+
+
+def test_prov_el_extracto_marca_anulado_y_trae_el_motivo(sesion, org):
+    pago = compras.registrar_pago(
+        sesion, org.id, proveedor_codigo="PROV-DEUDA", monto=Decimal("600")
+    )
+    ajuste = compras.registrar_ajuste(
+        sesion,
+        org.id,
+        proveedor_id=org.prov.deuda,
+        motivo="duplicado",
+        revierte_movimiento_id=pago.id,
+    )
+
+    filas, _ = compras.movimientos_proveedor(sesion, org.id, org.prov.deuda, limite=100)
+    por_id = {f.id: f for f in filas}
+
+    assert por_id[pago.id].anulado is True
+    assert por_id[ajuste.id].anulado is False
+    assert por_id[ajuste.id].motivo == "duplicado"
+    assert por_id[pago.id].motivo is None
+
+
 # =========================================================================== ajustes (storno)
 
 
@@ -914,6 +1115,51 @@ def test_endpoint_ajuste_de_cliente_inexistente_es_404(cliente):
 )
 def test_endpoint_ajuste_payload_incoherente_es_422(cliente, org, payload):
     assert cliente.post(_url_ajustes(org.cli.deuda), json=payload).status_code == 422
+
+
+def test_endpoint_ajuste_proveedor_revierte_un_pago(cliente, org):
+    """El espejo completo por HTTP: mismo contrato contra el otro prefijo."""
+    url = f"/compras/proveedores/{org.prov.deuda}/ajustes"
+    antes = Decimal(
+        cliente.get(f"/compras/proveedores/{org.prov.deuda}/movimientos").json()["cuenta"]["saldo"]
+    )
+
+    pago = cliente.post(
+        "/compras/pagos", json={"proveedor_codigo": "PROV-DEUDA", "monto": "250.00"}
+    ).json()
+
+    r = cliente.post(
+        url, json={"revierte_movimiento_id": pago["movimiento_id"], "motivo": "pago duplicado"}
+    )
+    assert r.status_code == 201
+    assert Decimal(r.json()["saldo"]) == antes
+
+    # Segunda reversa del mismo movimiento: rechazada.
+    assert (
+        cliente.post(
+            url, json={"revierte_movimiento_id": pago["movimiento_id"], "motivo": "otra vez"}
+        ).status_code
+        == 422
+    )
+
+
+def test_endpoint_ajuste_proveedor_expone_motivo_y_anulado(cliente, org):
+    r = cliente.post(
+        f"/compras/proveedores/{org.prov.deuda}/ajustes",
+        json={"debe": "15.00", "motivo": "saldo inicial del proveedor"},
+    )
+    assert r.status_code == 201
+
+    mov = cliente.get(f"/compras/proveedores/{org.prov.deuda}/movimientos").json()["items"][0]
+    assert mov["motivo"] == "saldo inicial del proveedor"
+    assert mov["anulado"] is False
+
+
+def test_endpoint_ajuste_proveedor_inexistente_es_404(cliente):
+    r = cliente.post(
+        "/compras/proveedores/999999/ajustes", json={"debe": "10.00", "motivo": "fantasma"}
+    )
+    assert r.status_code == 404
 
 
 # =========================================================== integración con Repu (NL2SQL)

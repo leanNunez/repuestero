@@ -12,6 +12,8 @@ from sqlalchemy.exc import IntegrityError
 
 from app.compras import service
 from app.compras.schemas import (
+    AjusteCrear,
+    AjusteResponse,
     CompraCrear,
     CompraDetalle,
     CompraItemLeer,
@@ -101,6 +103,57 @@ def registrar_pago(
         ) from None
 
     return PagoProveedorResponse(
+        movimiento_id=movimiento.id,
+        proveedor_id=movimiento.proveedor_id,
+        saldo=service.saldo_proveedor(tenant.session, tenant.org_id, movimiento.proveedor_id),
+    )
+
+
+@router.post(
+    "/proveedores/{proveedor_id}/ajustes",
+    response_model=AjusteResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def registrar_ajuste(
+    proveedor_id: int,
+    body: AjusteCrear,
+    tenant: TenantContext = Depends(get_tenant),
+) -> AjusteResponse:
+    """Corrige la cuenta corriente del proveedor: reversa de un movimiento, o ajuste a mano.
+
+    Espejo de `POST /ventas/clientes/{id}/ajustes`. Ver `service.registrar_ajuste`.
+    """
+    # El proveedor viaja en el PATH, así que su ausencia es un 404 — igual que en el GET de
+    # movimientos. `/pagos` devuelve 422 porque ahí el proveedor va en el body.
+    if proveedores.obtener_proveedor_por_id(tenant.session, tenant.org_id, proveedor_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No existe ese proveedor.")
+
+    try:
+        movimiento = service.registrar_ajuste(
+            tenant.session,
+            tenant.org_id,
+            proveedor_id=proveedor_id,
+            motivo=body.motivo,
+            debe=body.debe,
+            haber=body.haber,
+            revierte_movimiento_id=body.revierte_movimiento_id,
+            usuario_id=tenant.user_id,
+        )
+    except service.CompraInvalida as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from None
+    except IntegrityError:
+        # El índice único parcial de la 0009 atajó una doble reversa simultánea: el chequeo del
+        # service pasó y otra transacción se metió en el medio.
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Ese movimiento ya fue revertido con un ajuste."
+        ) from None
+    except Exception:  # noqa: BLE001 — nunca filtrar internals (skill web-security)
+        logger.exception("Error en POST /compras/proveedores/%s/ajustes", proveedor_id)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, "No pude registrar el ajuste."
+        ) from None
+
+    return AjusteResponse(
         movimiento_id=movimiento.id,
         proveedor_id=movimiento.proveedor_id,
         saldo=service.saldo_proveedor(tenant.session, tenant.org_id, movimiento.proveedor_id),
