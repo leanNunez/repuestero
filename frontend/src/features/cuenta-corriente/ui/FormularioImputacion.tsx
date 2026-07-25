@@ -2,6 +2,7 @@ import { useState } from "react";
 
 import type { Cuenta } from "@/entities/cuenta-corriente/schema";
 import { Button } from "@/shared/ui/button";
+import { CampoMoneda } from "@/shared/ui/campo-moneda";
 import { Card } from "@/shared/ui/card";
 
 import { montoValido, type Solapa } from "../model/estado";
@@ -40,20 +41,17 @@ export function FormularioImputacion({ tab, cuenta, cargando, error, onImputar }
           <label htmlFor="monto-imputacion" className="mb-1 block text-xs text-muted-foreground">
             {tab === "clientes" ? "Monto cobrado" : "Monto pagado"}
           </label>
-          <input
+          <CampoMoneda
             id="monto-imputacion"
             value={monto}
-            onChange={(e) => setMonto(e.target.value)}
-            inputMode="decimal"
-            placeholder="0.00"
+            onChange={setMonto}
+            placeholder="0,00"
             disabled={cargando}
             aria-describedby="monto-hint"
             className={inputClass}
           />
-          {/* El operador argentino va a tipear coma. `Number("10,50")` es NaN, así que se rechaza
-              y el hint es lo que evita que quede peleando con el botón deshabilitado. */}
           <p id="monto-hint" className="mt-1 text-xs text-muted-foreground">
-            Usá punto para los centavos: 1250.50
+            Los miles se separan solos; usá coma para los centavos.
           </p>
         </div>
 

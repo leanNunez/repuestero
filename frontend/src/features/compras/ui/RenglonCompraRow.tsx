@@ -2,6 +2,7 @@ import { Trash2 } from "lucide-react";
 
 import { pesos } from "@/entities/remito/formato";
 import { Button } from "@/shared/ui/button";
+import { CampoMoneda } from "@/shared/ui/campo-moneda";
 
 import type { RenglonCompra } from "../model/estado";
 
@@ -32,12 +33,11 @@ export function RenglonCompraRow({ renglon, onCampo, onQuitar }: Props) {
         className={inputClass}
       />
 
-      <input
+      <CampoMoneda
         aria-label="Costo unitario"
-        inputMode="decimal"
         value={renglon.costo_unitario}
-        onChange={(e) => onCampo("costo_unitario", e.target.value)}
-        placeholder="0.00"
+        onChange={(v) => onCampo("costo_unitario", v)}
+        placeholder="0,00"
         className={inputClass}
       />
 
