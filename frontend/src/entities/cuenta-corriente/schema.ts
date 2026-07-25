@@ -37,6 +37,15 @@ export const movimientoSchema = z.object({
   haber: z.string(),
   ref_tipo: z.string().nullable(),
   ref_id: z.number().nullable(),
+  /** Por qué se ajustó. Solo lo traen los movimientos de tipo 'ajuste'. */
+  motivo: z.string().nullable(),
+  /** Si un ajuste posterior ya revirtió este movimiento. Sin esto el extracto mostraría un haber
+   *  y su contra-debe sin ninguna pista de que se cancelan entre sí. */
+  anulado: z.boolean(),
+  /** La respuesta del backend a "¿puedo apretar Revertir en esta fila?". Ya contempla que un
+   *  movimiento anulado no se revierte de nuevo, así que el front no combina nada: dibuja el
+   *  botón si esto es true. La regla de QUÉ es reversible vive solo en los services de Python. */
+  reversible: z.boolean(),
   /** Saldo después de este movimiento. Lo calcula el backend sobre TODO el ledger: no se
    *  recalcula acá, porque el front solo tiene una página. */
   saldo_acumulado: z.string(),
@@ -48,10 +57,11 @@ export const movimientoPaginaSchema = z.object({
   cuenta: cuentaSchema,
 });
 
-/** Acuse de una cobranza o un pago.
+/** Acuse de una cobranza, un pago o un ajuste.
  *
- * `CobranzaResponse` y `PagoProveedorResponse` solo difieren en `cliente_id`/`proveedor_id`, y
- * Zod descarta las claves que no declara: un schema alcanza para las dos mutaciones. */
+ * `CobranzaResponse`, `PagoProveedorResponse` y los dos `AjusteResponse` solo difieren en
+ * `cliente_id`/`proveedor_id`, y Zod descarta las claves que no declara: un schema alcanza para
+ * las cuatro mutaciones. */
 export const imputacionResponseSchema = z.object({
   movimiento_id: z.number(),
   saldo: z.string(),

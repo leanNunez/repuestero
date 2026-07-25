@@ -8,7 +8,7 @@ import {
 } from "@/entities/cuenta-corriente/schema";
 import { apiGet, apiPost } from "@/shared/api/client";
 
-import type { Solapa } from "./estado";
+import type { AjustePayload, Solapa } from "./estado";
 
 /** Cuentas por página en el listado. */
 export const PAGE_SIZE = 20;
@@ -81,6 +81,28 @@ export function useImputar(tab: Solapa) {
       void qc.invalidateQueries({ queryKey: ["cuenta-corriente"] });
       void qc.invalidateQueries({ queryKey: ["dashboard"] });
       // NO se invalidan ["ventas"] ni ["compras"]: una cobranza no toca comprobantes ni stock.
+    },
+  });
+}
+
+/** Ajuste de cuenta corriente: reversa de un movimiento, o corrección manual.
+ *
+ * El ledger es append-only, así que esto es lo ÚNICO que puede arreglar una cobranza mal cargada.
+ * Un solo endpoint para los dos modos, igual que el backend. */
+export function useAjustar(tab: Solapa, cuentaId: number | null) {
+  const qc = useQueryClient();
+  const { base, coleccion } = RUTA[tab];
+
+  return useMutation<ImputacionResponse, Error, AjustePayload>({
+    mutationFn: (payload) =>
+      apiPost(`${base}/${coleccion}/${cuentaId}/ajustes`, payload, imputacionResponseSchema),
+    // Sin retry: los 422 de acá son de negocio ("ese movimiento ya fue revertido") y los tiene que
+    // leer la persona. Reintentar una reversa a ciegas es justo lo que el índice único previene.
+    retry: false,
+    onSuccess: () => {
+      // Mismo alcance que `useImputar`: un ajuste mueve el saldo, no toca comprobantes ni stock.
+      void qc.invalidateQueries({ queryKey: ["cuenta-corriente"] });
+      void qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }

@@ -1,12 +1,16 @@
 import { describe, expect, it } from "vitest";
 
+import type { Movimiento } from "@/entities/cuenta-corriente/schema";
+
 import {
   BUSQUEDA_INICIAL,
   buscar,
   cambiarSolapa,
+  espejoDelMovimiento,
   etiquetaTipo,
   excedeLimite,
   montoValido,
+  motivoValido,
   parseBusqueda,
   seleccionar,
   signoSaldo,
@@ -16,6 +20,23 @@ import {
 
 function busqueda(over: Partial<Busqueda> = {}): Busqueda {
   return { ...BUSQUEDA_INICIAL, ...over };
+}
+
+function mov(over: Partial<Movimiento> = {}): Movimiento {
+  return {
+    id: 1,
+    fecha: "2026-03-20",
+    tipo: "cobranza",
+    debe: "0.00",
+    haber: "300.00",
+    ref_tipo: null,
+    ref_id: null,
+    motivo: null,
+    anulado: false,
+    reversible: true,
+    saldo_acumulado: "700.00",
+    ...over,
+  };
 }
 
 describe("parseBusqueda", () => {
@@ -160,5 +181,38 @@ describe("excedeLimite", () => {
 
   it("los proveedores no tienen límite", () => {
     expect(excedeLimite("99999", null)).toBe(false);
+  });
+});
+
+describe("motivoValido", () => {
+  it("exige un motivo escrito de verdad", () => {
+    expect(motivoValido("cobranza cargada dos veces")).toBe(true);
+    expect(motivoValido("dup")).toBe(true); // el mínimo del backend son 3 caracteres
+  });
+
+  it("rechaza el vacío y los espacios", () => {
+    // El backend hace strip antes de validar el min_length, así que "  " no pasa allá tampoco.
+    expect(motivoValido("")).toBe(false);
+    expect(motivoValido("     ")).toBe(false);
+    expect(motivoValido("no")).toBe(false);
+  });
+});
+
+// No hay tests de "qué se puede revertir" acá a propósito: esa regla vive en los services de
+// Python y viaja resuelta en `movimiento.reversible`. Está testeada en tests/test_cta_cte.py.
+
+describe("espejoDelMovimiento", () => {
+  it("un haber se revierte con un debe del mismo importe", () => {
+    expect(espejoDelMovimiento(mov({ debe: "0.00", haber: "300.00" }))).toEqual({
+      columna: "Debe",
+      importe: "300.00",
+    });
+  });
+
+  it("un debe se revierte con un haber del mismo importe", () => {
+    expect(espejoDelMovimiento(mov({ debe: "1234.56", haber: "0.00" }))).toEqual({
+      columna: "Haber",
+      importe: "1234.56",
+    });
   });
 });
