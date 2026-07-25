@@ -8,11 +8,13 @@ le calcula el IVA por renglón. `GET /ventas/precio-sugerido` propone un precio 
 del cliente, o Mostrador) para precargar el renglón, pero es solo sugerencia editable.
 """
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.core.fechas import validar_fecha_movimiento
 
 _MAX_RENGLONES = 200
 
@@ -101,6 +103,11 @@ class CobranzaCrear(BaseModel):
 
     cliente_codigo: str = Field(min_length=1, max_length=20)
     monto: Decimal = Field(gt=0)
+    #: Cuándo ENTRÓ la plata. `None` = hoy. La plata del viernes cargada el lunes va con la del
+    #: viernes; `creado_en` guarda igual el momento del alta, así que el retroactivo es auditable.
+    fecha: date | None = None
+
+    _valida_fecha = field_validator("fecha")(validar_fecha_movimiento)
 
 
 class CobranzaResponse(BaseModel):
@@ -130,6 +137,10 @@ class AjusteCrear(BaseModel):
     debe: Decimal | None = Field(default=None, gt=0)
     #: Solo en ajuste manual, y uno solo de los dos. Baja la deuda del cliente.
     haber: Decimal | None = Field(default=None, gt=0)
+    #: Cuándo corresponde el ajuste. `None` = hoy. Un saldo inicial de migración no es de hoy.
+    fecha: date | None = None
+
+    _valida_fecha = field_validator("fecha")(validar_fecha_movimiento)
 
     @model_validator(mode="after")
     def _un_modo_solo(self) -> "AjusteCrear":
@@ -198,6 +209,9 @@ class MovimientoLeer(BaseModel):
     ref_id: int | None = None
     #: Por qué se ajustó. Solo lo traen los movimientos de tipo 'ajuste'.
     motivo: str | None = None
+    #: Cuándo se REGISTRÓ, contra `fecha`, que es cuándo pasó. Con movimientos retroactivos las dos
+    #: dejan de coincidir, y mostrarlas es lo que hace auditable al retroactivo.
+    creado_en: datetime
     #: Si un ajuste posterior ya revirtió este movimiento. Sin esto el extracto muestra el haber y
     #: su contra-debe sin ninguna pista de que se cancelan entre sí.
     anulado: bool = False

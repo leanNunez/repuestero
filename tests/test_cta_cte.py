@@ -36,6 +36,7 @@ from app.compras.schemas import CuentaLeer as CuentaProveedorLeer
 from app.core import db as core_db
 from app.core.config import get_settings
 from app.core.db import ORG_GUC, set_guc
+from app.core.fechas import DIAS_RETROACTIVIDAD
 from app.core.models import Miembro, Organizacion
 from app.main import app
 from app.proveedores import service as proveedores
@@ -43,8 +44,9 @@ from app.ventas import service
 from app.ventas.models import CtaCteMovimiento
 from tests.conftest import APP_URL, OWNER_URL
 
-#: El ledger sembrado para CLI-DEUDA. Fechas explícitas: `registrar_cobranza` no acepta fecha,
-#: así que los movimientos se insertan a mano para poder probar el orden cronológico.
+#: El ledger sembrado para CLI-DEUDA. Se inserta a mano para fijar fechas de 2026 estables: los
+#: acumulados esperados de abajo dependen del orden cronológico exacto, y `date.today()` los movería
+#: cada vez que corre la suite.
 #: (fecha, tipo, debe, haber) -> acumulado esperado
 LEDGER = [
     ("2026-01-10", "venta", "1000", "0"),  # 1000
@@ -595,6 +597,118 @@ def test_prov_el_extracto_marca_anulado_y_trae_el_motivo(sesion, org):
     assert por_id[ajuste.id].anulado is False
     assert por_id[ajuste.id].motivo == "duplicado"
     assert por_id[pago.id].motivo is None
+
+
+# ==================================================================== fecha del movimiento
+
+
+def test_una_cobranza_retroactiva_no_cambia_el_saldo_pero_si_reordena(sesion, org):
+    """EL test de esta feature, y son las dos mitades de la misma verdad.
+
+    `cliente_saldo` es SUM(debe) - SUM(haber): una suma NO depende del orden, así que fechar para
+    atrás no puede mover el saldo final. Lo que sí se mueve son los acumulados intermedios del
+    extracto, porque la window ordena por (fecha, id) y la fila se inserta en el medio. Eso no es
+    un efecto colateral: es exactamente lo que significa fechar para atrás.
+    """
+    antes_saldo = service.saldo_cliente(sesion, org.id, org.cli.deuda)
+    antes_filas, _ = service.movimientos_cliente(sesion, org.id, org.cli.deuda, limite=100)
+
+    # El 2026-02-20 cae entre la cobranza del 15/02 y la venta del 20/03 del ledger sembrado.
+    service.registrar_cobranza(
+        sesion,
+        org.id,
+        cliente_codigo="CLI-DEUDA",
+        monto=Decimal("100"),
+        fecha=date(2026, 2, 20),
+    )
+
+    # 1) El saldo final no se enteró del orden.
+    assert service.saldo_cliente(sesion, org.id, org.cli.deuda) == antes_saldo - Decimal("100")
+
+    # 2) Pero la fila entró en el MEDIO, no arriba (las filas vuelven DESC).
+    despues, _ = service.movimientos_cliente(sesion, org.id, org.cli.deuda, limite=100)
+    fechas = [f.fecha for f in despues]
+    assert fechas == sorted(fechas, reverse=True), "el extracto tiene que seguir cronológico"
+    assert despues[0].fecha != date(2026, 2, 20), "no puede haber quedado arriba de todo"
+
+    # 3) Y los acumulados POSTERIORES a esa fecha se corrieron 100.
+    viejos = {f.id: f.saldo_acumulado for f in antes_filas}
+    corridos = [f for f in despues if f.id in viejos and f.saldo_acumulado != viejos[f.id]]
+    assert corridos, "algún acumulado tenía que moverse"
+    assert all(viejos[f.id] - f.saldo_acumulado == Decimal("100") for f in corridos)
+
+
+def test_una_cobranza_sin_fecha_sigue_saliendo_con_la_de_hoy(sesion, org):
+    """No romper lo que ya andaba: `fecha` es opcional y el default de la tabla manda."""
+    mov = service.registrar_cobranza(
+        sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("10")
+    )
+    assert mov.fecha == date.today()
+
+
+def test_el_service_acepta_fechas_viejas_porque_es_el_camino_del_importador(sesion, org):
+    """La ventana de 90 días es política de la API, NO del dominio.
+
+    El importador de Paradox va a cargar años de historia por acá, así que el service no puede
+    tener el límite. Por HTTP la misma fecha da 422 (ver el test del endpoint).
+    """
+    mov = service.registrar_cobranza(
+        sesion,
+        org.id,
+        cliente_codigo="CLI-DEUDA",
+        monto=Decimal("10"),
+        fecha=date(2020, 3, 1),
+    )
+    assert mov.fecha == date(2020, 3, 1)
+
+
+def test_un_ajuste_tambien_puede_fecharse(sesion, org):
+    """Un saldo inicial de migración no es de hoy."""
+    ajuste = service.registrar_ajuste(
+        sesion,
+        org.id,
+        cliente_id=org.cli.deuda,
+        motivo="saldo inicial Paradox",
+        debe=Decimal("500"),
+        fecha=date(2026, 1, 2),
+    )
+    assert ajuste.fecha == date(2026, 1, 2)
+
+
+def test_el_extracto_trae_cuando_se_cargo_ademas_de_cuando_paso(sesion, org):
+    """Sin `creado_en` el retroactivo sería una forma prolija de reescribir el pasado: nadie
+    podría ver que esa fila entró días después de la fecha que dice."""
+    mov = service.registrar_cobranza(
+        sesion,
+        org.id,
+        cliente_codigo="CLI-DEUDA",
+        monto=Decimal("10"),
+        fecha=date(2026, 2, 20),
+    )
+
+    filas, _ = service.movimientos_cliente(sesion, org.id, org.cli.deuda, limite=100)
+    fila = {f.id: f for f in filas}[mov.id]
+
+    assert fila.fecha == date(2026, 2, 20)
+    assert fila.creado_en.date() == date.today()  # se cargó HOY, aunque diga febrero
+
+
+def test_prov_un_pago_retroactivo_no_cambia_el_saldo(sesion, org):
+    antes = compras.saldo_proveedor(sesion, org.id, org.prov.deuda)
+
+    compras.registrar_pago(
+        sesion,
+        org.id,
+        proveedor_codigo="PROV-DEUDA",
+        monto=Decimal("100"),
+        fecha=date(2026, 3, 1),
+    )
+
+    assert compras.saldo_proveedor(sesion, org.id, org.prov.deuda) == antes - Decimal("100")
+
+    filas, _ = compras.movimientos_proveedor(sesion, org.id, org.prov.deuda, limite=100)
+    fechas = [f.fecha for f in filas]
+    assert fechas == sorted(fechas, reverse=True)
 
 
 # =========================================================================== ajustes (storno)
@@ -1227,6 +1341,86 @@ def test_endpoint_ajuste_proveedor_inexistente_es_404(cliente):
         "/compras/proveedores/999999/ajustes", json={"debe": "10.00", "motivo": "fantasma"}
     )
     assert r.status_code == 404
+
+
+# ------------------------------------------------------- la ventana de fechas, por HTTP
+# El límite vive en el schema, así que solo se prueba acá. El service no lo tiene a propósito.
+
+
+def test_endpoint_cobranza_acepta_fecha_retroactiva(cliente, org):
+    ayer = (date.today() - timedelta(days=3)).isoformat()
+
+    r = cliente.post(
+        "/ventas/cobranzas",
+        json={"cliente_codigo": "CLI-DEUDA", "monto": "50.00", "fecha": ayer},
+    )
+    assert r.status_code == 201
+
+    mov = next(
+        m
+        for m in cliente.get(f"/ventas/clientes/{org.cli.deuda}/movimientos").json()["items"]
+        if m["id"] == r.json()["movimiento_id"]
+    )
+    assert mov["fecha"] == ayer
+    # Y queda registrado que se cargó hoy, no hace tres días.
+    assert mov["creado_en"].startswith(date.today().isoformat())
+
+
+def test_endpoint_cobranza_rechaza_fecha_futura(cliente):
+    manana = (date.today() + timedelta(days=1)).isoformat()
+    r = cliente.post(
+        "/ventas/cobranzas",
+        json={"cliente_codigo": "CLI-DEUDA", "monto": "50.00", "fecha": manana},
+    )
+    assert r.status_code == 422
+
+
+def test_endpoint_cobranza_el_borde_de_la_ventana(cliente):
+    """Los dos lados del límite, porque un off-by-one acá se nota recién en producción."""
+    justo = (date.today() - timedelta(days=DIAS_RETROACTIVIDAD)).isoformat()
+    pasado = (date.today() - timedelta(days=DIAS_RETROACTIVIDAD + 1)).isoformat()
+
+    ok = cliente.post(
+        "/ventas/cobranzas",
+        json={"cliente_codigo": "CLI-DEUDA", "monto": "1.00", "fecha": justo},
+    )
+    assert ok.status_code == 201
+
+    tarde = cliente.post(
+        "/ventas/cobranzas",
+        json={"cliente_codigo": "CLI-DEUDA", "monto": "1.00", "fecha": pasado},
+    )
+    assert tarde.status_code == 422
+
+
+def test_endpoint_ajuste_acepta_fecha(cliente, org):
+    hace_una_semana = (date.today() - timedelta(days=7)).isoformat()
+
+    r = cliente.post(
+        f"/ventas/clientes/{org.cli.deuda}/ajustes",
+        json={"debe": "20.00", "motivo": "saldo inicial migración", "fecha": hace_una_semana},
+    )
+    assert r.status_code == 201
+
+
+def test_endpoint_pago_proveedor_acepta_y_valida_la_fecha(cliente):
+    ayer = (date.today() - timedelta(days=1)).isoformat()
+    manana = (date.today() + timedelta(days=1)).isoformat()
+
+    assert (
+        cliente.post(
+            "/compras/pagos",
+            json={"proveedor_codigo": "PROV-DEUDA", "monto": "20.00", "fecha": ayer},
+        ).status_code
+        == 201
+    )
+    assert (
+        cliente.post(
+            "/compras/pagos",
+            json={"proveedor_codigo": "PROV-DEUDA", "monto": "20.00", "fecha": manana},
+        ).status_code
+        == 422
+    )
 
 
 # =========================================================== integración con Repu (NL2SQL)

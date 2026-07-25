@@ -214,9 +214,14 @@ def registrar_pago(
     *,
     proveedor_codigo: str,
     monto: Decimal,
+    fecha: date | None = None,
     usuario_id: UUID | None = None,
 ) -> ProvCtaCteMovimiento:
     """Imputa un pago al proveedor como un Haber en su cuenta corriente. Baja lo que le debemos.
+
+    `fecha` es cuándo SALIÓ la plata, no cuándo se cargó. Espejo de `ventas.registrar_cobranza`,
+    donde está la explicación completa: sin límite de antigüedad acá, la ventana es política de la
+    API (`app/core/fechas.py`).
 
     No abre sesión ni commitea (termina en flush). El saldo se recalcula solo desde la vista.
     """
@@ -234,6 +239,8 @@ def registrar_pago(
         haber=monto,
         creado_por=usuario_id,
     )
+    if fecha is not None:
+        movimiento.fecha = fecha
     session.add(movimiento)
     session.flush()
     return movimiento
@@ -248,6 +255,7 @@ def registrar_ajuste(
     debe: Decimal | None = None,
     haber: Decimal | None = None,
     revierte_movimiento_id: int | None = None,
+    fecha: date | None = None,
     usuario_id: UUID | None = None,
 ) -> ProvCtaCteMovimiento:
     """Corrige la cuenta corriente del proveedor con una fila NUEVA. El pasado no se toca.
@@ -326,6 +334,8 @@ def registrar_ajuste(
         motivo=motivo,
         creado_por=usuario_id,
     )
+    if fecha is not None:
+        movimiento.fecha = fecha
     session.add(movimiento)
     session.flush()
     return movimiento
@@ -458,6 +468,8 @@ def movimientos_proveedor(
             ProvCtaCteMovimiento.ref_tipo,
             ProvCtaCteMovimiento.ref_id,
             ProvCtaCteMovimiento.motivo,
+            #: Cuándo se cargó, además de cuándo pasó. Ver la nota en `ventas.movimientos_cliente`.
+            ProvCtaCteMovimiento.creado_en,
             anulado,
             reversible,
             acumulado,
