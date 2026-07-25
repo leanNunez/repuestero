@@ -125,24 +125,9 @@ export interface AjustePayload {
   revierte_movimiento_id?: number;
 }
 
-/** Qué tipos de movimiento se pueden revertir, por solapa.
- *
- * OJO: esto DUPLICA `MOVIMIENTOS_REVERSIBLES` de `app/ventas/service.py` y `app/compras/service.py`.
- * Vive acá porque el front tiene que decidir si dibuja el botón sin preguntarle al servidor. Si
- * cambia una lista hay que cambiar la otra — pero el modo de fallar es seguro: el backend rechaza
- * igual con un 422 legible, así que una divergencia molesta, no corrompe. */
-const REVERSIBLES: Record<Solapa, readonly string[]> = {
-  clientes: ["cobranza", "ajuste"],
-  proveedores: ["pago", "ajuste"],
-};
-
-/** Si este movimiento se puede revertir desde el extracto.
- *
- * Un movimiento ya anulado no: revertirlo dos veces duplicaría la corrección, y el índice único
- * de la base lo rechazaría de todas formas. */
-export function esReversible(tab: Solapa, m: Movimiento): boolean {
-  return !m.anulado && REVERSIBLES[tab].includes(m.tipo);
-}
+// Acá NO vive ninguna lista de tipos reversibles: cada movimiento llega con su `reversible`
+// calculado por el backend, que es el único que conoce la regla (`MOVIMIENTOS_REVERSIBLES` en
+// `app/ventas/service.py` y `app/compras/service.py`). El extracto lee ese flag y ya.
 
 /** Un motivo escrito de verdad. Mismo mínimo que el `min_length=3` del schema del backend.
  *

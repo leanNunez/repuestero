@@ -18,6 +18,7 @@ function mov(over: Partial<Movimiento> = {}): Movimiento {
     ref_id: null,
     motivo: null,
     anulado: false,
+    reversible: true,
     saldo_acumulado: "700.00",
     ...over,
   };

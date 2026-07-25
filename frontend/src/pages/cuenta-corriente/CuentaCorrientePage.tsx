@@ -193,7 +193,6 @@ export function CuentaCorrientePage() {
                 isLoading={movimientos.isLoading}
                 isError={movimientos.isError}
                 onRetry={() => void movimientos.refetch()}
-                tab={s.tab}
                 onRevertir={(m) => {
                   ajustar.reset();
                   setModoAjuste({ kind: "storno", movimiento: m });

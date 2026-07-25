@@ -17,6 +17,8 @@ function mov(over: Partial<Movimiento> = {}): Movimiento {
     ref_id: 123,
     motivo: null,
     anulado: false,
+    // Una venta no es reversible; el backend lo resuelve y la tabla solo lee este flag.
+    reversible: false,
     saldo_acumulado: "1200.00",
     ...over,
   };
@@ -29,7 +31,6 @@ function pintar(movimientos: Movimiento[] | undefined, over = {}) {
       isLoading={false}
       isError={false}
       onRetry={vi.fn()}
-      tab="clientes"
       onRevertir={vi.fn()}
       {...over}
     />,
@@ -101,9 +102,18 @@ describe("ExtractoTable", () => {
   });
 
   describe("revertir", () => {
-    it("ofrece revertir una cobranza y avisa cuál es", async () => {
+    // La tabla NO decide qué se puede revertir: lee `reversible`, que ya viene resuelto por el
+    // backend (ver MOVIMIENTOS_REVERSIBLES en los services). Acá solo se prueba que lo obedezca.
+
+    it("ofrece revertir lo que el backend marcó reversible, y avisa cuál es", async () => {
       const onRevertir = vi.fn();
-      const cobranza = mov({ id: 7, tipo: "cobranza", debe: "0.00", haber: "300.00" });
+      const cobranza = mov({
+        id: 7,
+        tipo: "cobranza",
+        debe: "0.00",
+        haber: "300.00",
+        reversible: true,
+      });
       pintar([cobranza], { onRevertir });
 
       const boton = screen.getByRole("button", { name: /Revertir cobranza del 20\/03\/2026/ });
@@ -112,22 +122,25 @@ describe("ExtractoTable", () => {
       expect(onRevertir).toHaveBeenCalledWith(cobranza);
     });
 
-    it("no ofrece revertir una venta: eso se corrige con una nota de crédito", () => {
-      // Un movimiento de venta espeja un comprobante. Cancelar su efecto desde el ledger dejaría
-      // el comprobante vivo con la cuenta en cero, en silencio.
-      pintar([mov({ tipo: "venta" })]);
+    it("no ofrece el botón cuando el backend dice que no", () => {
+      // Es el caso de una venta: espeja un comprobante y se corrige con una nota de crédito.
+      pintar([mov({ tipo: "venta", reversible: false })]);
       expect(screen.queryByRole("button", { name: /Revertir/ })).toBeNull();
     });
 
     it("un movimiento anulado muestra el estado en vez del botón", () => {
-      pintar([mov({ tipo: "cobranza", debe: "0.00", haber: "300.00", anulado: true })]);
+      // El backend manda `reversible: false` en los anulados: revertir dos veces duplicaría la
+      // corrección, y el índice único de la base lo rechazaría igual.
+      pintar([
+        mov({ tipo: "cobranza", debe: "0.00", haber: "300.00", anulado: true, reversible: false }),
+      ]);
 
       expect(screen.getByText("Anulado")).toBeInTheDocument();
       expect(screen.queryByRole("button", { name: /Revertir/ })).toBeNull();
     });
 
-    it("en proveedores se revierte un pago, no una cobranza", () => {
-      pintar([mov({ tipo: "pago", debe: "0.00", haber: "300.00" })], { tab: "proveedores" });
+    it("funciona igual en proveedores: el flag no depende de la solapa", () => {
+      pintar([mov({ tipo: "pago", debe: "0.00", haber: "300.00", reversible: true })]);
       expect(screen.getByRole("button", { name: /Revertir pago/ })).toBeInTheDocument();
     });
 

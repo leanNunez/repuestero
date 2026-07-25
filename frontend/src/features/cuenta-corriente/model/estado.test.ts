@@ -6,7 +6,6 @@ import {
   BUSQUEDA_INICIAL,
   buscar,
   cambiarSolapa,
-  esReversible,
   espejoDelMovimiento,
   etiquetaTipo,
   excedeLimite,
@@ -34,6 +33,7 @@ function mov(over: Partial<Movimiento> = {}): Movimiento {
     ref_id: null,
     motivo: null,
     anulado: false,
+    reversible: true,
     saldo_acumulado: "700.00",
     ...over,
   };
@@ -198,31 +198,8 @@ describe("motivoValido", () => {
   });
 });
 
-describe("esReversible", () => {
-  it("permite revertir lo que se cargó a mano en cada solapa", () => {
-    expect(esReversible("clientes", mov({ tipo: "cobranza" }))).toBe(true);
-    expect(esReversible("proveedores", mov({ tipo: "pago" }))).toBe(true);
-    expect(esReversible("clientes", mov({ tipo: "ajuste" }))).toBe(true);
-  });
-
-  it("NO permite revertir lo que espeja un comprobante", () => {
-    // Cancelar su efecto desde el ledger dejaría el comprobante vivo con la cuenta en cero, en
-    // silencio. Una venta se revierte con una nota de crédito.
-    expect(esReversible("clientes", mov({ tipo: "venta" }))).toBe(false);
-    expect(esReversible("clientes", mov({ tipo: "nota_credito" }))).toBe(false);
-    expect(esReversible("proveedores", mov({ tipo: "compra" }))).toBe(false);
-  });
-
-  it("no cruza las solapas: una cobranza no es reversible en proveedores", () => {
-    expect(esReversible("proveedores", mov({ tipo: "cobranza" }))).toBe(false);
-    expect(esReversible("clientes", mov({ tipo: "pago" }))).toBe(false);
-  });
-
-  it("un movimiento ya anulado no se vuelve a revertir", () => {
-    // Revertir dos veces duplicaría la corrección; el índice único de la base lo rechaza igual.
-    expect(esReversible("clientes", mov({ tipo: "cobranza", anulado: true }))).toBe(false);
-  });
-});
+// No hay tests de "qué se puede revertir" acá a propósito: esa regla vive en los services de
+// Python y viaja resuelta en `movimiento.reversible`. Está testeada en tests/test_cta_cte.py.
 
 describe("espejoDelMovimiento", () => {
   it("un haber se revierte con un debe del mismo importe", () => {

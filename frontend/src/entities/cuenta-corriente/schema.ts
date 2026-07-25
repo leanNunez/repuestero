@@ -42,6 +42,10 @@ export const movimientoSchema = z.object({
   /** Si un ajuste posterior ya revirtió este movimiento. Sin esto el extracto mostraría un haber
    *  y su contra-debe sin ninguna pista de que se cancelan entre sí. */
   anulado: z.boolean(),
+  /** La respuesta del backend a "¿puedo apretar Revertir en esta fila?". Ya contempla que un
+   *  movimiento anulado no se revierte de nuevo, así que el front no combina nada: dibuja el
+   *  botón si esto es true. La regla de QUÉ es reversible vive solo en los services de Python. */
+  reversible: z.boolean(),
   /** Saldo después de este movimiento. Lo calcula el backend sobre TODO el ledger: no se
    *  recalcula acá, porque el front solo tiene una página. */
   saldo_acumulado: z.string(),
