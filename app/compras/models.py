@@ -103,6 +103,9 @@ class ProvCtaCteMovimiento(Base, OrgMixin):
     haber: Mapped[Money2] = mapped_column(default=Decimal("0"))
     ref_tipo: Mapped[str | None] = mapped_column(String(30))
     ref_id: Mapped[int | None] = mapped_column(BigInteger)
+    #: Por qué se ajustó. Obligatorio SOLO en `tipo='ajuste'` (CHECK en la 0009). Ver el espejo
+    #: `CtaCteMovimiento.motivo`.
+    motivo: Mapped[str | None] = mapped_column(String(200))
     creado_en: Mapped[datetime] = mapped_column(server_default=func.now())
     creado_por: Mapped[UUID | None]
 

@@ -110,6 +110,10 @@ class CtaCteMovimiento(Base, OrgMixin):
     Dos columnas debe/haber en vez de una con signo, como el `ClientesCtaCte` del legacy: una
     venta a crédito es un Debe, una cobranza un Haber. Un error se corrige con un contra-movimiento
     de ajuste, jamás editando el pasado — el trigger de la base lo hace cumplir.
+
+    Ese ajuste lo escribe `service.registrar_ajuste`, de dos maneras: revirtiendo un movimiento
+    existente (el monto lo espeja el service, `ref_tipo='ajuste_de'`) o a mano. En los dos casos
+    `motivo` es obligatorio, y lo exige un CHECK de la base (0009).
     """
 
     __tablename__ = "cta_cte_movimientos"
@@ -125,6 +129,9 @@ class CtaCteMovimiento(Base, OrgMixin):
     haber: Mapped[Money2] = mapped_column(default=Decimal("0"))
     ref_tipo: Mapped[str | None] = mapped_column(String(30))
     ref_id: Mapped[int | None] = mapped_column(BigInteger)
+    #: Por qué se ajustó. Obligatorio SOLO en `tipo='ajuste'` (CHECK en la 0009): las filas
+    #: históricas y las automáticas (venta, cobranza) no tienen uno.
+    motivo: Mapped[str | None] = mapped_column(String(200))
     creado_en: Mapped[datetime] = mapped_column(server_default=func.now())
     creado_por: Mapped[UUID | None]
 
