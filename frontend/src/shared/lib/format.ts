@@ -13,3 +13,15 @@ export function formatMoney(v: number | string): string {
 export function formatNumber(v: number | string): string {
   return number.format(typeof v === "string" ? Number(v) : v);
 }
+
+/** Fecha ISO del backend (`YYYY-MM-DD`) a `dd/mm/aaaa`.
+ *
+ * Parte el string a mano y NO usa `new Date`: `new Date("2026-07-24")` se interpreta como
+ * medianoche UTC, y en Argentina (UTC-3) eso se renderiza como 23/07. Un movimiento de cuenta
+ * corriente fechado un día antes es un problema de verdad, no un detalle cosmético. */
+export function fechaCorta(v: string | null | undefined): string {
+  if (!v) return "—";
+
+  const [a, m, d] = v.slice(0, 10).split("-");
+  return a && m && d ? `${d}/${m}/${a}` : v;
+}

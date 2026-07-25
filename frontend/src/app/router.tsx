@@ -5,11 +5,13 @@ import {
   Outlet,
 } from "@tanstack/react-router";
 
+import { parseBusqueda } from "@/features/cuenta-corriente/model/estado";
 import { ArticuloPage } from "@/pages/catalogo/ArticuloPage";
 import { CatalogoPage } from "@/pages/catalogo/CatalogoPage";
 import { ClientesPage } from "@/pages/clientes/ClientesPage";
 import { CompatibilidadPage } from "@/pages/compatibilidad/CompatibilidadPage";
 import { ComprasPage } from "@/pages/compras/ComprasPage";
+import { CuentaCorrientePage } from "@/pages/cuenta-corriente/CuentaCorrientePage";
 import { DashboardPage } from "@/pages/dashboard/DashboardPage";
 import { IngestaVisualPage } from "@/pages/ingesta-visual/IngestaVisualPage";
 import { ProximamentePage } from "@/pages/proximamente/ProximamentePage";
@@ -83,9 +85,18 @@ const comprasRoute = createRoute({
   component: ComprasPage,
 });
 
+const cuentaCorrienteRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/cuenta-corriente",
+  component: CuentaCorrientePage,
+  // El parseo vive en el feature y es una función pura, para poder testear a mano una URL
+  // manipulada sin montar el router.
+  validateSearch: parseBusqueda,
+});
+
 // Módulos de Fase 2 todavía sin backend: navegables, pero caen en la pantalla "próximamente".
-// `/ventas` y `/compras` salieron de acá: ya tienen su mostrador de verdad contra el backend.
-const FASE2_PATHS = ["/facturacion", "/caja", "/cuenta-corriente"] as const;
+// `/ventas`, `/compras` y `/cuenta-corriente` salieron de acá: ya tienen pantalla de verdad.
+const FASE2_PATHS = ["/facturacion", "/caja"] as const;
 
 const fase2Routes = FASE2_PATHS.map((path) =>
   createRoute({ getParentRoute: () => rootRoute, path, component: ProximamentePage }),
@@ -100,6 +111,7 @@ const routeTree = rootRoute.addChildren([
   ingestaVisualRoute,
   ventasRoute,
   comprasRoute,
+  cuentaCorrienteRoute,
   ...fase2Routes,
 ]);
 
