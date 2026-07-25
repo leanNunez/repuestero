@@ -551,6 +551,31 @@ def test_prov_ajuste_a_proveedor_inexistente_se_rechaza(sesion, org):
         )
 
 
+def test_prov_el_extracto_dice_que_se_puede_revertir(sesion, org):
+    """El ledger sembrado de PROV-DEUDA tiene compras y un pago."""
+    filas, _ = compras.movimientos_proveedor(sesion, org.id, org.prov.deuda, limite=100)
+    por_tipo = {f.tipo: f.reversible for f in filas}
+
+    assert por_tipo["pago"] is True
+    assert por_tipo["compra"] is False  # espeja un documento de compra
+
+
+def test_prov_un_movimiento_ya_revertido_deja_de_ser_reversible(sesion, org):
+    pago = compras.registrar_pago(
+        sesion, org.id, proveedor_codigo="PROV-DEUDA", monto=Decimal("90")
+    )
+    compras.registrar_ajuste(
+        sesion,
+        org.id,
+        proveedor_id=org.prov.deuda,
+        motivo="duplicado",
+        revierte_movimiento_id=pago.id,
+    )
+
+    filas, _ = compras.movimientos_proveedor(sesion, org.id, org.prov.deuda, limite=100)
+    assert {f.id: f.reversible for f in filas}[pago.id] is False
+
+
 def test_prov_el_extracto_marca_anulado_y_trae_el_motivo(sesion, org):
     pago = compras.registrar_pago(
         sesion, org.id, proveedor_codigo="PROV-DEUDA", monto=Decimal("600")
@@ -1193,6 +1218,8 @@ def test_endpoint_ajuste_proveedor_expone_motivo_y_anulado(cliente, org):
     mov = cliente.get(f"/compras/proveedores/{org.prov.deuda}/movimientos").json()["items"][0]
     assert mov["motivo"] == "saldo inicial del proveedor"
     assert mov["anulado"] is False
+    # Mismas claves que en clientes: el front tiene UN schema para las dos solapas.
+    assert mov["reversible"] is True
 
 
 def test_endpoint_ajuste_proveedor_inexistente_es_404(cliente):

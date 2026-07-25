@@ -399,7 +399,8 @@ def movimientos_proveedor(
 
     Espejo de `ventas.movimientos_cliente`: el acumulado se calcula acá y nunca en el front,
     que solo ve una página y no puede conocer el acumulado de las anteriores. También trae
-    `motivo` y `anulado`, para que el extracto pueda mostrar qué movimiento quedó revertido.
+    `motivo`, `anulado` y `reversible`, para que el extracto pueda mostrar qué movimiento quedó
+    revertido y cuál se puede revertir sin conocer la regla.
     """
     acumulado = (
         func.sum(ProvCtaCteMovimiento.debe - ProvCtaCteMovimiento.haber)
@@ -416,7 +417,7 @@ def movimientos_proveedor(
     # ¿Alguien ya revirtió esta fila? EXISTS correlacionado sobre el MISMO ledger, así que hace
     # falta un alias para distinguir la reversa del movimiento revertido.
     reversa = aliased(ProvCtaCteMovimiento)
-    anulado = (
+    ya_revertido = (
         select(reversa.id)
         .where(
             reversa.org_id == ProvCtaCteMovimiento.org_id,
@@ -424,8 +425,16 @@ def movimientos_proveedor(
             reversa.ref_id == ProvCtaCteMovimiento.id,
         )
         .exists()
-        .label("anulado")
     )
+
+    anulado = ya_revertido.label("anulado")
+
+    # "¿Puedo apretar Revertir en esta fila?", resuelto acá y no en el front. Junta las dos
+    # condiciones a propósito: ver la nota en `ventas.movimientos_cliente`.
+    reversible = and_(
+        ProvCtaCteMovimiento.tipo.in_(sorted(MOVIMIENTOS_REVERSIBLES)),
+        ~ya_revertido,
+    ).label("reversible")
 
     filtros = (
         ProvCtaCteMovimiento.org_id == org_id,
@@ -450,6 +459,7 @@ def movimientos_proveedor(
             ProvCtaCteMovimiento.ref_id,
             ProvCtaCteMovimiento.motivo,
             anulado,
+            reversible,
             acumulado,
         )
         .where(*filtros)

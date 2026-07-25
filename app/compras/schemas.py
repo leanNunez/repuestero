@@ -183,6 +183,9 @@ class MovimientoLeer(BaseModel):
     motivo: str | None = None
     #: Si un ajuste posterior ya revirtió este movimiento.
     anulado: bool = False
+    #: "¿Puedo apretar Revertir en esta fila?" — ya contempla que un movimiento anulado no se
+    #: revierte de nuevo. Viaja calculado para que la regla viva SOLO en el service.
+    reversible: bool = False
     #: Saldo DESPUÉS de este movimiento, en orden cronológico. Lo calcula el SQL sobre todo el
     #: ledger: el front solo ve una página y no puede conocer el acumulado de las anteriores.
     saldo_acumulado: Decimal
