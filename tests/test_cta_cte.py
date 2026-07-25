@@ -875,6 +875,44 @@ def test_el_extracto_marca_anulado_solo_el_movimiento_revertido(sesion, org):
     assert all(not f.anulado for f in filas if f.id not in (cobranza.id,))
 
 
+def test_el_extracto_dice_que_se_puede_revertir(sesion, org):
+    """La regla de qué es reversible vive SOLO acá: el front no puede tener su propia copia.
+
+    El ledger sembrado tiene venta, cobranza, venta, venta y nota de crédito.
+    """
+    filas, _ = service.movimientos_cliente(sesion, org.id, org.cli.deuda, limite=100)
+    por_tipo = {f.tipo: f.reversible for f in filas}
+
+    assert por_tipo["cobranza"] is True
+    # Espejan un comprobante: se corrigen con una nota de crédito, no desde el ledger.
+    assert por_tipo["venta"] is False
+    assert por_tipo["nota_credito"] is False
+
+
+def test_un_movimiento_ya_revertido_deja_de_ser_reversible(sesion, org):
+    """EL caso que un flag "solo por tipo" se comería: la cobranza sigue siendo de un tipo
+    reversible, pero revertirla de nuevo duplicaría la corrección."""
+    cobranza = service.registrar_cobranza(
+        sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("120")
+    )
+    filas, _ = service.movimientos_cliente(sesion, org.id, org.cli.deuda, limite=100)
+    assert {f.id: f.reversible for f in filas}[cobranza.id] is True
+
+    ajuste = service.registrar_ajuste(
+        sesion,
+        org.id,
+        cliente_id=org.cli.deuda,
+        motivo="duplicada",
+        revierte_movimiento_id=cobranza.id,
+    )
+
+    filas, _ = service.movimientos_cliente(sesion, org.id, org.cli.deuda, limite=100)
+    por_id = {f.id: f for f in filas}
+    assert por_id[cobranza.id].reversible is False
+    # La reversa sí se puede revertir: deshacer una corrección equivocada tiene que ser posible.
+    assert por_id[ajuste.id].reversible is True
+
+
 def test_el_extracto_trae_el_motivo_del_ajuste(sesion, org):
     service.registrar_ajuste(
         sesion,
@@ -1065,6 +1103,8 @@ def test_endpoint_extracto_expone_motivo_y_anulado(cliente, org):
     mov = cliente.get(f"/ventas/clientes/{org.cli.deuda}/movimientos").json()["items"][0]
     assert mov["motivo"] == "saldo inicial Paradox"
     assert mov["anulado"] is False
+    # El front dibuja el botón con esto y nada más: no vuelve a decidir por tipo.
+    assert mov["reversible"] is True
     assert isinstance(mov["debe"], str)  # la plata sigue viajando como string
 
 
