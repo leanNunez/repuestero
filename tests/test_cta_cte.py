@@ -25,6 +25,9 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
+from app.asistente import grafo, llm
+from app.asistente import service as asistente_service
+from app.asistente.esquema import ESQUEMA
 from app.clientes import service as clientes
 from app.compras import service as compras
 from app.compras.models import ProvCtaCteMovimiento
@@ -498,3 +501,33 @@ def test_endpoint_pago_registra_y_devuelve_saldo(cliente, org):
 def test_endpoint_pago_monto_cero_es_422(cliente):
     r = cliente.post("/compras/pagos", json={"proveedor_codigo": "PROV-DEUDA", "monto": "0"})
     assert r.status_code == 422
+
+
+# =========================================================== integración con Repu (NL2SQL)
+
+
+def test_repu_consulta_deuda_a_proveedores_scopeado_por_rls(org, monkeypatch):
+    """Con `proveedor_saldo` en el esquema, Repu puede responder "¿a quién le debo?".
+
+    Antes solo conocía `cliente_saldo`: contestaba cuánto le deben a uno, pero no cuánto debe
+    uno. El RLS lo encierra igual que en ventas: la org vecina no tiene proveedores con saldo.
+    """
+
+    def _fake_completar(system: str, user: str, *, proveedor: str = "groq") -> str:
+        if "generador de SQL" in system:
+            return "select count(*) as cantidad from proveedor_saldo where saldo > 0"
+        return "Ahí tenés la deuda con proveedores."
+
+    monkeypatch.setattr(llm, "completar", _fake_completar)
+
+    ejec = asistente_service._hacer_ejecutor(org.id, uuid4())
+    assert grafo.responder("a quién le debo", ejec)["filas"][0]["cantidad"] == 1
+
+    ejec_vecina = asistente_service._hacer_ejecutor(org.vecina, uuid4())
+    assert grafo.responder("a quién le debo", ejec_vecina)["filas"][0]["cantidad"] == 0
+
+
+def test_esquema_documenta_las_dos_cuentas_corrientes(org):
+    """El esquema es lo ÚNICO que el LLM ve: si una tabla no está acá, no existe para Repu."""
+    for tabla in ("prov_cta_cte_movimientos", "proveedor_saldo", "compras", "compra_items"):
+        assert tabla in ESQUEMA, f"{tabla} no está en el esquema del NL2SQL"
