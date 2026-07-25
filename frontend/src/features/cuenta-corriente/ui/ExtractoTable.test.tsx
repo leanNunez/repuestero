@@ -19,6 +19,8 @@ function mov(over: Partial<Movimiento> = {}): Movimiento {
     anulado: false,
     // Una venta no es reversible; el backend lo resuelve y la tabla solo lee este flag.
     reversible: false,
+    // Por defecto se cargó el mismo día en que pasó, que es el caso normal.
+    creado_en: "2026-03-20T14:32:00Z",
     saldo_acumulado: "1200.00",
     ...over,
   };
@@ -147,6 +149,23 @@ describe("ExtractoTable", () => {
     it("muestra el motivo del ajuste debajo del concepto", () => {
       pintar([mov({ tipo: "ajuste", motivo: "cobranza cargada dos veces" })]);
       expect(screen.getByText("cobranza cargada dos veces")).toBeInTheDocument();
+    });
+  });
+
+  describe("fecha del movimiento vs. fecha de carga", () => {
+    it("avisa cuándo se cargó si no coincide con la fecha del movimiento", () => {
+      // Sin esto, fechar para atrás sería una forma prolija de reescribir el pasado: nadie vería
+      // que la fila que dice 20/03 entró recién el 25/07.
+      pintar([mov({ fecha: "2026-03-20", creado_en: "2026-07-25T10:00:00Z" })]);
+
+      expect(screen.getByText("20/03/2026")).toBeInTheDocument();
+      expect(screen.getByText("cargado el 25/07/2026")).toBeInTheDocument();
+    });
+
+    it("no lo muestra cuando se cargó el mismo día", () => {
+      // Es la enorme mayoría de las filas: mostrarlo siempre sería ruido.
+      pintar([mov({ fecha: "2026-03-20", creado_en: "2026-03-20T23:59:00Z" })]);
+      expect(screen.queryByText(/cargado el/)).toBeNull();
     });
   });
 });

@@ -39,6 +39,9 @@ export const movimientoSchema = z.object({
   ref_id: z.number().nullable(),
   /** Por qué se ajustó. Solo lo traen los movimientos de tipo 'ajuste'. */
   motivo: z.string().nullable(),
+  /** Cuándo se REGISTRÓ, contra `fecha`, que es cuándo pasó. Con movimientos retroactivos las dos
+   *  dejan de coincidir: mostrarlas es lo que hace auditable al retroactivo. */
+  creado_en: z.string(),
   /** Si un ajuste posterior ya revirtió este movimiento. Sin esto el extracto mostraría un haber
    *  y su contra-debe sin ninguna pista de que se cancelan entre sí. */
   anulado: z.boolean(),

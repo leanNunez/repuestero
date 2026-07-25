@@ -34,6 +34,7 @@ function mov(over: Partial<Movimiento> = {}): Movimiento {
     motivo: null,
     anulado: false,
     reversible: true,
+    creado_en: "2026-03-20T14:32:00Z",
     saldo_acumulado: "700.00",
     ...over,
   };

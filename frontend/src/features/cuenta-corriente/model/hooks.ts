@@ -66,11 +66,13 @@ export function useMovimientos(tab: Solapa, id: number | null, mpage: number) {
 export function useImputar(tab: Solapa) {
   const qc = useQueryClient();
 
-  return useMutation<ImputacionResponse, Error, { codigo: string; monto: string }>({
-    mutationFn: ({ codigo, monto }) =>
+  return useMutation<ImputacionResponse, Error, { codigo: string; monto: string; fecha: string }>({
+    // `fecha` viaja como string ISO tal cual la escupe el input, sin pasar nunca por `new Date`:
+    // ver el docstring de `fechaCorta` en shared/lib/format.ts. Mismo criterio que la plata.
+    mutationFn: ({ codigo, monto, fecha }) =>
       apiPost(
         IMPUTAR[tab],
-        { [RUTA[tab].campoCodigo]: codigo, monto },
+        { [RUTA[tab].campoCodigo]: codigo, monto, fecha },
         imputacionResponseSchema,
       ),
     // Sin retry: un 422 de negocio ("el monto debe ser mayor a cero") lo tiene que leer la persona.
