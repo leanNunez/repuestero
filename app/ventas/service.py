@@ -15,7 +15,7 @@ from typing import Any, NamedTuple
 from uuid import UUID
 
 from sqlalchemy import Row, and_, func, join, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.catalogo import service as catalogo
 from app.clientes import service as clientes
@@ -281,6 +281,17 @@ def listar_ventas(
 
 # --------------------------------------------------------------------------- cuenta corriente
 
+#: `ref_tipo` de un ajuste que revierte a otro movimiento; su `ref_id` apunta al original.
+REF_REVERSA = "ajuste_de"
+
+#: Qué se puede revertir con un storno. Deliberadamente NO están 'venta' ni 'nota_credito': esos
+#: movimientos ESPEJAN un comprobante, y cancelar su efecto desde el ledger dejaría el comprobante
+#: vivo con su cuenta corriente en cero — el ledger dejaría de espejar los comprobantes, en
+#: silencio. Es el pecado del legacy que este diseño existe para no repetir. Una venta se revierte
+#: con una NOTA DE CRÉDITO, que ya existe. Para el caso raro queda el ajuste manual, que deja
+#: escrito el motivo.
+MOVIMIENTOS_REVERSIBLES = frozenset({"cobranza", "ajuste"})
+
 
 def saldo_cliente(session: Session, org_id: UUID, cliente_id: int) -> Decimal:
     """Saldo actual leído de la VISTA `cliente_saldo` (positivo = el cliente debe).
@@ -320,6 +331,108 @@ def registrar_cobranza(
         cliente_id=cliente.id,
         tipo="cobranza",
         haber=monto,
+        creado_por=usuario_id,
+    )
+    session.add(movimiento)
+    session.flush()
+    return movimiento
+
+
+def registrar_ajuste(
+    session: Session,
+    org_id: UUID,
+    *,
+    cliente_id: int,
+    motivo: str,
+    debe: Decimal | None = None,
+    haber: Decimal | None = None,
+    revierte_movimiento_id: int | None = None,
+    usuario_id: UUID | None = None,
+) -> CtaCteMovimiento:
+    """Corrige la cuenta corriente con una fila NUEVA. El pasado no se toca jamás.
+
+    Es el mecanismo que el trigger de la 0006 viene reclamando desde que existe. UN solo
+    mecanismo con dos usos, porque el segundo es el primero sin la ayuda del sistema:
+
+    - **Reversa** (`revierte_movimiento_id`): el service LEE el movimiento original y escribe su
+      espejo exacto (un haber de 5000 se revierte con un debe de 5000). El monto NO viaja en el
+      pedido: así no se puede errar tipeando, que es justo el error que se está corrigiendo.
+    - **Manual** (`debe` o `haber`): saldo inicial de una migración, condonación, redondeo. Acá el
+      importe sí lo pone la persona, y por eso el motivo pesa más todavía.
+
+    `motivo` es obligatorio en los dos casos — un ajuste sin motivo es una fila que en seis meses
+    nadie puede explicar. El CHECK de la 0009 lo respalda en la base.
+
+    No abre sesión ni commitea (termina en flush), igual que el resto. El saldo sale solo de la
+    vista: no hay columna que actualizar.
+    """
+    motivo = motivo.strip()
+    if not motivo:
+        raise VentaInvalida("El ajuste necesita un motivo: sin él la corrección no se puede leer.")
+
+    cliente = clientes.obtener_cliente_por_id(session, org_id, cliente_id)
+    if cliente is None:
+        raise VentaInvalida("No existe ese cliente en tu organización.")
+
+    ref_tipo: str | None = None
+    ref_id: int | None = None
+
+    if revierte_movimiento_id is not None:
+        if debe is not None or haber is not None:
+            raise VentaInvalida(
+                "Una reversa no lleva importe: lo calcula el sistema desde el movimiento original."
+            )
+
+        # El filtro por `cliente_id` no es redundante con el de org: sin él se podría revertir el
+        # movimiento de OTRO cliente de la misma organización pasando su id a mano.
+        original = session.scalar(
+            select(CtaCteMovimiento).where(
+                CtaCteMovimiento.org_id == org_id,
+                CtaCteMovimiento.id == revierte_movimiento_id,
+                CtaCteMovimiento.cliente_id == cliente_id,
+            )
+        )
+        if original is None:
+            raise VentaInvalida("No existe ese movimiento en la cuenta de este cliente.")
+
+        if original.tipo not in MOVIMIENTOS_REVERSIBLES:
+            raise VentaInvalida(
+                f"Un movimiento de tipo {original.tipo!r} no se revierte desde la cuenta "
+                "corriente porque refleja un comprobante. Emití una nota de crédito."
+            )
+
+        # Chequeo previo solo para dar un error legible: la garantía REAL es el índice único
+        # parcial de la 0009, porque entre este SELECT y el INSERT entra otra transacción.
+        if session.scalar(
+            select(CtaCteMovimiento.id).where(
+                CtaCteMovimiento.org_id == org_id,
+                CtaCteMovimiento.ref_tipo == REF_REVERSA,
+                CtaCteMovimiento.ref_id == original.id,
+            )
+        ):
+            raise VentaInvalida("Ese movimiento ya fue revertido con un ajuste.")
+
+        # El espejo: lo que era Haber vuelve como Debe y al revés. El saldo queda como antes.
+        debe, haber = original.haber, original.debe
+        ref_tipo, ref_id = REF_REVERSA, original.id
+    else:
+        importes = [m for m in (debe, haber) if m is not None]
+        if not importes:
+            raise VentaInvalida("Un ajuste manual lleva un importe en Debe o en Haber.")
+        if len(importes) == 2:
+            raise VentaInvalida("Un ajuste va en Debe o en Haber, no en los dos a la vez.")
+        if importes[0] <= 0:
+            raise VentaInvalida("El importe del ajuste debe ser mayor a cero.")
+
+    movimiento = CtaCteMovimiento(
+        org_id=org_id,
+        cliente_id=cliente_id,
+        tipo="ajuste",
+        debe=debe if debe is not None else Decimal("0"),
+        haber=haber if haber is not None else Decimal("0"),
+        ref_tipo=ref_tipo,
+        ref_id=ref_id,
+        motivo=motivo,
         creado_por=usuario_id,
     )
     session.add(movimiento)
@@ -400,6 +513,11 @@ def movimientos_cliente(
     [offset, offset+limite) y el acumulado de su primera fila depende de todas las páginas
     anteriores. Calcularlo del lado del cliente exigiría traer el ledger entero, que es
     exactamente lo que la paginación existe para evitar.
+
+    Cada fila trae además su `motivo`, un `anulado` y un `reversible`. `anulado` es lo que hace
+    legible al storno: sin él el extracto muestra un haber de 5000 y un debe de 5000 y el operador
+    tiene que adivinar que se cancelan entre sí. `reversible` responde "¿puedo apretar Revertir?"
+    para que la regla de qué se puede revertir viva en UN solo lugar, y no también en el front.
     """
     acumulado = (
         func.sum(CtaCteMovimiento.debe - CtaCteMovimiento.haber)
@@ -414,6 +532,31 @@ def movimientos_cliente(
         .label("saldo_acumulado")
     )
 
+    # ¿Alguien ya revirtió esta fila? EXISTS correlacionado sobre el MISMO ledger, así que hace
+    # falta un alias para distinguir la reversa del movimiento revertido. Lo resuelve el índice
+    # parcial `uq_cta_cte_movimientos_reversa` de la 0009.
+    reversa = aliased(CtaCteMovimiento)
+    ya_revertido = (
+        select(reversa.id)
+        .where(
+            reversa.org_id == CtaCteMovimiento.org_id,
+            reversa.ref_tipo == REF_REVERSA,
+            reversa.ref_id == CtaCteMovimiento.id,
+        )
+        .exists()
+    )
+
+    anulado = ya_revertido.label("anulado")
+
+    # La respuesta a "¿puedo apretar Revertir en esta fila?", resuelta ACÁ y no en el front. Junta
+    # las dos condiciones a propósito: si viajara solo el tipo, el front tendría que combinarlo con
+    # `anulado` y volveríamos a tener regla de negocio del lado del cliente.
+    # `sorted()` sobre el frozenset para que el SQL salga igual en cada corrida.
+    reversible = and_(
+        CtaCteMovimiento.tipo.in_(sorted(MOVIMIENTOS_REVERSIBLES)),
+        ~ya_revertido,
+    ).label("reversible")
+
     filtros = (CtaCteMovimiento.org_id == org_id, CtaCteMovimiento.cliente_id == cliente_id)
 
     total = session.scalar(select(func.count()).select_from(CtaCteMovimiento).where(*filtros)) or 0
@@ -421,7 +564,8 @@ def movimientos_cliente(
     # La window va en una subquery y el orden de lectura afuera. Hoy daría lo mismo en un solo
     # nivel (Postgres evalúa las window functions después del WHERE y antes del LIMIT), pero el
     # día que se filtre por rango de fechas el WHERE recortaría filas ANTES de acumular y el
-    # saldo arrancaría de cero en el rango, mal y en silencio.
+    # saldo arrancaría de cero en el rango, mal y en silencio. El EXISTS va acá adentro por lo
+    # mismo: afuera se evaluaría sobre la ventana ya recortada.
     ledger = (
         select(
             CtaCteMovimiento.id,
@@ -431,6 +575,9 @@ def movimientos_cliente(
             CtaCteMovimiento.haber,
             CtaCteMovimiento.ref_tipo,
             CtaCteMovimiento.ref_id,
+            CtaCteMovimiento.motivo,
+            anulado,
+            reversible,
             acumulado,
         )
         .where(*filtros)

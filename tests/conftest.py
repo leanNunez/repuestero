@@ -43,6 +43,11 @@ os.environ["DATABASE_URL"] = APP_URL
 os.environ["MIGRATIONS_DATABASE_URL"] = OWNER_URL
 os.environ["DATABASE_READONLY_URL"] = READONLY_URL
 os.environ.setdefault("SUPABASE_JWT_SECRET", "test-secret-solo-para-tests")
+# Los tests HTTP firman con HS256, y `security._decode` prioriza JWKS cuando esa URL está seteada:
+# en una máquina configurada contra el Supabase real, el token de test se validaría contra el JWKS
+# del proyecto y TODO el contrato HTTP daría 401. Se vacía a la fuerza (no `setdefault`) para que
+# la suite dé lo mismo en CI que en cualquier entorno de desarrollo.
+os.environ["SUPABASE_JWKS_URL"] = ""
 
 
 def _maintenance_engine():
