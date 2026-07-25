@@ -312,9 +312,17 @@ def registrar_cobranza(
     *,
     cliente_codigo: str,
     monto: Decimal,
+    fecha: date | None = None,
     usuario_id: UUID | None = None,
 ) -> CtaCteMovimiento:
     """Imputa un pago del cliente como un Haber en la cuenta corriente. Baja el saldo.
+
+    `fecha` es CUÁNDO ENTRÓ la plata, no cuándo se cargó: la del viernes tipeada el lunes va con la
+    del viernes. Si no viene, queda el `current_date` de la tabla. `creado_en` guarda el momento
+    real del alta, así que las dos verdades conviven y el retroactivo es auditable.
+
+    Sin límite de antigüedad acá a propósito: la ventana es política de la API
+    (`app/core/fechas.py`) y el importador de Paradox entra por este camino con años de historia.
 
     No abre sesión ni commitea (termina en flush), igual que el resto. El saldo se recalcula
     solo desde la vista: no hay columna que actualizar.
@@ -333,6 +341,8 @@ def registrar_cobranza(
         haber=monto,
         creado_por=usuario_id,
     )
+    if fecha is not None:
+        movimiento.fecha = fecha
     session.add(movimiento)
     session.flush()
     return movimiento
@@ -347,6 +357,7 @@ def registrar_ajuste(
     debe: Decimal | None = None,
     haber: Decimal | None = None,
     revierte_movimiento_id: int | None = None,
+    fecha: date | None = None,
     usuario_id: UUID | None = None,
 ) -> CtaCteMovimiento:
     """Corrige la cuenta corriente con una fila NUEVA. El pasado no se toca jamás.
@@ -362,6 +373,9 @@ def registrar_ajuste(
 
     `motivo` es obligatorio en los dos casos — un ajuste sin motivo es una fila que en seis meses
     nadie puede explicar. El CHECK de la 0009 lo respalda en la base.
+
+    `fecha` permite ubicar el ajuste cuando corresponde (un saldo inicial de migración no es de
+    hoy). Si no viene, queda el `current_date` de la tabla.
 
     No abre sesión ni commitea (termina en flush), igual que el resto. El saldo sale solo de la
     vista: no hay columna que actualizar.
@@ -435,6 +449,8 @@ def registrar_ajuste(
         motivo=motivo,
         creado_por=usuario_id,
     )
+    if fecha is not None:
+        movimiento.fecha = fecha
     session.add(movimiento)
     session.flush()
     return movimiento
@@ -576,6 +592,10 @@ def movimientos_cliente(
             CtaCteMovimiento.ref_tipo,
             CtaCteMovimiento.ref_id,
             CtaCteMovimiento.motivo,
+            # Cuándo se CARGÓ, además de cuándo pasó. Con fechas retroactivas las dos verdades
+            # dejan de coincidir, y sin esto el retroactivo sería una forma prolija de reescribir
+            # el pasado: nadie podría ver que esa fila entró tres días después.
+            CtaCteMovimiento.creado_en,
             anulado,
             reversible,
             acumulado,

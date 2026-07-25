@@ -92,6 +92,7 @@ def registrar_pago(
             tenant.org_id,
             proveedor_codigo=body.proveedor_codigo,
             monto=body.monto,
+            fecha=body.fecha,
             usuario_id=tenant.user_id,
         )
     except service.CompraInvalida as exc:
@@ -137,6 +138,7 @@ def registrar_ajuste(
             debe=body.debe,
             haber=body.haber,
             revierte_movimiento_id=body.revierte_movimiento_id,
+            fecha=body.fecha,
             usuario_id=tenant.user_id,
         )
     except service.CompraInvalida as exc:

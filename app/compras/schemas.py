@@ -7,11 +7,13 @@ El `costo_unitario` lo pone el operador (es NETO, sin IVA): la compra lo toma ta
 el IVA por renglón, y pisa con él el costo del artículo (repriceando las listas de venta).
 """
 
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.core.fechas import validar_fecha_movimiento
 
 _MAX_RENGLONES = 200
 
@@ -88,6 +90,10 @@ class PagoProveedorCrear(BaseModel):
 
     proveedor_codigo: str = Field(min_length=1, max_length=20)
     monto: Decimal = Field(gt=0)
+    #: Cuándo SALIÓ la plata. `None` = hoy. Ver `ventas.schemas.CobranzaCrear.fecha`.
+    fecha: date | None = None
+
+    _valida_fecha = field_validator("fecha")(validar_fecha_movimiento)
 
 
 class PagoProveedorResponse(BaseModel):
@@ -114,6 +120,10 @@ class AjusteCrear(BaseModel):
     debe: Decimal | None = Field(default=None, gt=0)
     #: Solo en ajuste manual, y uno solo de los dos. Baja lo que le debemos.
     haber: Decimal | None = Field(default=None, gt=0)
+    #: Cuándo corresponde el ajuste. `None` = hoy.
+    fecha: date | None = None
+
+    _valida_fecha = field_validator("fecha")(validar_fecha_movimiento)
 
     @model_validator(mode="after")
     def _un_modo_solo(self) -> "AjusteCrear":
@@ -181,6 +191,8 @@ class MovimientoLeer(BaseModel):
     ref_id: int | None = None
     #: Por qué se ajustó. Solo lo traen los movimientos de tipo 'ajuste'.
     motivo: str | None = None
+    #: Cuándo se REGISTRÓ, contra `fecha`, que es cuándo pasó. Ver el espejo en ventas.
+    creado_en: datetime
     #: Si un ajuste posterior ya revirtió este movimiento.
     anulado: bool = False
     #: "¿Puedo apretar Revertir en esta fila?" — ya contempla que un movimiento anulado no se
