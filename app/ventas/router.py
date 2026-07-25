@@ -14,6 +14,8 @@ from app.clientes import service as clientes
 from app.core.rls import TenantContext, get_tenant
 from app.ventas import service
 from app.ventas.schemas import (
+    AjusteCrear,
+    AjusteResponse,
     CobranzaCrear,
     CobranzaResponse,
     CuentaLeer,
@@ -281,6 +283,58 @@ def registrar_cobranza(
         ) from None
 
     return CobranzaResponse(
+        movimiento_id=movimiento.id,
+        cliente_id=movimiento.cliente_id,
+        saldo=service.saldo_cliente(tenant.session, tenant.org_id, movimiento.cliente_id),
+    )
+
+
+@router.post(
+    "/clientes/{cliente_id}/ajustes",
+    response_model=AjusteResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def registrar_ajuste(
+    cliente_id: int,
+    body: AjusteCrear,
+    tenant: TenantContext = Depends(get_tenant),
+) -> AjusteResponse:
+    """Corrige la cuenta corriente con una fila nueva: reversa de un movimiento, o ajuste a mano.
+
+    El ledger es append-only, así que este es el ÚNICO camino para arreglar una cobranza mal
+    cargada. Ver `service.registrar_ajuste`.
+    """
+    # El cliente viaja en el PATH, así que su ausencia es un 404 — igual que en el GET de
+    # movimientos. `/cobranzas` devuelve 422 porque ahí el cliente va en el body.
+    if clientes.obtener_cliente_por_id(tenant.session, tenant.org_id, cliente_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No existe ese cliente.")
+
+    try:
+        movimiento = service.registrar_ajuste(
+            tenant.session,
+            tenant.org_id,
+            cliente_id=cliente_id,
+            motivo=body.motivo,
+            debe=body.debe,
+            haber=body.haber,
+            revierte_movimiento_id=body.revierte_movimiento_id,
+            usuario_id=tenant.user_id,
+        )
+    except service.VentaInvalida as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from None
+    except IntegrityError:
+        # El índice único parcial de la 0009 atajó una doble reversa simultánea: el chequeo del
+        # service pasó y otra transacción se metió en el medio. Mismo mensaje que el 422 de arriba.
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Ese movimiento ya fue revertido con un ajuste."
+        ) from None
+    except Exception:  # noqa: BLE001 — nunca filtrar internals (skill web-security)
+        logger.exception("Error en POST /ventas/clientes/%s/ajustes", cliente_id)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, "No pude registrar el ajuste."
+        ) from None
+
+    return AjusteResponse(
         movimiento_id=movimiento.id,
         cliente_id=movimiento.cliente_id,
         saldo=service.saldo_cliente(tenant.session, tenant.org_id, movimiento.cliente_id),

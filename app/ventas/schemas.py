@@ -12,7 +12,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 _MAX_RENGLONES = 200
 
@@ -110,6 +110,53 @@ class CobranzaResponse(BaseModel):
     saldo: Decimal
 
 
+class AjusteCrear(BaseModel):
+    """Un ajuste de cuenta corriente: reversa de un movimiento, o corrección a mano.
+
+    El XOR entre los dos modos se valida ACÁ para que un pedido incoherente muera en el 422 sin
+    llegar a tocar la base. El service lo vuelve a chequear igual: es la puerta de entrada real y
+    no puede confiar en que alguien haya pasado por este schema.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    #: Obligatorio. Un ajuste sin motivo es una fila que en seis meses nadie puede explicar; el
+    #: CHECK de la 0009 lo respalda en la base.
+    motivo: str = Field(min_length=3, max_length=200)
+    #: Movimiento a revertir. Si viene, el importe lo calcula el SERVICE espejando el original: no
+    #: se manda desde afuera, así no se puede errar tipeando el monto que se está corrigiendo.
+    revierte_movimiento_id: int | None = Field(default=None, gt=0)
+    #: Solo en ajuste manual, y uno solo de los dos. Sube la deuda del cliente.
+    debe: Decimal | None = Field(default=None, gt=0)
+    #: Solo en ajuste manual, y uno solo de los dos. Baja la deuda del cliente.
+    haber: Decimal | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def _un_modo_solo(self) -> "AjusteCrear":
+        importes = [m for m in (self.debe, self.haber) if m is not None]
+
+        if self.revierte_movimiento_id is not None:
+            if importes:
+                raise ValueError(
+                    "Una reversa no lleva importe: lo calcula el sistema desde el original."
+                )
+            return self
+
+        if not importes:
+            raise ValueError("Un ajuste manual lleva un importe en Debe o en Haber.")
+        if len(importes) == 2:
+            raise ValueError("Un ajuste va en Debe o en Haber, no en los dos a la vez.")
+        return self
+
+
+class AjusteResponse(BaseModel):
+    movimiento_id: int
+    cliente_id: int
+    #: Saldo del cliente DESPUÉS del ajuste. Mismo shape que `CobranzaResponse` a propósito: el
+    #: front usa UN solo schema para las dos mutaciones.
+    saldo: Decimal
+
+
 class SaldoLeer(BaseModel):
     cliente_id: int
     saldo: Decimal
@@ -149,6 +196,11 @@ class MovimientoLeer(BaseModel):
     haber: Decimal
     ref_tipo: str | None = None
     ref_id: int | None = None
+    #: Por qué se ajustó. Solo lo traen los movimientos de tipo 'ajuste'.
+    motivo: str | None = None
+    #: Si un ajuste posterior ya revirtió este movimiento. Sin esto el extracto muestra el haber y
+    #: su contra-debe sin ninguna pista de que se cancelan entre sí.
+    anulado: bool = False
     #: Saldo DESPUÉS de este movimiento, en orden cronológico. Lo calcula el SQL sobre todo el
     #: ledger: el front solo ve una página y no puede conocer el acumulado de las anteriores.
     saldo_acumulado: Decimal

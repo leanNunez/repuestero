@@ -22,7 +22,8 @@ from uuid import uuid4
 import jwt
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.asistente import grafo, llm
@@ -370,6 +371,324 @@ def test_prov_limite_siempre_es_none(sesion, org):
     assert leidas and all(c.limite is None for c in leidas)
 
 
+# =========================================================================== ajustes (storno)
+
+
+def _primer_movimiento(sesion, org_id, cliente_id, tipo) -> CtaCteMovimiento:
+    """El movimiento más viejo de ese tipo en la cuenta: algo concreto que revertir."""
+    mov = sesion.scalars(
+        select(CtaCteMovimiento)
+        .where(
+            CtaCteMovimiento.org_id == org_id,
+            CtaCteMovimiento.cliente_id == cliente_id,
+            CtaCteMovimiento.tipo == tipo,
+        )
+        .order_by(CtaCteMovimiento.id)
+    ).first()
+    assert mov is not None, f"el fixture tiene que sembrar un movimiento {tipo!r}"
+    return mov
+
+
+def test_storno_deja_el_saldo_igual_que_antes_de_la_cobranza(sesion, org):
+    """EL test de esta feature: la reversa cierra EXACTO contra la vista de saldo.
+
+    Es la razón por la que el ajuste existe — una cobranza mal cargada no se puede editar (el
+    ledger es append-only), así que la única prueba que importa es que el contra-movimiento
+    devuelva el saldo al valor que tenía antes del error.
+    """
+    antes = service.saldo_cliente(sesion, org.id, org.cli.deuda)
+
+    cobranza = service.registrar_cobranza(
+        sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("5000")
+    )
+    assert service.saldo_cliente(sesion, org.id, org.cli.deuda) == antes - Decimal("5000")
+
+    service.registrar_ajuste(
+        sesion,
+        org.id,
+        cliente_id=org.cli.deuda,
+        motivo="cobranza cargada dos veces",
+        revierte_movimiento_id=cobranza.id,
+    )
+    assert service.saldo_cliente(sesion, org.id, org.cli.deuda) == antes
+
+
+def test_storno_espeja_el_monto_y_referencia_el_original(sesion, org):
+    """El importe lo calcula el SERVICE desde el original: nunca viaja en el pedido."""
+    cobranza = _primer_movimiento(sesion, org.id, org.cli.deuda, "cobranza")
+
+    ajuste = service.registrar_ajuste(
+        sesion,
+        org.id,
+        cliente_id=org.cli.deuda,
+        motivo="duplicada",
+        revierte_movimiento_id=cobranza.id,
+    )
+
+    assert ajuste.tipo == "ajuste"
+    assert ajuste.debe == cobranza.haber  # el haber vuelve como debe
+    assert ajuste.haber == cobranza.debe
+    assert (ajuste.ref_tipo, ajuste.ref_id) == (service.REF_REVERSA, cobranza.id)
+    assert ajuste.motivo == "duplicada"
+
+
+def test_el_acumulado_del_extracto_vuelve_al_valor_previo(sesion, org):
+    """Ata la window function del extracto a la vista: las dos tienen que ver la reversa igual."""
+    cobranza = service.registrar_cobranza(
+        sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("777")
+    )
+    service.registrar_ajuste(
+        sesion,
+        org.id,
+        cliente_id=org.cli.deuda,
+        motivo="mal cargada",
+        revierte_movimiento_id=cobranza.id,
+    )
+
+    filas, _ = service.movimientos_cliente(sesion, org.id, org.cli.deuda, limite=1)
+    assert filas[0].saldo_acumulado == service.saldo_cliente(sesion, org.id, org.cli.deuda)
+
+
+def test_no_se_puede_revertir_dos_veces_el_mismo_movimiento(sesion, org):
+    """Revertir dos veces duplicaría la corrección, y en un ledger append-only no hay vuelta."""
+    cobranza = _primer_movimiento(sesion, org.id, org.cli.deuda, "cobranza")
+    service.registrar_ajuste(
+        sesion,
+        org.id,
+        cliente_id=org.cli.deuda,
+        motivo="primera",
+        revierte_movimiento_id=cobranza.id,
+    )
+
+    with pytest.raises(service.VentaInvalida, match="ya fue revertido"):
+        service.registrar_ajuste(
+            sesion,
+            org.id,
+            cliente_id=org.cli.deuda,
+            motivo="segunda",
+            revierte_movimiento_id=cobranza.id,
+        )
+
+
+def test_el_indice_unico_ataja_la_doble_reversa_simultanea(sesion, org):
+    """La garantía REAL no es el chequeo del service: es el índice parcial de la 0009.
+
+    Se saltea el service a propósito, porque eso es exactamente lo que pasa cuando dos requests
+    pasan el chequeo previo antes de que cualquiera de los dos haya insertado.
+    """
+    cobranza = _primer_movimiento(sesion, org.id, org.cli.deuda, "cobranza")
+    service.registrar_ajuste(
+        sesion,
+        org.id,
+        cliente_id=org.cli.deuda,
+        motivo="primera",
+        revierte_movimiento_id=cobranza.id,
+    )
+
+    sesion.add(
+        CtaCteMovimiento(
+            org_id=org.id,
+            cliente_id=org.cli.deuda,
+            tipo="ajuste",
+            debe=cobranza.haber,
+            ref_tipo=service.REF_REVERSA,
+            ref_id=cobranza.id,
+            motivo="segunda, por atrás del service",
+        )
+    )
+    with pytest.raises(IntegrityError):
+        sesion.flush()
+
+
+def test_un_ajuste_si_se_puede_revertir(sesion, org):
+    """Deshacer una corrección equivocada tiene que ser posible: si no, el ajuste sería una
+    trampa de un solo sentido."""
+    ajuste = service.registrar_ajuste(
+        sesion, org.id, cliente_id=org.cli.deuda, motivo="condonación", haber=Decimal("400")
+    )
+    antes = service.saldo_cliente(sesion, org.id, org.cli.deuda)
+
+    service.registrar_ajuste(
+        sesion,
+        org.id,
+        cliente_id=org.cli.deuda,
+        motivo="me equivoqué de cliente",
+        revierte_movimiento_id=ajuste.id,
+    )
+
+    assert service.saldo_cliente(sesion, org.id, org.cli.deuda) == antes + Decimal("400")
+
+
+@pytest.mark.parametrize("tipo", ["venta", "nota_credito"])
+def test_no_se_puede_revertir_un_movimiento_de_comprobante(sesion, org, tipo):
+    """Un movimiento que espeja un comprobante NO se revierte desde el ledger: dejaría el
+    comprobante vivo con su cuenta corriente en cero y el ledger dejaría de espejarlo, en
+    silencio. Se revierte con una nota de crédito."""
+    mov = _primer_movimiento(sesion, org.id, org.cli.deuda, tipo)
+
+    with pytest.raises(service.VentaInvalida, match="nota de crédito"):
+        service.registrar_ajuste(
+            sesion,
+            org.id,
+            cliente_id=org.cli.deuda,
+            motivo="quiero anular la venta",
+            revierte_movimiento_id=mov.id,
+        )
+
+
+def test_no_se_puede_revertir_el_movimiento_de_otro_cliente(sesion, org):
+    """El filtro por cliente no es redundante con el de org: sin él se podría revertir la
+    cobranza de otro cliente de la misma organización pasando su id a mano."""
+    ajeno = _primer_movimiento(sesion, org.id, org.cli.favor, "cobranza")
+
+    with pytest.raises(service.VentaInvalida, match="No existe ese movimiento"):
+        service.registrar_ajuste(
+            sesion,
+            org.id,
+            cliente_id=org.cli.deuda,
+            motivo="reversa cruzada",
+            revierte_movimiento_id=ajeno.id,
+        )
+
+
+def test_no_se_puede_revertir_un_movimiento_de_otra_org(sesion, org):
+    with pytest.raises(service.VentaInvalida, match="No existe ese movimiento"):
+        service.registrar_ajuste(
+            sesion,
+            org.id,
+            cliente_id=org.cli.deuda,
+            motivo="cruce de tenants",
+            revierte_movimiento_id=999999,
+        )
+
+
+def test_la_reversa_no_acepta_importe(sesion, org):
+    """Si el importe pudiera venir de afuera, se podría errar tipeando justo el número que se
+    está corrigiendo."""
+    cobranza = _primer_movimiento(sesion, org.id, org.cli.deuda, "cobranza")
+
+    with pytest.raises(service.VentaInvalida, match="no lleva importe"):
+        service.registrar_ajuste(
+            sesion,
+            org.id,
+            cliente_id=org.cli.deuda,
+            motivo="con monto a mano",
+            revierte_movimiento_id=cobranza.id,
+            debe=Decimal("1"),
+        )
+
+
+def test_ajuste_manual_mueve_el_saldo_en_los_dos_sentidos(sesion, org):
+    antes = service.saldo_cliente(sesion, org.id, org.cli.deuda)
+
+    service.registrar_ajuste(
+        sesion,
+        org.id,
+        cliente_id=org.cli.deuda,
+        motivo="saldo inicial Paradox",
+        debe=Decimal("250"),
+    )
+    assert service.saldo_cliente(sesion, org.id, org.cli.deuda) == antes + Decimal("250")
+
+    service.registrar_ajuste(
+        sesion, org.id, cliente_id=org.cli.deuda, motivo="condonación", haber=Decimal("50")
+    )
+    assert service.saldo_cliente(sesion, org.id, org.cli.deuda) == antes + Decimal("200")
+
+
+def test_ajuste_manual_exige_exactamente_un_importe(sesion, org):
+    with pytest.raises(service.VentaInvalida, match="Debe o en Haber"):
+        service.registrar_ajuste(sesion, org.id, cliente_id=org.cli.deuda, motivo="sin importe")
+
+    with pytest.raises(service.VentaInvalida, match="no en los dos"):
+        service.registrar_ajuste(
+            sesion,
+            org.id,
+            cliente_id=org.cli.deuda,
+            motivo="los dos",
+            debe=Decimal("10"),
+            haber=Decimal("10"),
+        )
+
+
+def test_ajuste_manual_rechaza_importe_no_positivo(sesion, org):
+    with pytest.raises(service.VentaInvalida, match="mayor a cero"):
+        service.registrar_ajuste(
+            sesion, org.id, cliente_id=org.cli.deuda, motivo="cero", debe=Decimal("0")
+        )
+
+
+def test_ajuste_sin_motivo_se_rechaza(sesion, org):
+    """Un ajuste sin motivo es una fila que en seis meses nadie puede explicar."""
+    for motivo in ("", "   "):
+        with pytest.raises(service.VentaInvalida, match="motivo"):
+            service.registrar_ajuste(
+                sesion, org.id, cliente_id=org.cli.deuda, motivo=motivo, debe=Decimal("10")
+            )
+
+
+def test_el_check_de_la_base_exige_motivo_en_los_ajustes(sesion, org):
+    """El service valida, pero el que MANDA es el CHECK de la 0009: cualquier camino futuro al
+    ledger (importador, script, otro service) se lleva el error igual."""
+    sesion.add(
+        CtaCteMovimiento(
+            org_id=org.id, cliente_id=org.cli.deuda, tipo="ajuste", debe=Decimal("100")
+        )
+    )
+    with pytest.raises(IntegrityError):
+        sesion.flush()
+
+
+def test_el_check_no_molesta_a_los_movimientos_automaticos(sesion, org):
+    """Una cobranza no lleva motivo y tiene que seguir entrando sin problema."""
+    service.registrar_cobranza(sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("1"))
+
+
+def test_ajuste_a_cliente_inexistente_se_rechaza(sesion, org):
+    with pytest.raises(service.VentaInvalida, match="No existe ese cliente"):
+        service.registrar_ajuste(
+            sesion, org.id, cliente_id=999999, motivo="fantasma", debe=Decimal("10")
+        )
+
+
+def test_el_extracto_marca_anulado_solo_el_movimiento_revertido(sesion, org):
+    """Sin este flag el extracto muestra un haber y su contra-debe sin ninguna pista de que se
+    cancelan entre sí, y el operador tiene que adivinar."""
+    cobranza = service.registrar_cobranza(
+        sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("900")
+    )
+    ajuste = service.registrar_ajuste(
+        sesion,
+        org.id,
+        cliente_id=org.cli.deuda,
+        motivo="duplicada",
+        revierte_movimiento_id=cobranza.id,
+    )
+
+    filas, _ = service.movimientos_cliente(sesion, org.id, org.cli.deuda, limite=100)
+    por_id = {f.id: f for f in filas}
+
+    assert por_id[cobranza.id].anulado is True
+    # La reversa NO está anulada: nadie la revirtió a ella.
+    assert por_id[ajuste.id].anulado is False
+    assert all(not f.anulado for f in filas if f.id not in (cobranza.id,))
+
+
+def test_el_extracto_trae_el_motivo_del_ajuste(sesion, org):
+    service.registrar_ajuste(
+        sesion,
+        org.id,
+        cliente_id=org.cli.deuda,
+        motivo="redondeo de centavos",
+        haber=Decimal("0.03"),
+    )
+
+    filas, _ = service.movimientos_cliente(sesion, org.id, org.cli.deuda, limite=1)
+    assert filas[0].motivo == "redondeo de centavos"
+    # Los automáticos siguen sin motivo, y eso es correcto.
+    assert all(f.motivo is None for f in filas[1:] if f.tipo != "ajuste")
+
+
 # =========================================================================== HTTP (contrato)
 
 
@@ -501,6 +820,100 @@ def test_endpoint_pago_registra_y_devuelve_saldo(cliente, org):
 def test_endpoint_pago_monto_cero_es_422(cliente):
     r = cliente.post("/compras/pagos", json={"proveedor_codigo": "PROV-DEUDA", "monto": "0"})
     assert r.status_code == 422
+
+
+# ------------------------------------------------------------------------ ajustes por HTTP
+# Estos SÍ commitean (lo hace `get_tenant`), así que van al final y leen el saldo antes de tocarlo.
+
+
+def _url_ajustes(cliente_id: int) -> str:
+    return f"/ventas/clientes/{cliente_id}/ajustes"
+
+
+def test_endpoint_ajuste_revierte_una_cobranza_de_punta_a_punta(cliente, org):
+    """El recorrido completo del bug que motivó la feature: se carga una cobranza mal, se
+    revierte, y el saldo vuelve exactamente a donde estaba."""
+    antes = Decimal(
+        cliente.get(f"/ventas/clientes/{org.cli.deuda}/movimientos").json()["cuenta"]["saldo"]
+    )
+
+    cobranza = cliente.post(
+        "/ventas/cobranzas", json={"cliente_codigo": "CLI-DEUDA", "monto": "1234.56"}
+    ).json()
+
+    r = cliente.post(
+        _url_ajustes(org.cli.deuda),
+        json={"revierte_movimiento_id": cobranza["movimiento_id"], "motivo": "cargada dos veces"},
+    )
+    assert r.status_code == 201
+    assert Decimal(r.json()["saldo"]) == antes
+
+    # Y el extracto marca la cobranza como anulada.
+    items = cliente.get(f"/ventas/clientes/{org.cli.deuda}/movimientos").json()["items"]
+    anulada = next(m for m in items if m["id"] == cobranza["movimiento_id"])
+    assert anulada["anulado"] is True
+
+
+def test_endpoint_extracto_expone_motivo_y_anulado(cliente, org):
+    """Fija el contrato que consume el front: sin estas dos claves no puede pintar el estado."""
+    r = cliente.post(
+        _url_ajustes(org.cli.deuda), json={"debe": "10.00", "motivo": "saldo inicial Paradox"}
+    )
+    assert r.status_code == 201
+
+    mov = cliente.get(f"/ventas/clientes/{org.cli.deuda}/movimientos").json()["items"][0]
+    assert mov["motivo"] == "saldo inicial Paradox"
+    assert mov["anulado"] is False
+    assert isinstance(mov["debe"], str)  # la plata sigue viajando como string
+
+
+def test_endpoint_ajuste_doble_reversa_es_422(cliente, org):
+    cobranza = cliente.post(
+        "/ventas/cobranzas", json={"cliente_codigo": "CLI-DEUDA", "monto": "10.00"}
+    ).json()
+    payload = {"revierte_movimiento_id": cobranza["movimiento_id"], "motivo": "primera"}
+
+    assert cliente.post(_url_ajustes(org.cli.deuda), json=payload).status_code == 201
+    assert cliente.post(_url_ajustes(org.cli.deuda), json=payload).status_code == 422
+
+
+def test_endpoint_ajuste_de_una_venta_es_422(cliente, org):
+    venta = next(
+        m
+        for m in cliente.get(f"/ventas/clientes/{org.cli.deuda}/movimientos").json()["items"]
+        if m["tipo"] == "venta"
+    )
+
+    r = cliente.post(
+        _url_ajustes(org.cli.deuda),
+        json={"revierte_movimiento_id": venta["id"], "motivo": "anular la venta"},
+    )
+    assert r.status_code == 422
+    assert "nota de crédito" in r.json()["detail"]
+
+
+def test_endpoint_ajuste_de_cliente_inexistente_es_404(cliente):
+    """El cliente va en el path: su ausencia es 404, no 422."""
+    r = cliente.post(_url_ajustes(999999), json={"debe": "10.00", "motivo": "fantasma"})
+    assert r.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param({"debe": "10.00"}, id="sin-motivo"),
+        pytest.param({"debe": "10.00", "motivo": "no"}, id="motivo-muy-corto"),
+        pytest.param({"motivo": "sin importe ni reversa"}, id="sin-modo"),
+        pytest.param({"motivo": "los dos", "debe": "1", "haber": "1"}, id="debe-y-haber"),
+        pytest.param(
+            {"motivo": "reversa con monto", "revierte_movimiento_id": 1, "debe": "1"},
+            id="reversa-con-importe",
+        ),
+        pytest.param({"motivo": "importe cero", "debe": "0"}, id="importe-cero"),
+    ],
+)
+def test_endpoint_ajuste_payload_incoherente_es_422(cliente, org, payload):
+    assert cliente.post(_url_ajustes(org.cli.deuda), json=payload).status_code == 422
 
 
 # =========================================================== integración con Repu (NL2SQL)
