@@ -201,6 +201,10 @@ class MovimientoLeer(BaseModel):
     #: Si un ajuste posterior ya revirtió este movimiento. Sin esto el extracto muestra el haber y
     #: su contra-debe sin ninguna pista de que se cancelan entre sí.
     anulado: bool = False
+    #: La respuesta a "¿puedo apretar Revertir en esta fila?" — NO una propiedad del tipo: ya
+    #: contempla que un movimiento anulado no se revierte de nuevo. Viaja calculado para que la
+    #: regla de qué se puede revertir viva SOLO en `service.MOVIMIENTOS_REVERSIBLES`.
+    reversible: bool = False
     #: Saldo DESPUÉS de este movimiento, en orden cronológico. Lo calcula el SQL sobre todo el
     #: ledger: el front solo ve una página y no puede conocer el acumulado de las anteriores.
     saldo_acumulado: Decimal

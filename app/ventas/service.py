@@ -514,9 +514,10 @@ def movimientos_cliente(
     anteriores. Calcularlo del lado del cliente exigiría traer el ledger entero, que es
     exactamente lo que la paginación existe para evitar.
 
-    Cada fila trae además su `motivo` y un `anulado`. Ese flag es lo que hace legible al storno:
-    sin él el extracto muestra un haber de 5000 y un debe de 5000 y el operador tiene que adivinar
-    que se cancelan entre sí.
+    Cada fila trae además su `motivo`, un `anulado` y un `reversible`. `anulado` es lo que hace
+    legible al storno: sin él el extracto muestra un haber de 5000 y un debe de 5000 y el operador
+    tiene que adivinar que se cancelan entre sí. `reversible` responde "¿puedo apretar Revertir?"
+    para que la regla de qué se puede revertir viva en UN solo lugar, y no también en el front.
     """
     acumulado = (
         func.sum(CtaCteMovimiento.debe - CtaCteMovimiento.haber)
@@ -535,7 +536,7 @@ def movimientos_cliente(
     # falta un alias para distinguir la reversa del movimiento revertido. Lo resuelve el índice
     # parcial `uq_cta_cte_movimientos_reversa` de la 0009.
     reversa = aliased(CtaCteMovimiento)
-    anulado = (
+    ya_revertido = (
         select(reversa.id)
         .where(
             reversa.org_id == CtaCteMovimiento.org_id,
@@ -543,8 +544,18 @@ def movimientos_cliente(
             reversa.ref_id == CtaCteMovimiento.id,
         )
         .exists()
-        .label("anulado")
     )
+
+    anulado = ya_revertido.label("anulado")
+
+    # La respuesta a "¿puedo apretar Revertir en esta fila?", resuelta ACÁ y no en el front. Junta
+    # las dos condiciones a propósito: si viajara solo el tipo, el front tendría que combinarlo con
+    # `anulado` y volveríamos a tener regla de negocio del lado del cliente.
+    # `sorted()` sobre el frozenset para que el SQL salga igual en cada corrida.
+    reversible = and_(
+        CtaCteMovimiento.tipo.in_(sorted(MOVIMIENTOS_REVERSIBLES)),
+        ~ya_revertido,
+    ).label("reversible")
 
     filtros = (CtaCteMovimiento.org_id == org_id, CtaCteMovimiento.cliente_id == cliente_id)
 
@@ -566,6 +577,7 @@ def movimientos_cliente(
             CtaCteMovimiento.ref_id,
             CtaCteMovimiento.motivo,
             anulado,
+            reversible,
             acumulado,
         )
         .where(*filtros)
