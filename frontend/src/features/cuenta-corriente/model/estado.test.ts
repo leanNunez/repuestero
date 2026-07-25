@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 
+import type { Movimiento } from "@/entities/cuenta-corriente/schema";
+
 import {
   BUSQUEDA_INICIAL,
   buscar,
   cambiarSolapa,
+  esReversible,
+  espejoDelMovimiento,
   etiquetaTipo,
   excedeLimite,
   montoValido,
+  motivoValido,
   parseBusqueda,
   seleccionar,
   signoSaldo,
@@ -16,6 +21,22 @@ import {
 
 function busqueda(over: Partial<Busqueda> = {}): Busqueda {
   return { ...BUSQUEDA_INICIAL, ...over };
+}
+
+function mov(over: Partial<Movimiento> = {}): Movimiento {
+  return {
+    id: 1,
+    fecha: "2026-03-20",
+    tipo: "cobranza",
+    debe: "0.00",
+    haber: "300.00",
+    ref_tipo: null,
+    ref_id: null,
+    motivo: null,
+    anulado: false,
+    saldo_acumulado: "700.00",
+    ...over,
+  };
 }
 
 describe("parseBusqueda", () => {
@@ -160,5 +181,61 @@ describe("excedeLimite", () => {
 
   it("los proveedores no tienen límite", () => {
     expect(excedeLimite("99999", null)).toBe(false);
+  });
+});
+
+describe("motivoValido", () => {
+  it("exige un motivo escrito de verdad", () => {
+    expect(motivoValido("cobranza cargada dos veces")).toBe(true);
+    expect(motivoValido("dup")).toBe(true); // el mínimo del backend son 3 caracteres
+  });
+
+  it("rechaza el vacío y los espacios", () => {
+    // El backend hace strip antes de validar el min_length, así que "  " no pasa allá tampoco.
+    expect(motivoValido("")).toBe(false);
+    expect(motivoValido("     ")).toBe(false);
+    expect(motivoValido("no")).toBe(false);
+  });
+});
+
+describe("esReversible", () => {
+  it("permite revertir lo que se cargó a mano en cada solapa", () => {
+    expect(esReversible("clientes", mov({ tipo: "cobranza" }))).toBe(true);
+    expect(esReversible("proveedores", mov({ tipo: "pago" }))).toBe(true);
+    expect(esReversible("clientes", mov({ tipo: "ajuste" }))).toBe(true);
+  });
+
+  it("NO permite revertir lo que espeja un comprobante", () => {
+    // Cancelar su efecto desde el ledger dejaría el comprobante vivo con la cuenta en cero, en
+    // silencio. Una venta se revierte con una nota de crédito.
+    expect(esReversible("clientes", mov({ tipo: "venta" }))).toBe(false);
+    expect(esReversible("clientes", mov({ tipo: "nota_credito" }))).toBe(false);
+    expect(esReversible("proveedores", mov({ tipo: "compra" }))).toBe(false);
+  });
+
+  it("no cruza las solapas: una cobranza no es reversible en proveedores", () => {
+    expect(esReversible("proveedores", mov({ tipo: "cobranza" }))).toBe(false);
+    expect(esReversible("clientes", mov({ tipo: "pago" }))).toBe(false);
+  });
+
+  it("un movimiento ya anulado no se vuelve a revertir", () => {
+    // Revertir dos veces duplicaría la corrección; el índice único de la base lo rechaza igual.
+    expect(esReversible("clientes", mov({ tipo: "cobranza", anulado: true }))).toBe(false);
+  });
+});
+
+describe("espejoDelMovimiento", () => {
+  it("un haber se revierte con un debe del mismo importe", () => {
+    expect(espejoDelMovimiento(mov({ debe: "0.00", haber: "300.00" }))).toEqual({
+      columna: "Debe",
+      importe: "300.00",
+    });
+  });
+
+  it("un debe se revierte con un haber del mismo importe", () => {
+    expect(espejoDelMovimiento(mov({ debe: "1234.56", haber: "0.00" }))).toEqual({
+      columna: "Haber",
+      importe: "1234.56",
+    });
   });
 });

@@ -8,6 +8,8 @@
  * cuenta seleccionada). `parseBusqueda` es la pieza crítica: la usa el `validateSearch` del router
  * y es lo único que separa una URL escrita a mano de un crash. */
 
+import type { Movimiento } from "@/entities/cuenta-corriente/schema";
+
 export type Solapa = "clientes" | "proveedores";
 
 export interface Busqueda {
@@ -81,7 +83,8 @@ export function verTodos(b: Busqueda, todos: boolean): Busqueda {
 /** Un monto imputable: positivo y con punto decimal.
  *
  * Rechaza la coma a propósito. `Number("10,50")` es NaN y el backend recibiría basura; es el
- * mismo criterio que ya aplican ventas y compras. La pantalla lo compensa con un hint. */
+ * mismo criterio que ya aplican ventas y compras. Los formularios usan `CampoMoneda`, que muestra
+ * la máscara es-AR y emite el valor canónico, así que la coma no llega nunca hasta acá. */
 export function montoValido(monto: string): boolean {
   const limpio = monto.trim();
   if (limpio === "" || limpio.includes(",")) return false;
@@ -103,6 +106,60 @@ const ETIQUETAS: Record<string, string> = {
  *  romper: el importador de Paradox puede traer tipos que este front no conoce. */
 export function etiquetaTipo(tipo: string): string {
   return ETIQUETAS[tipo] ?? tipo;
+}
+
+// --------------------------------------------------------------------------------- ajustes
+
+/** Qué está haciendo el formulario de ajuste. `null` = cerrado.
+ *
+ * Un solo estado gobierna todo: el toggle abre en `libre`, el botón Revertir de una fila abre en
+ * `storno` con ese movimiento, y cancelar vuelve a `null`. Espeja la decisión del backend, donde
+ * la reversa y el ajuste manual son UN endpoint con dos modos. */
+export type ModoAjuste = { kind: "libre" } | { kind: "storno"; movimiento: Movimiento };
+
+/** Lo que se manda al endpoint de ajustes. La plata viaja como string, como en todo el módulo. */
+export interface AjustePayload {
+  motivo: string;
+  debe?: string;
+  haber?: string;
+  revierte_movimiento_id?: number;
+}
+
+/** Qué tipos de movimiento se pueden revertir, por solapa.
+ *
+ * OJO: esto DUPLICA `MOVIMIENTOS_REVERSIBLES` de `app/ventas/service.py` y `app/compras/service.py`.
+ * Vive acá porque el front tiene que decidir si dibuja el botón sin preguntarle al servidor. Si
+ * cambia una lista hay que cambiar la otra — pero el modo de fallar es seguro: el backend rechaza
+ * igual con un 422 legible, así que una divergencia molesta, no corrompe. */
+const REVERSIBLES: Record<Solapa, readonly string[]> = {
+  clientes: ["cobranza", "ajuste"],
+  proveedores: ["pago", "ajuste"],
+};
+
+/** Si este movimiento se puede revertir desde el extracto.
+ *
+ * Un movimiento ya anulado no: revertirlo dos veces duplicaría la corrección, y el índice único
+ * de la base lo rechazaría de todas formas. */
+export function esReversible(tab: Solapa, m: Movimiento): boolean {
+  return !m.anulado && REVERSIBLES[tab].includes(m.tipo);
+}
+
+/** Un motivo escrito de verdad. Mismo mínimo que el `min_length=3` del schema del backend.
+ *
+ * No es burocracia: un ajuste sin motivo es una fila que en seis meses nadie puede explicar, y el
+ * CHECK de la base la rechaza. */
+export function motivoValido(motivo: string): boolean {
+  return motivo.trim().length >= 3;
+}
+
+/** El contra-asiento que va a generar una reversa, SOLO para mostrarlo antes de confirmar.
+ *
+ * El importe que vale lo calcula el backend leyendo el movimiento original — este es un espejo de
+ * cortesía para que la persona vea qué va a pasar. Nunca se manda. */
+export function espejoDelMovimiento(m: Movimiento): { columna: "Debe" | "Haber"; importe: string } {
+  return Number(m.haber) > 0
+    ? { columna: "Debe", importe: m.haber }
+    : { columna: "Haber", importe: m.debe };
 }
 
 export type SignoSaldo = "deudor" | "a-favor" | "cero";

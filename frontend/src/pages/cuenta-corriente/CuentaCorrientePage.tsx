@@ -1,6 +1,6 @@
 import { getRouteApi } from "@tanstack/react-router";
 import { Search } from "lucide-react";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import { pesos } from "@/entities/remito/formato";
 import {
@@ -10,15 +10,18 @@ import {
   signoSaldo,
   verTodos,
   type Busqueda,
+  type ModoAjuste,
 } from "@/features/cuenta-corriente/model/estado";
 import {
   MOV_PAGE_SIZE,
   PAGE_SIZE,
+  useAjustar,
   useCuentas,
   useImputar,
   useMovimientos,
 } from "@/features/cuenta-corriente/model/hooks";
 import { ExtractoTable } from "@/features/cuenta-corriente/ui/ExtractoTable";
+import { FormularioAjuste } from "@/features/cuenta-corriente/ui/FormularioAjuste";
 import { FormularioImputacion } from "@/features/cuenta-corriente/ui/FormularioImputacion";
 import { ListadoCuentas } from "@/features/cuenta-corriente/ui/ListadoCuentas";
 import { Solapas } from "@/features/cuenta-corriente/ui/Solapas";
@@ -38,10 +41,21 @@ export function CuentaCorrientePage() {
   const cuentas = useCuentas(s.tab, s.page, s.q, s.todos);
   const movimientos = useMovimientos(s.tab, s.sel, s.mpage);
   const imputar = useImputar(s.tab);
+  const ajustar = useAjustar(s.tab, s.sel);
+
+  // `null` = formulario de ajuste cerrado. NO viaja en la URL: un ajuste a medio escribir no es
+  // algo que quieras compartir en un link ni restaurar al volver atrás.
+  const [modoAjuste, setModoAjuste] = useState<ModoAjuste | null>(null);
 
   // Toda la navegación pasa por acá: las transiciones son funciones puras de `estado.ts`, así que
   // la página no decide qué resetear — eso está testeado aparte.
-  const ir = (proxima: Busqueda) => navigate({ search: () => proxima, replace: true });
+  const ir = (proxima: Busqueda) => {
+    // Cambiar de cuenta o de solapa cierra el ajuste. Si no, el formulario quedaría abierto en
+    // modo reversa apuntando al movimiento de la cuenta ANTERIOR: el backend lo rechazaría por el
+    // filtro de cliente, pero la pantalla estaría mintiendo hasta que la persona apriete.
+    if (proxima.tab !== s.tab || proxima.sel !== s.sel) setModoAjuste(null);
+    navigate({ search: () => proxima, replace: true });
+  };
 
   const items = cuentas.data?.items ?? [];
   const total = cuentas.data?.total ?? 0;
@@ -160,11 +174,30 @@ export function CuentaCorrientePage() {
                 />
               )}
 
+              <FormularioAjuste
+                modo={modoAjuste}
+                cargando={ajustar.isPending}
+                error={ajustar.error?.message ?? null}
+                onAbrir={() => setModoAjuste({ kind: "libre" })}
+                onCerrar={() => {
+                  setModoAjuste(null);
+                  ajustar.reset();
+                }}
+                onAjustar={(payload) => {
+                  ajustar.mutate(payload, { onSuccess: () => setModoAjuste(null) });
+                }}
+              />
+
               <ExtractoTable
                 movimientos={movimientos.data?.items}
                 isLoading={movimientos.isLoading}
                 isError={movimientos.isError}
                 onRetry={() => void movimientos.refetch()}
+                tab={s.tab}
+                onRevertir={(m) => {
+                  ajustar.reset();
+                  setModoAjuste({ kind: "storno", movimiento: m });
+                }}
               />
 
               <Pagination

@@ -1,16 +1,22 @@
 import type { Movimiento } from "@/entities/cuenta-corriente/schema";
 import { pesos } from "@/entities/remito/formato";
 import { fechaCorta } from "@/shared/lib/format";
+import { Badge } from "@/shared/ui/badge";
+import { Button } from "@/shared/ui/button";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { EmptyState, ErrorState } from "@/shared/ui/states";
 
-import { etiquetaTipo } from "../model/estado";
+import { esReversible, etiquetaTipo, type Solapa } from "../model/estado";
 
 interface Props {
   movimientos: Movimiento[] | undefined;
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
+  /** Qué solapa: define qué tipos de movimiento se pueden revertir. */
+  tab: Solapa;
+  /** Abrir el formulario de ajuste en modo reversa para esta fila. */
+  onRevertir: (m: Movimiento) => void;
 }
 
 /** Referencia legible del movimiento: "Comprobante #123".
@@ -24,7 +30,14 @@ function referencia(m: Movimiento): string {
   return `${nombre.charAt(0).toUpperCase()}${nombre.slice(1)} #${m.ref_id}`;
 }
 
-export function ExtractoTable({ movimientos, isLoading, isError, onRetry }: Props) {
+export function ExtractoTable({
+  movimientos,
+  isLoading,
+  isError,
+  onRetry,
+  tab,
+  onRevertir,
+}: Props) {
   if (isLoading) {
     return (
       <div className="space-y-2">
@@ -70,24 +83,57 @@ export function ExtractoTable({ movimientos, isLoading, isError, onRetry }: Prop
             <th scope="col" className="px-4 py-2.5 text-right font-medium">
               Saldo
             </th>
+            <th scope="col" className="px-4 py-2.5 font-medium">
+              <span className="sr-only">Acciones</span>
+            </th>
           </tr>
         </thead>
         <tbody>
           {movimientos.map((m) => (
             <tr key={m.id} className="border-b border-border last:border-0 hover:bg-muted/50">
-              <td className="whitespace-nowrap px-4 py-2.5 tabular-nums">{fechaCorta(m.fecha)}</td>
-              <td className="px-4 py-2.5">{etiquetaTipo(m.tipo)}</td>
-              <td className="px-4 py-2.5 text-muted-foreground">{referencia(m)}</td>
-              <td className="px-4 py-2.5 text-right tabular-nums">
+              <td className="whitespace-nowrap px-4 py-2.5 align-top tabular-nums">
+                {fechaCorta(m.fecha)}
+              </td>
+              <td className="px-4 py-2.5 align-top">
+                <span className={m.anulado ? "text-muted-foreground line-through" : undefined}>
+                  {etiquetaTipo(m.tipo)}
+                </span>
+                {m.motivo && (
+                  <span className="mt-0.5 block max-w-xs text-xs text-muted-foreground">
+                    {m.motivo}
+                  </span>
+                )}
+              </td>
+              <td className="px-4 py-2.5 align-top text-muted-foreground">{referencia(m)}</td>
+              <td className="px-4 py-2.5 text-right align-top tabular-nums">
                 {Number(m.debe) > 0 ? pesos(m.debe) : "—"}
               </td>
-              <td className="px-4 py-2.5 text-right tabular-nums">
+              <td className="px-4 py-2.5 text-right align-top tabular-nums">
                 {Number(m.haber) > 0 ? pesos(m.haber) : "—"}
               </td>
               {/* El acumulado viene calculado del backend sobre TODO el ledger. No se recalcula
                   acá: esta tabla solo tiene una página y no conoce lo anterior. */}
-              <td className="px-4 py-2.5 text-right font-medium tabular-nums">
+              <td className="px-4 py-2.5 text-right align-top font-medium tabular-nums">
                 {pesos(m.saldo_acumulado)}
+              </td>
+              {/* Un movimiento anulado muestra el estado en vez del botón: revertirlo de nuevo
+                  duplicaría la corrección, y el índice único de la base lo rechazaría igual. Los
+                  tipos que espejan un comprobante no llevan botón — se corrigen por su flujo. */}
+              <td className="whitespace-nowrap px-4 py-2.5 align-top">
+                {m.anulado ? (
+                  <Badge variant="warning">Anulado</Badge>
+                ) : (
+                  esReversible(tab, m) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onRevertir(m)}
+                      aria-label={`Revertir ${etiquetaTipo(m.tipo).toLowerCase()} del ${fechaCorta(m.fecha)}`}
+                    >
+                      Revertir
+                    </Button>
+                  )
+                )}
               </td>
             </tr>
           ))}
