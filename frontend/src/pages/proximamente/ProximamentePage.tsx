@@ -23,8 +23,8 @@ export function ProximamentePage() {
           <Badge variant="warning">Fase 2</Badge>
         </div>
         <p className="max-w-md text-sm text-muted-foreground">
-          Facturación, caja y cuenta corriente llegan más adelante — con numeración fiscal
-          correcta y libro mayor append-only. Ventas y compras ya funcionan de verdad.
+          Facturación y caja llegan más adelante — con numeración fiscal correcta y arqueo de
+          verdad. Ventas, compras y cuenta corriente ya funcionan.
         </p>
       </div>
       <Button variant="outline" size="sm" onClick={toggleAssistant}>
