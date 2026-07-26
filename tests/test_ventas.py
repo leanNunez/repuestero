@@ -360,7 +360,13 @@ def test_cobranza_baja_el_saldo(sesion, org):
     comp = service.crear_venta(sesion, org.id, datos=_venta(condicion="cta_cte"))
     cliente_id = _cliente_id(sesion)
 
-    service.registrar_cobranza(sesion, org.id, cliente_codigo="CLI-1", monto=Decimal("42.00"))
+    service.registrar_cobranza(
+        sesion,
+        org.id,
+        cliente_codigo="CLI-1",
+        monto=Decimal("42.00"),
+        formas_pago=[service.FormaPago("efectivo", Decimal("42.00"))],
+    )
 
     assert service.saldo_cliente(sesion, org.id, cliente_id) == comp.total - Decimal("42.00")
 

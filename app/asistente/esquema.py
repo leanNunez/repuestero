@@ -62,8 +62,21 @@ cta_cte_movimientos(id, cliente_id -> clientes.id, fecha date, tipo, debe numeri
                     ref_tipo, ref_id)
   -- libro mayor de cuenta corriente de CLIENTES: una venta a crédito es un 'debe', una cobranza
   --   un 'haber'. tipo es 'venta'|'cobranza'|'nota_credito'|'ajuste'. ref_tipo/ref_id apuntan al
-  --   documento que lo generó (ej: 'comprobante' + comprobantes.id), y están vacíos en las
-  --   cobranzas. Para el SALDO de un cliente NO sumes acá a mano: usá la vista cliente_saldo.
+  --   documento que lo generó ('comprobante' + comprobantes.id, 'nota_credito', 'recibo' +
+  --   recibos.id). Las cobranzas ANTERIORES a julio 2026 los tienen vacíos: se registraban sin
+  --   recibo. Para el SALDO de un cliente NO sumes acá a mano: usá la vista cliente_saldo.
+
+recibos(id, cliente_id -> clientes.id, tipo, pto_venta, numero, fecha date, total numeric)
+  -- el COMPROBANTE de cada cobro a un cliente. tipo es siempre 'REC' y numero es correlativo por
+  --   punto de venta. El movimiento de cuenta corriente que generó apunta acá
+  --   (cta_cte_movimientos.ref_tipo = 'recibo'). "Cobranzas de hoy" = sumá total where
+  --   fecha = current_date. Un recibo no se anula ni se edita: si el cobro estuvo mal, hay un
+  --   movimiento de ajuste que lo revierte.
+
+recibo_formas_pago(id, recibo_id -> recibos.id, forma, monto numeric)
+  -- con qué se cobró cada recibo: 'efectivo', 'cheque', 'transferencia' o 'tarjeta'. Un recibo
+  --   puede tener VARIOS renglones (pago mixto), y sus montos suman el total del recibo. Para
+  --   "cuánto entró en efectivo" sumá monto where forma = 'efectivo'.
 
 cliente_saldo(org_id, cliente_id, saldo numeric)
   -- VISTA: saldo de cuenta corriente por cliente = suma(debe) - suma(haber). saldo > 0 = el

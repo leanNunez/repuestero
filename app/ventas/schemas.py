@@ -15,8 +15,12 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.core.fechas import validar_fecha_movimiento
+from app.core.formas_pago import FORMA_POR_DEFECTO, FormaPagoLiteral
 
 _MAX_RENGLONES = 200
+#: Tope de renglones de forma de pago por recibo. Un cobro se cancela con dos o tres medios, no
+#: con veinte: el límite es contra el payload hostil, no contra el mostrador.
+_MAX_FORMAS_PAGO = 20
 
 
 class RenglonVentaCrear(BaseModel):
@@ -98,6 +102,36 @@ class PrecioSugeridoLeer(BaseModel):
 # --------------------------------------------------------------------------- cuenta corriente
 
 
+class FormaPagoCrear(BaseModel):
+    """Un renglón de "con qué me pagaron". El `Literal` rechaza una forma inventada acá, en el
+    borde, con un 422 legible — antes de que llegue al CHECK de la base."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    forma: FormaPagoLiteral
+    monto: Decimal = Field(gt=0)
+
+
+class FormaPagoLeer(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    forma: str
+    monto: Decimal
+
+
+class ReciboLeer(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    cliente_id: int
+    tipo: str
+    pto_venta: int
+    numero: int
+    fecha: date
+    total: Decimal
+    formas_pago: list[FormaPagoLeer] = Field(default_factory=list)
+
+
 class CobranzaCrear(BaseModel):
     model_config = ConfigDict(str_strip_whitespace=True)
 
@@ -106,8 +140,26 @@ class CobranzaCrear(BaseModel):
     #: Cuándo ENTRÓ la plata. `None` = hoy. La plata del viernes cargada el lunes va con la del
     #: viernes; `creado_en` guarda igual el momento del alta, así que el retroactivo es auditable.
     fecha: date | None = None
+    #: Punto de venta del RECIBO, que se numera aparte de las facturas. Mismo default que
+    #: `VentaCrear`: un mostrador solo no tiene que elegir nada.
+    pto_venta: int = Field(default=1, ge=1)
+    #: Con qué se cobró. Omitirla asume el total en efectivo (ver el validador de abajo).
+    formas_pago: list[FormaPagoCrear] | None = Field(default=None, max_length=_MAX_FORMAS_PAGO)
 
     _valida_fecha = field_validator("fecha")(validar_fecha_movimiento)
+
+    @model_validator(mode="after")
+    def _asume_efectivo(self) -> "CobranzaCrear":
+        """Sin detalle, el cobro fue en efectivo por el total.
+
+        Es política de MOSTRADOR y por eso vive acá y no en el service, que exige el dato siempre
+        (mismo criterio que la ventana de 90 días de `validar_fecha_movimiento`). Dos razones para
+        que el default esté en el borde: mantiene válido el payload que el front ya manda, y deja
+        al importador de Paradox —que tiene el detalle real— fuera de este atajo.
+        """
+        if not self.formas_pago:
+            self.formas_pago = [FormaPagoCrear(forma=FORMA_POR_DEFECTO, monto=self.monto)]
+        return self
 
 
 class CobranzaResponse(BaseModel):
@@ -115,6 +167,12 @@ class CobranzaResponse(BaseModel):
     cliente_id: int
     #: Saldo del cliente DESPUÉS de imputar la cobranza (positivo = debe, negativo = a favor).
     saldo: Decimal
+    #: El recibo emitido. Claves NEUTRAS (`documento_*` y no `recibo_*`) porque el front usa UN
+    #: solo schema para cobranza y pago a proveedor, donde el documento es una orden de pago.
+    documento_id: int
+    documento_tipo: str
+    documento_pto_venta: int
+    documento_numero: int
 
 
 class AjusteCrear(BaseModel):

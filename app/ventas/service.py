@@ -9,6 +9,7 @@ movimientos de stock, o no entra nada. No abre sesión ni commitea — recibe la
 termina en flush(); el commit lo hace `get_tenant` (app/core/rls.py).
 """
 
+from collections.abc import Sequence
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Any, NamedTuple
@@ -20,6 +21,7 @@ from sqlalchemy.orm import Session, aliased
 from app.catalogo import service as catalogo
 from app.clientes import service as clientes
 from app.clientes.models import Cliente
+from app.core.formas_pago import FORMAS_PAGO
 from app.inventario import service as inventario
 from app.ventas.models import (
     ClienteSaldo,
@@ -29,6 +31,8 @@ from app.ventas.models import (
     NotaCredito,
     NotaCreditoItem,
     Numerador,
+    Recibo,
+    ReciboFormaPago,
 )
 from app.ventas.schemas import NotaCreditoCrear, VentaCrear
 
@@ -284,12 +288,29 @@ def listar_ventas(
 #: `ref_tipo` de un ajuste que revierte a otro movimiento; su `ref_id` apunta al original.
 REF_REVERSA = "ajuste_de"
 
+#: `ref_tipo` del movimiento que genera una cobranza; su `ref_id` apunta al recibo emitido.
+REF_RECIBO = "recibo"
+
+#: Con qué `tipo` se numeran los recibos (`Numerador`). Espacio propio: no comparten contador con
+#: las facturas ni con las notas de crédito.
+TIPO_RECIBO = "REC"
+
 #: Qué se puede revertir con un storno. Deliberadamente NO están 'venta' ni 'nota_credito': esos
 #: movimientos ESPEJAN un comprobante, y cancelar su efecto desde el ledger dejaría el comprobante
 #: vivo con su cuenta corriente en cero — el ledger dejaría de espejar los comprobantes, en
 #: silencio. Es el pecado del legacy que este diseño existe para no repetir. Una venta se revierte
 #: con una NOTA DE CRÉDITO, que ya existe. Para el caso raro queda el ajuste manual, que deja
 #: escrito el motivo.
+#:
+#: ⚠️ 'cobranza' AHORA TAMBIÉN espeja un documento (el recibo), así que el argumento de arriba ya
+#: no la distingue. Sigue siendo reversible por otra razón: el recibo TODAVÍA no tiene efectos
+#: fuera del ledger —no hay caja ni cartera de cheques—, así que revertir el Haber cancela el 100%
+#: de su efecto y no queda nada huérfano.
+#:
+#: ESA RAZÓN CADUCA CON `app/caja/`. El día que un recibo mueva un ingreso de caja y meta un cheque
+#: en la cartera, revertir solo el ledger va a dejar esas dos cosas vivas —exactamente el problema
+#: que 'venta' tiene hoy—. Ese día 'cobranza' sale de esta lista y la anulación correcta pasa a ser
+#: "anular el recibo": reversa del ledger + reversa de caja + baja del cheque.
 MOVIMIENTOS_REVERSIBLES = frozenset({"cobranza", "ajuste"})
 
 
@@ -306,23 +327,80 @@ def saldo_cliente(session: Session, org_id: UUID, cliente_id: int) -> Decimal:
     return saldo if saldo is not None else Decimal("0")
 
 
+class FormaPago(NamedTuple):
+    """Con qué se cobró una parte del recibo. `forma` tiene que estar en `FORMAS_PAGO`."""
+
+    forma: str
+    monto: Decimal
+
+
+class Cobranza(NamedTuple):
+    """Lo que deja una cobranza: el documento y su asiento.
+
+    Se devuelven los dos porque el router necesita el número de recibo para el acuse Y el
+    movimiento para recalcular el saldo.
+    """
+
+    recibo: Recibo
+    movimiento: CtaCteMovimiento
+
+
+def _validar_formas(formas: Sequence[FormaPago], total: Decimal) -> None:
+    """Las formas tienen que existir, ser positivas y sumar EXACTO el total.
+
+    Duplica lo que ya garantiza la base (CHECK + constraint trigger de la 0010), y es a propósito:
+    acá el error sale como `VentaInvalida` → 422 con un mensaje que el operador entiende. El
+    trigger diferido dispara recién en el COMMIT, o sea DESPUÉS de que el endpoint respondió, y
+    saldría como 500. La base es la garantía; esto es la cortesía.
+    """
+    if not formas:
+        raise VentaInvalida("Decí con qué se cobró: falta el detalle de formas de pago.")
+
+    for f in formas:
+        if f.forma not in FORMAS_PAGO:
+            opciones = ", ".join(sorted(FORMAS_PAGO))
+            raise VentaInvalida(f"Forma de pago desconocida: {f.forma!r}. Puede ser: {opciones}.")
+        if f.monto <= 0:
+            raise VentaInvalida(f"El monto de {f.forma!r} debe ser mayor a cero.")
+
+    suma = sum((f.monto for f in formas), Decimal("0")).quantize(_CENT, ROUND_HALF_UP)
+    if suma != total.quantize(_CENT, ROUND_HALF_UP):
+        raise VentaInvalida(
+            f"Las formas de pago suman {suma} y la cobranza es de {total}. Tienen que coincidir."
+        )
+
+
 def registrar_cobranza(
     session: Session,
     org_id: UUID,
     *,
     cliente_codigo: str,
     monto: Decimal,
+    formas_pago: Sequence[FormaPago],
     fecha: date | None = None,
+    pto_venta: int = 1,
     usuario_id: UUID | None = None,
-) -> CtaCteMovimiento:
-    """Imputa un pago del cliente como un Haber en la cuenta corriente. Baja el saldo.
+) -> Cobranza:
+    """Emite un RECIBO y lo imputa como un Haber en la cuenta corriente. Baja el saldo.
+
+    El recibo es el documento del cobro, y es lo que le faltaba a este ledger: antes de existir,
+    la cobranza escribía un Haber suelto con `ref_tipo`/`ref_id` en NULL mientras la venta y la
+    nota de crédito sí referenciaban el suyo. Ahora el movimiento apunta al recibo con
+    `ref_tipo='recibo'`.
+
+    `formas_pago` es OBLIGATORIA acá, aunque el borde HTTP la deje omitir y asuma efectivo. La
+    asimetría es deliberada, la misma de `validar_fecha_movimiento`: "si no me decís con qué te
+    pagaron, asumo efectivo" es política de mostrador, no un invariante del dominio. El importador
+    de Paradox entra por este camino y SÍ tiene el dato real (`CLIENTESCTACTEFORMAPAGO`), así que
+    nunca debe recibir un "efectivo" inventado en silencio.
 
     `fecha` es CUÁNDO ENTRÓ la plata, no cuándo se cargó: la del viernes tipeada el lunes va con la
-    del viernes. Si no viene, queda el `current_date` de la tabla. `creado_en` guarda el momento
-    real del alta, así que las dos verdades conviven y el retroactivo es auditable.
+    del viernes, y el recibo se fecha igual que su movimiento. Si no viene, queda el `current_date`
+    de la tabla. `creado_en` guarda el momento real del alta, así que las dos verdades conviven y
+    el retroactivo es auditable.
 
     Sin límite de antigüedad acá a propósito: la ventana es política de la API
-    (`app/core/fechas.py`) y el importador de Paradox entra por este camino con años de historia.
+    (`app/core/fechas.py`) y el importador entra con años de historia.
 
     No abre sesión ni commitea (termina en flush), igual que el resto. El saldo se recalcula
     solo desde la vista: no hay columna que actualizar.
@@ -330,22 +408,61 @@ def registrar_cobranza(
     if monto <= 0:
         raise VentaInvalida("El monto de la cobranza debe ser mayor a cero.")
 
+    _validar_formas(formas_pago, monto)
+
     cliente = clientes.obtener_cliente(session, org_id, cliente_codigo)
     if cliente is None:
         raise VentaInvalida(f"No existe el cliente {cliente_codigo!r} en tu organización.")
+
+    numero = asignar_numero(session, org_id, tipo=TIPO_RECIBO, pto_venta=pto_venta)
+    recibo = Recibo(
+        org_id=org_id,
+        cliente_id=cliente.id,
+        tipo=TIPO_RECIBO,
+        pto_venta=pto_venta,
+        numero=numero,
+        total=monto,
+        creado_por=usuario_id,
+    )
+    if fecha is not None:
+        recibo.fecha = fecha
+    session.add(recibo)
+    session.flush()  # ⇐ acá pega el unique si el número ya existe: IntegrityError → 409
+
+    for f in formas_pago:
+        session.add(
+            ReciboFormaPago(org_id=org_id, recibo_id=recibo.id, forma=f.forma, monto=f.monto)
+        )
 
     movimiento = CtaCteMovimiento(
         org_id=org_id,
         cliente_id=cliente.id,
         tipo="cobranza",
         haber=monto,
+        ref_tipo=REF_RECIBO,
+        ref_id=recibo.id,
         creado_por=usuario_id,
     )
     if fecha is not None:
         movimiento.fecha = fecha
     session.add(movimiento)
     session.flush()
-    return movimiento
+    return Cobranza(recibo=recibo, movimiento=movimiento)
+
+
+def obtener_recibo(session: Session, org_id: UUID, recibo_id: int) -> Recibo | None:
+    return session.scalar(select(Recibo).where(Recibo.org_id == org_id, Recibo.id == recibo_id))
+
+
+def formas_de_recibo(session: Session, org_id: UUID, recibo_id: int) -> list[ReciboFormaPago]:
+    """El detalle de un recibo, en el orden en que se cargó."""
+    return list(
+        session.scalars(
+            select(ReciboFormaPago)
+            .where(ReciboFormaPago.org_id == org_id, ReciboFormaPago.recibo_id == recibo_id)
+            .order_by(ReciboFormaPago.id)
+        )
+    )
 
 
 def registrar_ajuste(
