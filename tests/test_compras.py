@@ -5,6 +5,8 @@ Los que no pueden faltar: el IVA por renglón, que la compra SUMA stock, que act
 (Debe por compra a crédito, Haber por pago), el unique de factura, el append-only y el RLS.
 """
 
+import random
+from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
@@ -23,6 +25,7 @@ from app.core.db import ORG_GUC, set_guc
 from app.core.models import Organizacion
 from app.inventario import service as inventario
 from app.proveedores import service as proveedores
+from seeds.generar_compras_demo import generar_compras
 from tests.conftest import APP_URL, OWNER_URL
 
 USUARIO = uuid4()
@@ -402,3 +405,143 @@ def _contar_compras(org_id) -> int:
 def test_compra_no_se_filtra_entre_orgs(dos_orgs):
     assert _contar_compras(dos_orgs.a) == 1
     assert _contar_compras(dos_orgs.b) == 0
+
+
+# =========================================================== seed de compras
+
+
+@pytest.fixture(scope="module")
+def org_seed(migrated_db):
+    """Org con proveedores y artículos con costo, para el smoke test del seed."""
+    org_id = uuid4()
+    eng = create_engine(OWNER_URL)
+    with Session(eng) as s:
+        s.add(Organizacion(id=org_id, nombre="Org Seed Compras"))
+        s.flush()
+        inventario.crear_deposito(s, org_id, codigo="CEN", nombre="Central")
+        for i in range(3):
+            proveedores.crear_proveedor(
+                s, org_id, codigo=f"PS-{i}", razon_social=f"Proveedor Seed {i}"
+            )
+        for i in range(5):
+            s.add(
+                Articulo(
+                    org_id=org_id,
+                    codigo=f"AS-{i}",
+                    detalle=f"Repuesto {i}",
+                    costo=Decimal("100"),
+                    alicuota_iva=Decimal("21.00"),
+                )
+            )
+        s.commit()
+    eng.dispose()
+    return SimpleNamespace(id=org_id)
+
+
+@pytest.fixture
+def sesion_seed(org_seed):
+    eng = create_engine(APP_URL)
+    conn = eng.connect()
+    trans = conn.begin()
+    with Session(bind=conn) as s:
+        set_guc(s, ORG_GUC, str(org_seed.id))
+        yield s
+    trans.rollback()
+    conn.close()
+    eng.dispose()
+
+
+def test_seed_genera_compras_fechadas_en_2026(sesion_seed, org_seed):
+    creadas = generar_compras(
+        sesion_seed,
+        org_seed.id,
+        cantidad_objetivo=20,
+        rng=random.Random(7),
+        hoy=date(2026, 7, 26),
+    )
+    assert creadas > 0
+
+    cnt = sesion_seed.execute(text("select count(*) from compras")).scalar_one()
+    assert cnt == creadas
+
+    fmin, fmax = sesion_seed.execute(text("select min(fecha), max(fecha) from compras")).one()
+    assert fmin >= date(2026, 1, 1)
+    assert fmax <= date(2026, 7, 26)
+
+
+def test_seed_llena_la_cuenta_corriente_de_proveedores(sesion_seed, org_seed):
+    """La razón de ser del seed: sin esto la solapa de proveedores no tiene nada que mostrar."""
+    generar_compras(
+        sesion_seed,
+        org_seed.id,
+        cantidad_objetivo=20,
+        rng=random.Random(7),
+        hoy=date(2026, 7, 26),
+    )
+
+    movs = sesion_seed.execute(
+        text("select count(*) from prov_cta_cte_movimientos where tipo = 'compra'")
+    ).scalar_one()
+    assert movs > 0, "sin movimientos de cta cte el seed no cumple su objetivo"
+
+    # El Debe de cada movimiento tiene que ser el total de SU compra, no un número suelto.
+    descuadres = sesion_seed.execute(
+        text(
+            """
+            select count(*)
+            from prov_cta_cte_movimientos m
+            join compras c on c.id = m.ref_id and c.org_id = m.org_id
+            where m.ref_tipo = 'compra' and m.debe <> c.total
+            """
+        )
+    ).scalar_one()
+    assert descuadres == 0
+
+
+def test_seed_emite_en_orden_cronologico_y_deja_el_costo_coherente(sesion_seed, org_seed):
+    """`crear_compra` hace "último costo pisa" por orden de PROCESO, no de fecha.
+
+    Si el seed no ordenara el plan por fecha, el costo final de un artículo sería el de una compra
+    cualquiera —posiblemente de enero, ~45% más barata— y ese costo se propagaría a los precios de
+    venta de todo el catálogo. El seed emite en orden, así que la última compra de cada artículo es
+    la más reciente y su costo vuelve a quedar cerca del que ya tenía (100)."""
+    generar_compras(
+        sesion_seed,
+        org_seed.id,
+        cantidad_objetivo=40,
+        rng=random.Random(11),
+        hoy=date(2026, 7, 26),
+    )
+
+    # Ninguna compra se emitió antes que una más vieja: los ids crecen con la fecha.
+    desordenadas = sesion_seed.execute(
+        text(
+            """
+            select count(*)
+            from compras a
+            join compras b on b.id > a.id
+            where b.fecha < a.fecha
+            """
+        )
+    ).scalar_one()
+    assert desordenadas == 0, "el plan tiene que emitirse ordenado por fecha"
+
+    # Los artículos que se compraron quedan con un costo cercano al original, no al de enero.
+    costos = (
+        sesion_seed.execute(
+            text(
+                """
+            select distinct a.costo
+            from articulos a
+            where a.org_id = :o
+              and exists (select 1 from compra_items i where i.articulo_id = a.id)
+            """
+            ),
+            {"o": org_seed.id},
+        )
+        .scalars()
+        .all()
+    )
+    assert costos, "el seed tiene que haber comprado algo"
+    for costo in costos:
+        assert Decimal("90") <= costo <= Decimal("100"), f"costo fuera de rango: {costo}"
