@@ -44,9 +44,13 @@ TABLAS_TENANT: tuple[str, ...] = (
     "cta_cte_movimientos",
     "notas_credito",
     "nota_credito_items",
+    "recibos",
+    "recibo_formas_pago",
     "compras",
     "compra_items",
     "prov_cta_cte_movimientos",
+    "ordenes_pago",
+    "orden_pago_formas_pago",
 )
 
 __all__ = [
