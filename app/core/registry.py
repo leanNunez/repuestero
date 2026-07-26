@@ -12,6 +12,7 @@ from app.clientes import models as clientes_models
 from app.compatibilidad import models as compatibilidad_models
 from app.compras import models as compras_models
 from app.core import models as core_models
+from app.core import numeracion as core_numeracion
 from app.core.base import Base
 from app.ingesta_visual import models as ingesta_visual_models
 from app.inventario import models as inventario_models
@@ -61,6 +62,7 @@ __all__ = [
     "compatibilidad_models",
     "compras_models",
     "core_models",
+    "core_numeracion",
     "ingesta_visual_models",
     "inventario_models",
     "proveedores_models",

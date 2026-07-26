@@ -9,9 +9,10 @@ movimientos de stock y la actualización de costos, o no entra nada. No abre ses
 recibe la del request y termina en flush(); el commit lo hace `get_tenant` (app/core/rls.py).
 """
 
+from collections.abc import Sequence
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
-from typing import Any
+from typing import Any, NamedTuple
 from uuid import UUID
 
 from sqlalchemy import Row, and_, func, join, or_, select
@@ -19,8 +20,17 @@ from sqlalchemy.orm import Session, aliased
 
 from app.catalogo import service as catalogo
 from app.catalogo.schemas import ArticuloActualizar
-from app.compras.models import Compra, CompraItem, ProvCtaCteMovimiento, ProveedorSaldo
+from app.compras.models import (
+    Compra,
+    CompraItem,
+    OrdenPago,
+    OrdenPagoFormaPago,
+    ProvCtaCteMovimiento,
+    ProveedorSaldo,
+)
 from app.compras.schemas import CompraCrear
+from app.core.formas_pago import FORMAS_PAGO
+from app.core.numeracion import asignar_numero
 from app.inventario import service as inventario
 from app.proveedores import service as proveedores
 from app.proveedores.models import Proveedor
@@ -189,9 +199,20 @@ def listar_compras(
 #: `ref_tipo` de un ajuste que revierte a otro movimiento; su `ref_id` apunta al original.
 REF_REVERSA = "ajuste_de"
 
+#: `ref_tipo` del movimiento que genera un pago; su `ref_id` apunta a la orden de pago emitida.
+REF_ORDEN_PAGO = "orden_pago"
+
+#: Con qué `tipo` se numeran las órdenes de pago (`core.numeracion`). Espacio propio: no comparten
+#: contador con los recibos ni con las facturas.
+TIPO_ORDEN_PAGO = "OP"
+
 #: Qué se puede revertir con un storno. NO está 'compra': ese movimiento ESPEJA un documento de
 #: compra, y cancelar su efecto desde el ledger dejaría la compra viva con la cuenta en cero, en
 #: silencio. Espejo de `ventas.MOVIMIENTOS_REVERSIBLES`, donde está la explicación larga.
+#:
+#: ⚠️ 'pago' AHORA TAMBIÉN espeja un documento (la orden de pago). Sigue siendo reversible porque
+#: esa orden todavía no tiene efectos fuera del ledger —no hay caja ni cartera de cheques—, y esa
+#: razón CADUCA con `app/caja/`. Misma nota que en `ventas`, donde está la explicación larga.
 MOVIMIENTOS_REVERSIBLES = frozenset({"pago", "ajuste"})
 
 
@@ -208,42 +229,130 @@ def saldo_proveedor(session: Session, org_id: UUID, proveedor_id: int) -> Decima
     return saldo if saldo is not None else Decimal("0")
 
 
+class FormaPago(NamedTuple):
+    """Con qué se pagó una parte de la orden. `forma` tiene que estar en `FORMAS_PAGO`."""
+
+    forma: str
+    monto: Decimal
+
+
+class Pago(NamedTuple):
+    """Lo que deja un pago: el documento y su asiento. Espejo de `ventas.Cobranza`."""
+
+    orden: OrdenPago
+    movimiento: ProvCtaCteMovimiento
+
+
+def _validar_formas(formas: Sequence[FormaPago], total: Decimal) -> None:
+    """Las formas tienen que existir, ser positivas y sumar EXACTO el total.
+
+    Espejo de `ventas._validar_formas`, donde está la explicación larga de por qué se duplica lo
+    que la base ya garantiza: el constraint trigger de la 0010 es diferido y dispara en el COMMIT,
+    o sea después de que el endpoint respondió. La base es la garantía; esto es el 422 legible.
+    """
+    if not formas:
+        raise CompraInvalida("Decí con qué se pagó: falta el detalle de formas de pago.")
+
+    for f in formas:
+        if f.forma not in FORMAS_PAGO:
+            opciones = ", ".join(sorted(FORMAS_PAGO))
+            raise CompraInvalida(f"Forma de pago desconocida: {f.forma!r}. Puede ser: {opciones}.")
+        if f.monto <= 0:
+            raise CompraInvalida(f"El monto de {f.forma!r} debe ser mayor a cero.")
+
+    suma = sum((f.monto for f in formas), Decimal("0")).quantize(_CENT, ROUND_HALF_UP)
+    if suma != total.quantize(_CENT, ROUND_HALF_UP):
+        raise CompraInvalida(
+            f"Las formas de pago suman {suma} y el pago es de {total}. Tienen que coincidir."
+        )
+
+
 def registrar_pago(
     session: Session,
     org_id: UUID,
     *,
     proveedor_codigo: str,
     monto: Decimal,
+    formas_pago: Sequence[FormaPago],
     fecha: date | None = None,
+    pto_venta: int = 1,
     usuario_id: UUID | None = None,
-) -> ProvCtaCteMovimiento:
-    """Imputa un pago al proveedor como un Haber en su cuenta corriente. Baja lo que le debemos.
+) -> Pago:
+    """Emite una ORDEN DE PAGO y la imputa como Haber. Baja lo que le debemos al proveedor.
 
-    `fecha` es cuándo SALIÓ la plata, no cuándo se cargó. Espejo de `ventas.registrar_cobranza`,
-    donde está la explicación completa: sin límite de antigüedad acá, la ventana es política de la
-    API (`app/core/fechas.py`).
+    El recibo lo emite quien COBRA: cuando le pagamos a un proveedor, el recibo lo emite él y
+    nosotros emitimos una orden de pago. Por eso el documento de este lado es otra entidad y no un
+    `Recibo` con un flag.
+
+    Espejo de `ventas.registrar_cobranza`, donde está la explicación completa de por qué
+    `formas_pago` es obligatoria acá y opcional en el borde HTTP, y de por qué no hay límite de
+    antigüedad para la fecha (la ventana es política de la API, `app/core/fechas.py`).
 
     No abre sesión ni commitea (termina en flush). El saldo se recalcula solo desde la vista.
     """
     if monto <= 0:
         raise CompraInvalida("El monto del pago debe ser mayor a cero.")
 
+    _validar_formas(formas_pago, monto)
+
     proveedor = proveedores.obtener_proveedor(session, org_id, proveedor_codigo)
     if proveedor is None:
         raise CompraInvalida(f"No existe el proveedor {proveedor_codigo!r} en tu organización.")
+
+    numero = asignar_numero(session, org_id, tipo=TIPO_ORDEN_PAGO, pto_venta=pto_venta)
+    orden = OrdenPago(
+        org_id=org_id,
+        proveedor_id=proveedor.id,
+        tipo=TIPO_ORDEN_PAGO,
+        pto_venta=pto_venta,
+        numero=numero,
+        total=monto,
+        creado_por=usuario_id,
+    )
+    if fecha is not None:
+        orden.fecha = fecha
+    session.add(orden)
+    session.flush()  # ⇐ acá pega el unique si el número ya existe: IntegrityError → 409
+
+    for f in formas_pago:
+        session.add(
+            OrdenPagoFormaPago(org_id=org_id, orden_pago_id=orden.id, forma=f.forma, monto=f.monto)
+        )
 
     movimiento = ProvCtaCteMovimiento(
         org_id=org_id,
         proveedor_id=proveedor.id,
         tipo="pago",
         haber=monto,
+        ref_tipo=REF_ORDEN_PAGO,
+        ref_id=orden.id,
         creado_por=usuario_id,
     )
     if fecha is not None:
         movimiento.fecha = fecha
     session.add(movimiento)
     session.flush()
-    return movimiento
+    return Pago(orden=orden, movimiento=movimiento)
+
+
+def obtener_orden_pago(session: Session, org_id: UUID, orden_id: int) -> OrdenPago | None:
+    return session.scalar(
+        select(OrdenPago).where(OrdenPago.org_id == org_id, OrdenPago.id == orden_id)
+    )
+
+
+def formas_de_orden_pago(session: Session, org_id: UUID, orden_id: int) -> list[OrdenPagoFormaPago]:
+    """El detalle de una orden de pago, en el orden en que se cargó."""
+    return list(
+        session.scalars(
+            select(OrdenPagoFormaPago)
+            .where(
+                OrdenPagoFormaPago.org_id == org_id,
+                OrdenPagoFormaPago.orden_pago_id == orden_id,
+            )
+            .order_by(OrdenPagoFormaPago.id)
+        )
+    )
 
 
 def registrar_ajuste(

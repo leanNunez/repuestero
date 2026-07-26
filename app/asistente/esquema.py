@@ -97,8 +97,20 @@ compra_items(id, compra_id -> compras.id, articulo_id -> articulos.id, cantidad 
 prov_cta_cte_movimientos(id, proveedor_id -> proveedores.id, fecha date, tipo, debe numeric,
                          haber numeric, ref_tipo, ref_id)
   -- libro mayor de cuenta corriente de PROVEEDORES: una compra a crédito es un 'debe', un pago
-  --   un 'haber'. tipo es 'compra'|'pago'|'ajuste'. Mismo criterio que el de clientes, pero al
-  --   revés: acá el saldo es lo que NOSOTROS debemos.
+  --   un 'haber'. tipo es 'compra'|'pago'|'ajuste'. ref_tipo/ref_id apuntan al documento que lo
+  --   generó ('compra' + compras.id, 'orden_pago' + ordenes_pago.id). Mismo criterio que el de
+  --   clientes, pero al revés: acá el saldo es lo que NOSOTROS debemos.
+
+ordenes_pago(id, proveedor_id -> proveedores.id, tipo, pto_venta, numero, fecha date,
+             total numeric)
+  -- el COMPROBANTE de cada pago a un proveedor. El recibo lo emite quien COBRA, así que de este
+  --   lado el documento es una ORDEN DE PAGO. tipo es siempre 'OP' y numero es correlativo por
+  --   punto de venta, con contador propio (no lo comparte con recibos ni facturas). El movimiento
+  --   de cuenta corriente que generó apunta acá (prov_cta_cte_movimientos.ref_tipo='orden_pago').
+
+orden_pago_formas_pago(id, orden_pago_id -> ordenes_pago.id, forma, monto numeric)
+  -- con qué se pagó cada orden: 'efectivo', 'cheque', 'transferencia' o 'tarjeta'. Una orden puede
+  --   tener VARIOS renglones (pago mixto), y sus montos suman el total de la orden.
 
 proveedor_saldo(org_id, proveedor_id, saldo numeric)
   -- VISTA: saldo por proveedor = suma(debe) - suma(haber). saldo > 0 = LE DEBEMOS esa plata a
