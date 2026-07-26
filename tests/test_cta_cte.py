@@ -191,6 +191,22 @@ def _cobrar(sesion, org_id, *, cliente_codigo: str, monto: Decimal, **kw) -> Cta
     ).movimiento
 
 
+def _pagar(sesion, org_id, *, proveedor_codigo: str, monto: Decimal, **kw) -> ProvCtaCteMovimiento:
+    """Paga en efectivo y devuelve el MOVIMIENTO. Espejo de `_cobrar`.
+
+    La orden de pago y su detalle se testean en `tests/test_ordenes_pago.py`; acá el sujeto es
+    siempre el ledger.
+    """
+    return compras.registrar_pago(
+        sesion,
+        org_id,
+        proveedor_codigo=proveedor_codigo,
+        monto=monto,
+        formas_pago=[compras.FormaPago("efectivo", monto)],
+        **kw,
+    ).movimiento
+
+
 # =========================================================================== saldo acumulado
 
 
@@ -412,9 +428,7 @@ def test_prov_storno_deja_el_saldo_igual_que_antes_del_pago(sesion, org):
     """El test que importa, del lado proveedor: la reversa cierra exacto contra la vista."""
     antes = compras.saldo_proveedor(sesion, org.id, org.prov.deuda)
 
-    pago = compras.registrar_pago(
-        sesion, org.id, proveedor_codigo="PROV-DEUDA", monto=Decimal("3000")
-    )
+    pago = _pagar(sesion, org.id, proveedor_codigo="PROV-DEUDA", monto=Decimal("3000"))
     assert compras.saldo_proveedor(sesion, org.id, org.prov.deuda) == antes - Decimal("3000")
 
     compras.registrar_ajuste(
@@ -580,9 +594,7 @@ def test_prov_el_extracto_dice_que_se_puede_revertir(sesion, org):
 
 
 def test_prov_un_movimiento_ya_revertido_deja_de_ser_reversible(sesion, org):
-    pago = compras.registrar_pago(
-        sesion, org.id, proveedor_codigo="PROV-DEUDA", monto=Decimal("90")
-    )
+    pago = _pagar(sesion, org.id, proveedor_codigo="PROV-DEUDA", monto=Decimal("90"))
     compras.registrar_ajuste(
         sesion,
         org.id,
@@ -596,9 +608,7 @@ def test_prov_un_movimiento_ya_revertido_deja_de_ser_reversible(sesion, org):
 
 
 def test_prov_el_extracto_marca_anulado_y_trae_el_motivo(sesion, org):
-    pago = compras.registrar_pago(
-        sesion, org.id, proveedor_codigo="PROV-DEUDA", monto=Decimal("600")
-    )
+    pago = _pagar(sesion, org.id, proveedor_codigo="PROV-DEUDA", monto=Decimal("600"))
     ajuste = compras.registrar_ajuste(
         sesion,
         org.id,
@@ -711,7 +721,7 @@ def test_el_extracto_trae_cuando_se_cargo_ademas_de_cuando_paso(sesion, org):
 def test_prov_un_pago_retroactivo_no_cambia_el_saldo(sesion, org):
     antes = compras.saldo_proveedor(sesion, org.id, org.prov.deuda)
 
-    compras.registrar_pago(
+    _pagar(
         sesion,
         org.id,
         proveedor_codigo="PROV-DEUDA",

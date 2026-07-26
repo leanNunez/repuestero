@@ -252,7 +252,13 @@ def test_pago_baja_el_saldo(sesion, org):
     compra = service.crear_compra(sesion, org.id, datos=_compra(condicion="cta_cte"))
     prov_id = _proveedor_id(sesion)
 
-    service.registrar_pago(sesion, org.id, proveedor_codigo="PROV-1", monto=Decimal("42.00"))
+    service.registrar_pago(
+        sesion,
+        org.id,
+        proveedor_codigo="PROV-1",
+        monto=Decimal("42.00"),
+        formas_pago=[service.FormaPago("efectivo", Decimal("42.00"))],
+    )
 
     assert service.saldo_proveedor(sesion, org.id, prov_id) == compra.total - Decimal("42.00")
 
