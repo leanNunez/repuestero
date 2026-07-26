@@ -44,3 +44,9 @@ node_modules/
 # Archivos de trabajo — temporales, no son fuente
 scratchpad/
 img/
+
+# Notas personales — se quedan en la máquina, a propósito
+# docs/pendientes.md es el estado real del proyecto y CV-NOTAS-* son apuntes de CV.
+# No se versionan: están acá para que un `git add .` distraído no los suba.
+docs/pendientes.md
+CV-NOTAS-*.md
