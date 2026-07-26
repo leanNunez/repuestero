@@ -393,6 +393,12 @@ def saldo_cliente(
     cliente_id: int,
     tenant: TenantContext = Depends(get_tenant),
 ) -> SaldoLeer:
+    # Sin este chequeo, un id inexistente —o de OTRA organización— devolvía 200 con saldo 0, que
+    # es indistinguible de un cliente real sin deuda. La vista no tiene por qué saber si el cliente
+    # existe: no encontrar filas y no tener saldo son lo mismo para ella. Preguntar es tarea de acá.
+    if clientes.obtener_cliente_por_id(tenant.session, tenant.org_id, cliente_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No existe ese cliente.")
+
     return SaldoLeer(
         cliente_id=cliente_id,
         saldo=service.saldo_cliente(tenant.session, tenant.org_id, cliente_id),

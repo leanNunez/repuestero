@@ -1151,6 +1151,28 @@ def test_endpoint_movimientos_de_cliente_inexistente_404(cliente):
     assert cliente.get("/ventas/clientes/999999/movimientos").status_code == 404
 
 
+def test_endpoint_saldo_de_cliente_inexistente_404(cliente):
+    """Devolvía 200 con saldo 0, que es indistinguible de un cliente real sin deuda.
+
+    La vista `cliente_saldo` no tiene por qué saber si el cliente existe —no encontrar filas y no
+    tener saldo son lo mismo para ella—, así que preguntar es tarea del router. El endpoint hermano
+    (`/movimientos`) ya lo hacía; este se había quedado atrás."""
+    assert cliente.get("/ventas/clientes/999999/saldo").status_code == 404
+
+
+def test_endpoint_saldo_de_cliente_real_sigue_en_200(cliente, org):
+    """La reja no puede tapar el caso bueno: un cliente que existe responde su saldo.
+
+    NO se compara contra `SALDO_DEUDA`: los tests de cobranza de este módulo COMMITEAN, así que el
+    saldo depende del orden de ejecución. Se compara contra el endpoint hermano, que además ata las
+    dos lecturas: si divergen, una de las dos miente."""
+    r = cliente.get(f"/ventas/clientes/{org.cli.deuda}/saldo")
+    assert r.status_code == 200
+
+    por_movimientos = cliente.get(f"/ventas/clientes/{org.cli.deuda}/movimientos").json()
+    assert Decimal(r.json()["saldo"]) == Decimal(por_movimientos["cuenta"]["saldo"])
+
+
 def test_endpoint_cobranza_registra_y_devuelve_saldo(cliente, org):
     """El POST existía desde el slice 1 y no tenía un solo test HTTP.
 
@@ -1198,6 +1220,20 @@ def test_endpoint_movimientos_proveedor_shape(cliente, org):
 
 def test_endpoint_movimientos_de_proveedor_inexistente_404(cliente):
     assert cliente.get("/compras/proveedores/999999/movimientos").status_code == 404
+
+
+def test_endpoint_saldo_de_proveedor_inexistente_404(cliente):
+    """El MISMO agujero que tenía `/ventas/clientes/{id}/saldo`, que no estaba anotado en ningún
+    lado: se descubrió al ir a arreglar el de clientes y mirar el espejo."""
+    assert cliente.get("/compras/proveedores/999999/saldo").status_code == 404
+
+
+def test_endpoint_saldo_de_proveedor_real_sigue_en_200(cliente, org):
+    r = cliente.get(f"/compras/proveedores/{org.prov.deuda}/saldo")
+    assert r.status_code == 200
+
+    por_movimientos = cliente.get(f"/compras/proveedores/{org.prov.deuda}/movimientos").json()
+    assert Decimal(r.json()["saldo"]) == Decimal(por_movimientos["cuenta"]["saldo"])
 
 
 def test_endpoint_pago_registra_y_devuelve_saldo(cliente, org):

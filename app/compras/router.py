@@ -187,6 +187,11 @@ def saldo_proveedor(
     proveedor_id: int,
     tenant: TenantContext = Depends(get_tenant),
 ) -> SaldoProveedorLeer:
+    # Mismo agujero que tenía `ventas.saldo_cliente`: sin preguntar, un id inexistente devolvía
+    # 200 con saldo 0, indistinguible de un proveedor real al día. Ver la nota de allá.
+    if proveedores.obtener_proveedor_por_id(tenant.session, tenant.org_id, proveedor_id) is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No existe ese proveedor.")
+
     return SaldoProveedorLeer(
         proveedor_id=proveedor_id,
         saldo=service.saldo_proveedor(tenant.session, tenant.org_id, proveedor_id),
