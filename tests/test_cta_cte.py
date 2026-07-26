@@ -174,6 +174,23 @@ def sesion(org):
     eng.dispose()
 
 
+def _cobrar(sesion, org_id, *, cliente_codigo: str, monto: Decimal, **kw) -> CtaCteMovimiento:
+    """Cobra en efectivo y devuelve el MOVIMIENTO.
+
+    `registrar_cobranza` emite un recibo y devuelve los dos (`Cobranza`), pero acá el sujeto es
+    siempre el ledger: el acumulado, el orden, el saldo. El detalle de formas de pago y el recibo
+    en sí se testean en `tests/test_recibos.py`.
+    """
+    return service.registrar_cobranza(
+        sesion,
+        org_id,
+        cliente_codigo=cliente_codigo,
+        monto=monto,
+        formas_pago=[service.FormaPago("efectivo", monto)],
+        **kw,
+    ).movimiento
+
+
 # =========================================================================== saldo acumulado
 
 
@@ -614,7 +631,7 @@ def test_una_cobranza_retroactiva_no_cambia_el_saldo_pero_si_reordena(sesion, or
     antes_filas, _ = service.movimientos_cliente(sesion, org.id, org.cli.deuda, limite=100)
 
     # El 2026-02-20 cae entre la cobranza del 15/02 y la venta del 20/03 del ledger sembrado.
-    service.registrar_cobranza(
+    _cobrar(
         sesion,
         org.id,
         cliente_codigo="CLI-DEUDA",
@@ -640,9 +657,7 @@ def test_una_cobranza_retroactiva_no_cambia_el_saldo_pero_si_reordena(sesion, or
 
 def test_una_cobranza_sin_fecha_sigue_saliendo_con_la_de_hoy(sesion, org):
     """No romper lo que ya andaba: `fecha` es opcional y el default de la tabla manda."""
-    mov = service.registrar_cobranza(
-        sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("10")
-    )
+    mov = _cobrar(sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("10"))
     assert mov.fecha == date.today()
 
 
@@ -652,7 +667,7 @@ def test_el_service_acepta_fechas_viejas_porque_es_el_camino_del_importador(sesi
     El importador de Paradox va a cargar años de historia por acá, así que el service no puede
     tener el límite. Por HTTP la misma fecha da 422 (ver el test del endpoint).
     """
-    mov = service.registrar_cobranza(
+    mov = _cobrar(
         sesion,
         org.id,
         cliente_codigo="CLI-DEUDA",
@@ -678,7 +693,7 @@ def test_un_ajuste_tambien_puede_fecharse(sesion, org):
 def test_el_extracto_trae_cuando_se_cargo_ademas_de_cuando_paso(sesion, org):
     """Sin `creado_en` el retroactivo sería una forma prolija de reescribir el pasado: nadie
     podría ver que esa fila entró días después de la fecha que dice."""
-    mov = service.registrar_cobranza(
+    mov = _cobrar(
         sesion,
         org.id,
         cliente_codigo="CLI-DEUDA",
@@ -738,9 +753,7 @@ def test_storno_deja_el_saldo_igual_que_antes_de_la_cobranza(sesion, org):
     """
     antes = service.saldo_cliente(sesion, org.id, org.cli.deuda)
 
-    cobranza = service.registrar_cobranza(
-        sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("5000")
-    )
+    cobranza = _cobrar(sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("5000"))
     assert service.saldo_cliente(sesion, org.id, org.cli.deuda) == antes - Decimal("5000")
 
     service.registrar_ajuste(
@@ -774,9 +787,7 @@ def test_storno_espeja_el_monto_y_referencia_el_original(sesion, org):
 
 def test_el_acumulado_del_extracto_vuelve_al_valor_previo(sesion, org):
     """Ata la window function del extracto a la vista: las dos tienen que ver la reversa igual."""
-    cobranza = service.registrar_cobranza(
-        sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("777")
-    )
+    cobranza = _cobrar(sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("777"))
     service.registrar_ajuste(
         sesion,
         org.id,
@@ -981,7 +992,7 @@ def test_el_check_de_la_base_exige_motivo_en_los_ajustes(sesion, org):
 
 def test_el_check_no_molesta_a_los_movimientos_automaticos(sesion, org):
     """Una cobranza no lleva motivo y tiene que seguir entrando sin problema."""
-    service.registrar_cobranza(sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("1"))
+    _cobrar(sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("1"))
 
 
 def test_ajuste_a_cliente_inexistente_se_rechaza(sesion, org):
@@ -994,9 +1005,7 @@ def test_ajuste_a_cliente_inexistente_se_rechaza(sesion, org):
 def test_el_extracto_marca_anulado_solo_el_movimiento_revertido(sesion, org):
     """Sin este flag el extracto muestra un haber y su contra-debe sin ninguna pista de que se
     cancelan entre sí, y el operador tiene que adivinar."""
-    cobranza = service.registrar_cobranza(
-        sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("900")
-    )
+    cobranza = _cobrar(sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("900"))
     ajuste = service.registrar_ajuste(
         sesion,
         org.id,
@@ -1031,9 +1040,7 @@ def test_el_extracto_dice_que_se_puede_revertir(sesion, org):
 def test_un_movimiento_ya_revertido_deja_de_ser_reversible(sesion, org):
     """EL caso que un flag "solo por tipo" se comería: la cobranza sigue siendo de un tipo
     reversible, pero revertirla de nuevo duplicaría la corrección."""
-    cobranza = service.registrar_cobranza(
-        sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("120")
-    )
+    cobranza = _cobrar(sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("120"))
     filas, _ = service.movimientos_cliente(sesion, org.id, org.cli.deuda, limite=100)
     assert {f.id: f.reversible for f in filas}[cobranza.id] is True
 
