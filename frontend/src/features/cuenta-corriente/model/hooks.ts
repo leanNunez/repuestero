@@ -1,14 +1,16 @@
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  ajusteResponseSchema,
   cuentaPaginaSchema,
   imputacionResponseSchema,
   movimientoPaginaSchema,
+  type AjusteResponse,
   type ImputacionResponse,
 } from "@/entities/cuenta-corriente/schema";
 import { apiGet, apiPost } from "@/shared/api/client";
 
-import type { AjustePayload, Solapa } from "./estado";
+import type { AjustePayload, FormaPagoRenglon, Solapa } from "./estado";
 
 /** Cuentas por página en el listado. */
 export const PAGE_SIZE = 20;
@@ -62,17 +64,35 @@ export function useMovimientos(tab: Solapa, id: number | null, mpage: number) {
   });
 }
 
-/** Cobranza (clientes) o pago (proveedores). Es la misma operación contra dos endpoints. */
+/** Lo que hace falta para imputar: a quién, cuánto, cuándo y con qué. */
+interface ImputarVars {
+  codigo: string;
+  monto: string;
+  fecha: string;
+  /** El detalle de con qué se cobró/pagó. El backend lo acepta omitido y asume efectivo por el
+   *  total, pero desde acá siempre va explícito: la pantalla conoce el dato. */
+  formasPago: readonly FormaPagoRenglon[];
+}
+
+/** Cobranza (clientes) o pago (proveedores). Es la misma operación contra dos endpoints.
+ *
+ * Emite un DOCUMENTO: un recibo del lado clientes, una orden de pago del lado proveedores. Por eso
+ * la respuesta trae `documento_*` y no solo el movimiento. */
 export function useImputar(tab: Solapa) {
   const qc = useQueryClient();
 
-  return useMutation<ImputacionResponse, Error, { codigo: string; monto: string; fecha: string }>({
+  return useMutation<ImputacionResponse, Error, ImputarVars>({
     // `fecha` viaja como string ISO tal cual la escupe el input, sin pasar nunca por `new Date`:
     // ver el docstring de `fechaCorta` en shared/lib/format.ts. Mismo criterio que la plata.
-    mutationFn: ({ codigo, monto, fecha }) =>
+    mutationFn: ({ codigo, monto, fecha, formasPago }) =>
       apiPost(
         IMPUTAR[tab],
-        { [RUTA[tab].campoCodigo]: codigo, monto, fecha },
+        {
+          [RUTA[tab].campoCodigo]: codigo,
+          monto,
+          fecha,
+          formas_pago: formasPago.map((f) => ({ forma: f.forma, monto: f.monto })),
+        },
         imputacionResponseSchema,
       ),
     // Sin retry: un 422 de negocio ("el monto debe ser mayor a cero") lo tiene que leer la persona.
@@ -95,9 +115,11 @@ export function useAjustar(tab: Solapa, cuentaId: number | null) {
   const qc = useQueryClient();
   const { base, coleccion } = RUTA[tab];
 
-  return useMutation<ImputacionResponse, Error, AjustePayload>({
+  // Schema propio y no el de imputación: un ajuste NO emite documento, así que su respuesta no
+  // trae las claves `documento_*`. Con el schema compartido, declararlas requeridas rompería esto.
+  return useMutation<AjusteResponse, Error, AjustePayload>({
     mutationFn: (payload) =>
-      apiPost(`${base}/${coleccion}/${cuentaId}/ajustes`, payload, imputacionResponseSchema),
+      apiPost(`${base}/${coleccion}/${cuentaId}/ajustes`, payload, ajusteResponseSchema),
     // Sin retry: los 422 de acá son de negocio ("ese movimiento ya fue revertido") y los tiene que
     // leer la persona. Reintentar una reversa a ciegas es justo lo que el índice único previene.
     retry: false,

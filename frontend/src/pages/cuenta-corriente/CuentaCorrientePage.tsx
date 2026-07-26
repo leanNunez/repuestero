@@ -168,8 +168,8 @@ export function CuentaCorrientePage() {
                   cuenta={cuenta}
                   cargando={imputar.isPending}
                   error={imputar.error?.message ?? null}
-                  onImputar={(monto, fecha) => {
-                    imputar.mutate({ codigo: cuenta.codigo, monto, fecha });
+                  onImputar={(monto, fecha, formasPago) => {
+                    imputar.mutate({ codigo: cuenta.codigo, monto, fecha, formasPago });
                   }}
                 />
               )}

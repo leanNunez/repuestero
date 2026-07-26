@@ -3,19 +3,28 @@ import { describe, expect, it } from "vitest";
 import type { Movimiento } from "@/entities/cuenta-corriente/schema";
 
 import {
+  agregarForma,
   BUSQUEDA_INICIAL,
   buscar,
+  cambiarForma,
+  cambiarMontoForma,
   cambiarSolapa,
   espejoDelMovimiento,
+  etiquetaForma,
   etiquetaTipo,
   excedeLimite,
+  formasCierran,
+  formasIniciales,
   montoValido,
   motivoValido,
   parseBusqueda,
+  quitarForma,
   seleccionar,
   signoSaldo,
+  totalFormas,
   verTodos,
   type Busqueda,
+  type FormaPagoRenglon,
 } from "./estado";
 
 function busqueda(over: Partial<Busqueda> = {}): Busqueda {
@@ -215,5 +224,121 @@ describe("espejoDelMovimiento", () => {
       columna: "Haber",
       importe: "1234.56",
     });
+  });
+});
+
+// ------------------------------------------------------------------------------ formas de pago
+
+const ren = (forma: string, monto: string) => ({ forma, monto }) as FormaPagoRenglon;
+
+describe("totalFormas", () => {
+  it("suma en centavos ENTEROS, sin el error de los floats", () => {
+    // 0.1 + 0.2 === 0.30000000000000004 en float. Acá tiene que dar 30 centavos exactos.
+    expect(totalFormas([ren("efectivo", "0.10"), ren("cheque", "0.20")])).toBe(30);
+  });
+
+  it("un renglón vacío o basura cuenta como cero, no rompe", () => {
+    expect(totalFormas([ren("efectivo", ""), ren("cheque", "100")])).toBe(10000);
+  });
+
+  it("una lista vacía suma cero", () => {
+    expect(totalFormas([])).toBe(0);
+  });
+});
+
+describe("formasCierran", () => {
+  it("cierra cuando los renglones suman exacto", () => {
+    expect(formasCierran([ren("efectivo", "5000"), ren("cheque", "15000")], "20000")).toBe(true);
+  });
+
+  it("NO cierra por un centavo de diferencia", () => {
+    // El backend devuelve 422 y la base lo rechaza con su trigger: mejor no dejar mandar.
+    expect(formasCierran([ren("efectivo", "999.99")], "1000")).toBe(false);
+  });
+
+  it("no cierra con la lista vacía: un documento sin detalle no lo acepta la base", () => {
+    expect(formasCierran([], "1000")).toBe(false);
+  });
+
+  it("no cierra si algún renglón está vacío o en cero", () => {
+    expect(formasCierran([ren("efectivo", "1000"), ren("cheque", "")], "1000")).toBe(false);
+    expect(formasCierran([ren("efectivo", "1000"), ren("cheque", "0")], "1000")).toBe(false);
+  });
+
+  it("no cierra si el monto de arriba todavía no es válido", () => {
+    expect(formasCierran([ren("efectivo", "100")], "")).toBe(false);
+  });
+
+  it("maneja centavos sin perderlos", () => {
+    expect(formasCierran([ren("efectivo", "1234.56")], "1234.56")).toBe(true);
+    expect(formasCierran([ren("efectivo", "0.10"), ren("tarjeta", "0.20")], "0.30")).toBe(true);
+  });
+});
+
+describe("formasIniciales", () => {
+  it("arranca en efectivo, como el default del backend", () => {
+    expect(formasIniciales("500")).toEqual([{ forma: "efectivo", monto: "500" }]);
+  });
+});
+
+describe("agregarForma", () => {
+  it("el renglón nuevo trae el remanente ya puesto", () => {
+    // El caso real: "de los 20.000, 5.000 en efectivo y el resto un cheque".
+    const r = agregarForma([ren("efectivo", "5000")], "20000");
+
+    expect(r).toHaveLength(2);
+    expect(r[1].monto).toBe("15000.00");
+  });
+
+  it("si no falta nada, el nuevo entra en cero y bloquea el submit", () => {
+    const r = agregarForma([ren("efectivo", "1000")], "1000");
+
+    expect(r[1].monto).toBe("0");
+    expect(formasCierran(r, "1000")).toBe(false);
+  });
+
+  it("no rompe cuando el monto todavía está vacío", () => {
+    expect(agregarForma([ren("efectivo", "")], "")).toHaveLength(2);
+  });
+});
+
+describe("quitarForma", () => {
+  it("saca el renglón indicado", () => {
+    const r = quitarForma([ren("efectivo", "10"), ren("cheque", "20")], 0);
+    expect(r).toEqual([{ forma: "cheque", monto: "20" }]);
+  });
+
+  it("NUNCA deja la lista vacía", () => {
+    // Un documento sin detalle no lo acepta la base: el trigger de la 0010 lo rechaza en el commit.
+    expect(quitarForma([ren("efectivo", "10")], 0)).toHaveLength(1);
+  });
+});
+
+describe("cambiarForma / cambiarMontoForma", () => {
+  it("cambian solo el renglón indicado", () => {
+    const base = [ren("efectivo", "10"), ren("cheque", "20")];
+
+    expect(cambiarForma(base, 1, "tarjeta")[1].forma).toBe("tarjeta");
+    expect(cambiarForma(base, 1, "tarjeta")[0].forma).toBe("efectivo");
+    expect(cambiarMontoForma(base, 0, "99")[0].monto).toBe("99");
+    expect(cambiarMontoForma(base, 0, "99")[1].monto).toBe("20");
+  });
+
+  it("no mutan el array original", () => {
+    const base = [ren("efectivo", "10")];
+    cambiarMontoForma(base, 0, "999");
+    expect(base[0].monto).toBe("10");
+  });
+});
+
+describe("etiquetaForma", () => {
+  it("traduce las formas conocidas", () => {
+    expect(etiquetaForma("efectivo")).toBe("Efectivo");
+    expect(etiquetaForma("transferencia")).toBe("Transferencia");
+  });
+
+  it("una forma desconocida devuelve el crudo, como etiquetaTipo", () => {
+    // Mismo criterio: el importador de Paradox puede traer algo que este front no conoce.
+    expect(etiquetaForma("cripto")).toBe("cripto");
   });
 });
