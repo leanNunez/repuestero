@@ -20,6 +20,7 @@ from app.ventas.schemas import (
     CobranzaResponse,
     CuentaLeer,
     CuentaPagina,
+    FormaPagoLeer,
     MovimientoLeer,
     MovimientoPagina,
     NotaCreditoCrear,
@@ -29,6 +30,7 @@ from app.ventas.schemas import (
     NotaCreditoPagina,
     NotaCreditoResponse,
     PrecioSugeridoLeer,
+    ReciboLeer,
     RenglonAcreditableLeer,
     SaldoLeer,
     VentaCrear,
@@ -233,6 +235,30 @@ def listar_movimientos_cliente(
     )
 
 
+@router.get("/recibos/{recibo_id}", response_model=ReciboLeer)
+def obtener_recibo(
+    recibo_id: int,
+    tenant: TenantContext = Depends(get_tenant),
+) -> ReciboLeer:
+    """El recibo de un cobro, con su detalle de formas de pago.
+
+    Va ANTES de `/{venta_id}` a propósito: FastAPI resuelve por orden de declaración, y si esta
+    ruta quedara después, `/ventas/recibos/12` entraría por la genérica y `recibos` explotaría al
+    convertirse a int. Misma regla que `/notas-credito/{nc_id}`.
+    """
+    recibo = service.obtener_recibo(tenant.session, tenant.org_id, recibo_id)
+    if recibo is None:
+        # El RLS ya filtró por org, así que un recibo de otra organización llega acá como None:
+        # 404, no 403. No se le confirma a nadie que ese id existe en otro tenant.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No existe ese recibo.")
+
+    formas = service.formas_de_recibo(tenant.session, tenant.org_id, recibo_id)
+    return ReciboLeer(
+        **ReciboLeer.model_validate(recibo).model_dump(exclude={"formas_pago"}),
+        formas_pago=[FormaPagoLeer.model_validate(f) for f in formas],
+    )
+
+
 @router.get("/{venta_id}", response_model=VentaDetalle)
 def obtener_venta(
     venta_id: int,
@@ -266,27 +292,46 @@ def registrar_cobranza(
     body: CobranzaCrear,
     tenant: TenantContext = Depends(get_tenant),
 ) -> CobranzaResponse:
+    """Cobra en cuenta corriente EMITIENDO UN RECIBO, y lo imputa como Haber.
+
+    `formas_pago` puede omitirse: el schema asume el total en efectivo. El recibo, en cambio, se
+    emite siempre — no hay cobranza sin documento.
+    """
+    formas = [service.FormaPago(forma=f.forma, monto=f.monto) for f in body.formas_pago or []]
     try:
-        movimiento = service.registrar_cobranza(
+        cobranza = service.registrar_cobranza(
             tenant.session,
             tenant.org_id,
             cliente_codigo=body.cliente_codigo,
             monto=body.monto,
+            formas_pago=formas,
             fecha=body.fecha,
+            pto_venta=body.pto_venta,
             usuario_id=tenant.user_id,
         )
     except service.VentaInvalida as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from None
+    except IntegrityError:
+        # Dos cajas cobrando a la vez: el lock del numerador las serializa, pero si igual chocan,
+        # el unique del recibo es el árbitro. Mismo 409 que la venta y la NC.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "No pude asignar el número de recibo. Reintentá."
+        ) from None
     except Exception:  # noqa: BLE001 — nunca filtrar internals (skill web-security)
         logger.exception("Error en POST /ventas/cobranzas")
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR, "No pude registrar la cobranza."
         ) from None
 
+    movimiento, recibo = cobranza.movimiento, cobranza.recibo
     return CobranzaResponse(
         movimiento_id=movimiento.id,
         cliente_id=movimiento.cliente_id,
         saldo=service.saldo_cliente(tenant.session, tenant.org_id, movimiento.cliente_id),
+        documento_id=recibo.id,
+        documento_tipo=recibo.tipo,
+        documento_pto_venta=recibo.pto_venta,
+        documento_numero=recibo.numero,
     )
 
 
