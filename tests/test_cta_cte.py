@@ -36,7 +36,7 @@ from app.compras.schemas import CuentaLeer as CuentaProveedorLeer
 from app.core import db as core_db
 from app.core.config import get_settings
 from app.core.db import ORG_GUC, set_guc
-from app.core.fechas import DIAS_RETROACTIVIDAD
+from app.core.fechas import DIAS_RETROACTIVIDAD, hoy
 from app.core.models import Miembro, Organizacion
 from app.main import app
 from app.proveedores import service as proveedores
@@ -45,7 +45,7 @@ from app.ventas.models import CtaCteMovimiento
 from tests.conftest import APP_URL, OWNER_URL
 
 #: El ledger sembrado para CLI-DEUDA. Se inserta a mano para fijar fechas de 2026 estables: los
-#: acumulados esperados de abajo dependen del orden cronológico exacto, y `date.today()` los movería
+#: acumulados esperados de abajo dependen del orden cronológico exacto, y el reloj de hoy los movería
 #: cada vez que corre la suite.
 #: (fecha, tipo, debe, haber) -> acumulado esperado
 LEDGER = [
@@ -643,7 +643,7 @@ def test_una_cobranza_sin_fecha_sigue_saliendo_con_la_de_hoy(sesion, org):
     mov = service.registrar_cobranza(
         sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("10")
     )
-    assert mov.fecha == date.today()
+    assert mov.fecha == hoy()
 
 
 def test_el_service_acepta_fechas_viejas_porque_es_el_camino_del_importador(sesion, org):
@@ -690,7 +690,7 @@ def test_el_extracto_trae_cuando_se_cargo_ademas_de_cuando_paso(sesion, org):
     fila = {f.id: f for f in filas}[mov.id]
 
     assert fila.fecha == date(2026, 2, 20)
-    assert fila.creado_en.date() == date.today()  # se cargó HOY, aunque diga febrero
+    assert fila.creado_en.date() == hoy()  # se cargó HOY, aunque diga febrero
 
 
 def test_prov_un_pago_retroactivo_no_cambia_el_saldo(sesion, org):
@@ -1348,7 +1348,7 @@ def test_endpoint_ajuste_proveedor_inexistente_es_404(cliente):
 
 
 def test_endpoint_cobranza_acepta_fecha_retroactiva(cliente, org):
-    ayer = (date.today() - timedelta(days=3)).isoformat()
+    ayer = (hoy() - timedelta(days=3)).isoformat()
 
     r = cliente.post(
         "/ventas/cobranzas",
@@ -1363,11 +1363,11 @@ def test_endpoint_cobranza_acepta_fecha_retroactiva(cliente, org):
     )
     assert mov["fecha"] == ayer
     # Y queda registrado que se cargó hoy, no hace tres días.
-    assert mov["creado_en"].startswith(date.today().isoformat())
+    assert mov["creado_en"].startswith(hoy().isoformat())
 
 
 def test_endpoint_cobranza_rechaza_fecha_futura(cliente):
-    manana = (date.today() + timedelta(days=1)).isoformat()
+    manana = (hoy() + timedelta(days=1)).isoformat()
     r = cliente.post(
         "/ventas/cobranzas",
         json={"cliente_codigo": "CLI-DEUDA", "monto": "50.00", "fecha": manana},
@@ -1377,8 +1377,8 @@ def test_endpoint_cobranza_rechaza_fecha_futura(cliente):
 
 def test_endpoint_cobranza_el_borde_de_la_ventana(cliente):
     """Los dos lados del límite, porque un off-by-one acá se nota recién en producción."""
-    justo = (date.today() - timedelta(days=DIAS_RETROACTIVIDAD)).isoformat()
-    pasado = (date.today() - timedelta(days=DIAS_RETROACTIVIDAD + 1)).isoformat()
+    justo = (hoy() - timedelta(days=DIAS_RETROACTIVIDAD)).isoformat()
+    pasado = (hoy() - timedelta(days=DIAS_RETROACTIVIDAD + 1)).isoformat()
 
     ok = cliente.post(
         "/ventas/cobranzas",
@@ -1394,7 +1394,7 @@ def test_endpoint_cobranza_el_borde_de_la_ventana(cliente):
 
 
 def test_endpoint_ajuste_acepta_fecha(cliente, org):
-    hace_una_semana = (date.today() - timedelta(days=7)).isoformat()
+    hace_una_semana = (hoy() - timedelta(days=7)).isoformat()
 
     r = cliente.post(
         f"/ventas/clientes/{org.cli.deuda}/ajustes",
@@ -1404,8 +1404,8 @@ def test_endpoint_ajuste_acepta_fecha(cliente, org):
 
 
 def test_endpoint_pago_proveedor_acepta_y_valida_la_fecha(cliente):
-    ayer = (date.today() - timedelta(days=1)).isoformat()
-    manana = (date.today() + timedelta(days=1)).isoformat()
+    ayer = (hoy() - timedelta(days=1)).isoformat()
+    manana = (hoy() + timedelta(days=1)).isoformat()
 
     assert (
         cliente.post(
