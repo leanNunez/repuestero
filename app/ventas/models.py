@@ -19,29 +19,6 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.core.base import Base, BigIntPk, Cantidad, Money2, OrgMixin, TimestampMixin
 
 
-class Numerador(Base, OrgMixin):
-    """Contador de números de comprobante por (tipo, punto de venta).
-
-    Es el reemplazo directo del `Max(Numero)+1` del legacy (docs/analisis-legacy.md §4.1), la
-    causa raíz de los comprobantes duplicados cuando dos cajas facturan a la vez. El número se
-    asigna con `SELECT ultimo ... FOR UPDATE` (ver `service.asignar_numero`): Postgres serializa
-    el acceso a la fila, así que dos ventas concurrentes se forman en cola en vez de pisarse.
-
-    NO es append-only: la columna `ultimo` se muta bajo el lock. Lo que garantiza la unicidad
-    del número EMITIDO es ese bloqueo más el unique de `comprobantes(org, tipo, pto_venta, numero)`.
-    """
-
-    __tablename__ = "numeradores"
-    __table_args__ = (
-        UniqueConstraint("org_id", "tipo", "pto_venta", name="uq_numeradores_org_tipo_pv"),
-    )
-
-    id: Mapped[BigIntPk]
-    tipo: Mapped[str] = mapped_column(String(10))
-    pto_venta: Mapped[int] = mapped_column(Integer)
-    ultimo: Mapped[int] = mapped_column(BigInteger, default=0)
-
-
 class Comprobante(Base, OrgMixin, TimestampMixin):
     """Cabecera de una venta. APPEND-ONLY: emitido no se edita.
 
