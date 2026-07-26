@@ -37,6 +37,7 @@ CONCEPTOS_INGRESO: frozenset[str] = frozenset(
     {
         "cobranza",  # derivado: un recibo cobrado
         "cheque_cobrado",  # derivado: un cheque de la cartera que se hizo efectivo
+        "anulacion_pago",  # derivado: anular una orden de pago devuelve la plata al cajón
         "aporte",  # manual: el dueño pone plata en la caja
         "otro_ingreso",  # manual: el cajón de sastre, a propósito último
     }
@@ -47,6 +48,7 @@ CONCEPTOS_EGRESO: frozenset[str] = frozenset(
     {
         "pago_proveedor",  # derivado: una orden de pago emitida
         "cheque_rechazado",  # derivado: un cheque que volvió, revierte su ingreso
+        "anulacion_cobranza",  # derivado: anular un recibo saca lo que había entrado
         "gasto",  # manual: flete, librería, lo que sea que salga del cajón
         "retiro",  # manual: el dueño saca plata
         "otro_egreso",  # manual
@@ -60,7 +62,14 @@ CONCEPTOS: frozenset[str] = CONCEPTOS_INGRESO | CONCEPTOS_EGRESO
 #: vocabulario se congela entero de una, porque agregarle un valor al CHECK después es otra
 #: migración por algo que ya sabíamos hoy.
 CONCEPTOS_DERIVADOS: frozenset[str] = frozenset(
-    {"cobranza", "pago_proveedor", "cheque_cobrado", "cheque_rechazado"}
+    {
+        "cobranza",
+        "pago_proveedor",
+        "cheque_cobrado",
+        "cheque_rechazado",
+        "anulacion_cobranza",
+        "anulacion_pago",
+    }
 )
 
 #: Lo que el endpoint de carga manual sí acepta.
@@ -71,10 +80,12 @@ CONCEPTOS_MANUALES: frozenset[str] = CONCEPTOS - CONCEPTOS_DERIVADOS
 ConceptoLiteral = Literal[
     "cobranza",
     "cheque_cobrado",
+    "anulacion_pago",
     "aporte",
     "otro_ingreso",
     "pago_proveedor",
     "cheque_rechazado",
+    "anulacion_cobranza",
     "gasto",
     "retiro",
     "otro_egreso",
