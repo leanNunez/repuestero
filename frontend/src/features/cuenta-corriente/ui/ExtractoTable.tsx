@@ -17,10 +17,17 @@ interface Props {
   onRevertir: (m: Movimiento) => void;
 }
 
-/** Referencia legible del movimiento: "Comprobante #123".
+/** Referencia legible del movimiento: "Comprobante #123", "Recibo #47".
  *
- * Las cobranzas y los pagos llegan SIN referencia —el service no las guarda todavía—, así que
- * esta columna va a estar vacía justo en las filas que el operador acaba de crear. */
+ * Las cobranzas y los pagos SÍ traen referencia desde la migración 0010: apuntan al recibo o a la
+ * orden de pago que emitieron. Las ANTERIORES a esa fecha se quedan con el guión para siempre, y
+ * es a propósito — fabricarles un recibo retroactivo sería inventar un documento con un número
+ * correlativo que nunca se imprimió.
+ *
+ * Ojo: el `#` es el ID INTERNO, no el número del documento que el cliente tiene en la mano
+ * ("0001-00000012"). Se hereda de "Comprobante #", no se introduce acá. El arreglo correcto es un
+ * `ref_etiqueta` calculado en el SQL del extracto, no un join desde el front. Anotado en
+ * docs/pendientes.md. */
 function referencia(m: Movimiento): string {
   if (!m.ref_tipo || m.ref_id === null) return "—";
 

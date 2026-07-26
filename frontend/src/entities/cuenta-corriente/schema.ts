@@ -60,12 +60,36 @@ export const movimientoPaginaSchema = z.object({
   cuenta: cuentaSchema,
 });
 
-/** Acuse de una cobranza, un pago o un ajuste.
+/** Con qué se cobró o se pagó un renglón del documento (`FormaPagoLeer`).
  *
- * `CobranzaResponse`, `PagoProveedorResponse` y los dos `AjusteResponse` solo difieren en
- * `cliente_id`/`proveedor_id`, y Zod descarta las claves que no declara: un schema alcanza para
- * las cuatro mutaciones. */
+ * En esta etapa `cheque` es solo la etiqueta con su monto: banco, número y fecha de cobro llegan
+ * con el módulo de caja, y ahí cada renglón se convierte en un cheque de la cartera. */
+export const formaPagoSchema = z.object({
+  forma: z.string(),
+  monto: z.string(),
+});
+
+/** Acuse de una cobranza o de un pago.
+ *
+ * Las claves del documento son NEUTRAS (`documento_*`, no `recibo_*`) porque el backend devuelve
+ * las mismas para las dos solapas: del lado clientes el documento es un RECIBO, del lado
+ * proveedores una ORDEN DE PAGO. Un solo schema, sin `if tab === "clientes"` en el hook.
+ *
+ * Está SEPARADO del de ajustes a propósito. Antes era uno solo para las cuatro mutaciones —Zod
+ * descarta las claves que no declara—, pero al declarar `documento_*` como requeridas la respuesta
+ * de un ajuste, que no las trae, fallaría la validación. */
 export const imputacionResponseSchema = z.object({
+  movimiento_id: z.number(),
+  saldo: z.string(),
+  documento_id: z.number(),
+  /** 'REC' (recibo) o 'OP' (orden de pago). */
+  documento_tipo: z.string(),
+  documento_pto_venta: z.number(),
+  documento_numero: z.number(),
+});
+
+/** Acuse de un ajuste: no emite documento, así que solo trae el movimiento y el saldo. */
+export const ajusteResponseSchema = z.object({
   movimiento_id: z.number(),
   saldo: z.string(),
 });
@@ -74,4 +98,6 @@ export type Cuenta = z.infer<typeof cuentaSchema>;
 export type CuentaPagina = z.infer<typeof cuentaPaginaSchema>;
 export type Movimiento = z.infer<typeof movimientoSchema>;
 export type MovimientoPagina = z.infer<typeof movimientoPaginaSchema>;
+export type FormaPago = z.infer<typeof formaPagoSchema>;
 export type ImputacionResponse = z.infer<typeof imputacionResponseSchema>;
+export type AjusteResponse = z.infer<typeof ajusteResponseSchema>;

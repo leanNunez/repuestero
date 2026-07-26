@@ -93,6 +93,109 @@ export function montoValido(monto: string): boolean {
   return Number.isFinite(n) && n > 0;
 }
 
+// ---------------------------------------------------------------------------- formas de pago
+
+/** El catálogo que acepta la base (CHECK de la migración 0010) y el `Literal` de Pydantic.
+ *
+ * Si acá apareciera una forma que el backend no conoce, el POST vuelve 422: el orden correcto para
+ * agregar una es migración → `app/core/formas_pago.py` → esta lista. */
+export const FORMAS = ["efectivo", "cheque", "transferencia", "tarjeta"] as const;
+
+export type Forma = (typeof FORMAS)[number];
+
+/** Un renglón del detalle de pago. El monto viaja como string, como toda la plata del módulo. */
+export interface FormaPagoRenglon {
+  forma: Forma;
+  monto: string;
+}
+
+const ETIQUETAS_FORMA: Record<string, string> = {
+  efectivo: "Efectivo",
+  cheque: "Cheque",
+  transferencia: "Transferencia",
+  tarjeta: "Tarjeta",
+};
+
+/** Etiqueta legible de una forma de pago. Mismo criterio que `etiquetaTipo`: una forma
+ *  desconocida devuelve el crudo en vez de romper. */
+export function etiquetaForma(forma: string): string {
+  return ETIQUETAS_FORMA[forma] ?? forma;
+}
+
+/** Centavos ENTEROS de un importe. La comparación de plata nunca va en float.
+ *
+ * `Number` se usa solo para comparar, jamás para transportar: el string canónico es el que viaja.
+ * Es el mismo criterio de `montoValido`. */
+function centavos(monto: string): number {
+  return Math.round(Number(monto) * 100);
+}
+
+/** Suma de los renglones, en centavos. Un renglón vacío o inválido cuenta como 0 y por lo tanto
+ *  hace que el total no cierre — que es exactamente lo que se quiere mientras se está tipeando. */
+export function totalFormas(renglones: readonly FormaPagoRenglon[]): number {
+  return renglones.reduce((acc, r) => {
+    const c = centavos(r.monto);
+    return acc + (Number.isFinite(c) ? c : 0);
+  }, 0);
+}
+
+/** Si el detalle suma EXACTO el monto imputado.
+ *
+ * El backend lo valida igual (y la base lo impone con un constraint trigger), pero acá evita que
+ * el operador mande un formulario que ya sabemos que va a volver 422. */
+export function formasCierran(renglones: readonly FormaPagoRenglon[], monto: string): boolean {
+  if (renglones.length === 0 || !montoValido(monto)) return false;
+  if (renglones.some((r) => !montoValido(r.monto))) return false;
+
+  return totalFormas(renglones) === centavos(monto);
+}
+
+/** El detalle por defecto: todo en efectivo. Espeja el default del backend, que asume lo mismo
+ *  cuando el payload no manda `formas_pago`. */
+export function formasIniciales(monto: string): FormaPagoRenglon[] {
+  return [{ forma: "efectivo", monto }];
+}
+
+/** Agrega un renglón con lo que falta para llegar al monto.
+ *
+ * Reparte el remanente en vez de arrancar en cero: el caso real es "de los 20.000, 5.000 en
+ * efectivo y el resto un cheque", así que el segundo renglón ya viene con el resto puesto. Si no
+ * falta nada, entra en 0 y el submit queda bloqueado hasta que el operador reparta a mano. */
+export function agregarForma(
+  renglones: readonly FormaPagoRenglon[],
+  monto: string,
+): FormaPagoRenglon[] {
+  const falta = centavos(monto) - totalFormas(renglones);
+  const resto = Number.isFinite(falta) && falta > 0 ? (falta / 100).toFixed(2) : "0";
+
+  return [...renglones, { forma: "efectivo", monto: resto }];
+}
+
+/** Saca un renglón. Nunca deja la lista vacía: un documento sin detalle no lo acepta la base. */
+export function quitarForma(
+  renglones: readonly FormaPagoRenglon[],
+  indice: number,
+): FormaPagoRenglon[] {
+  if (renglones.length <= 1) return [...renglones];
+  return renglones.filter((_, i) => i !== indice);
+}
+
+export function cambiarForma(
+  renglones: readonly FormaPagoRenglon[],
+  indice: number,
+  forma: Forma,
+): FormaPagoRenglon[] {
+  return renglones.map((r, i) => (i === indice ? { ...r, forma } : r));
+}
+
+export function cambiarMontoForma(
+  renglones: readonly FormaPagoRenglon[],
+  indice: number,
+  monto: string,
+): FormaPagoRenglon[] {
+  return renglones.map((r, i) => (i === indice ? { ...r, monto } : r));
+}
+
 const ETIQUETAS: Record<string, string> = {
   venta: "Venta",
   cobranza: "Cobranza",
