@@ -4,8 +4,11 @@ from uuid import UUID
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     Date,
     ForeignKey,
+    ForeignKeyConstraint,
+    Integer,
     Numeric,
     String,
     UniqueConstraint,
@@ -108,6 +111,68 @@ class ProvCtaCteMovimiento(Base, OrgMixin):
     motivo: Mapped[str | None] = mapped_column(String(200))
     creado_en: Mapped[datetime] = mapped_column(server_default=func.now())
     creado_por: Mapped[UUID | None]
+
+
+class OrdenPago(Base, OrgMixin):
+    """Comprobante de un pago a un proveedor. APPEND-ONLY. Espejo de `ventas.Recibo`.
+
+    El recibo lo emite quien COBRA: cuando le pagamos a un proveedor, el recibo lo emite él y
+    nosotros emitimos una ORDEN DE PAGO. De ahí el nombre, y de ahí que sea otra tabla y no la
+    misma con un discriminador: son dos documentos distintos, de dos lados distintos del negocio.
+
+    Todo lo demás es idéntico a `Recibo`, incluida la explicación larga de por qué no hay columna
+    `anulado` y por qué `total` se guarda. Numeración propia con `tipo='OP'`, así que las órdenes
+    de pago no comparten contador con los recibos ni con las facturas.
+    """
+
+    __tablename__ = "ordenes_pago"
+    __table_args__ = (
+        UniqueConstraint(
+            "org_id", "tipo", "pto_venta", "numero", name="uq_ordenes_pago_org_tipo_pv_num"
+        ),
+        #: Destino de la FK compuesta de `OrdenPagoFormaPago` (ver la nota en `ventas.Recibo`).
+        UniqueConstraint("org_id", "id", name="uq_ordenes_pago_org_id"),
+        CheckConstraint("total > 0", name="ck_ordenes_pago_total_positivo"),
+    )
+
+    id: Mapped[BigIntPk]
+    proveedor_id: Mapped[int] = mapped_column(
+        ForeignKey("proveedores.id", ondelete="RESTRICT"), index=True
+    )
+    tipo: Mapped[str] = mapped_column(String(10))  # 'OP'
+    pto_venta: Mapped[int] = mapped_column(Integer)
+    numero: Mapped[int] = mapped_column(BigInteger)
+    fecha: Mapped[date] = mapped_column(Date, server_default=func.current_date())
+    total: Mapped[Money2]
+    creado_en: Mapped[datetime] = mapped_column(server_default=func.now())
+    creado_por: Mapped[UUID | None]
+
+
+class OrdenPagoFormaPago(Base, OrgMixin):
+    """Con qué se pagó una orden de pago. APPEND-ONLY. Espejo de `ventas.ReciboFormaPago`,
+    donde está la explicación larga del 1:N y de la FK compuesta."""
+
+    __tablename__ = "orden_pago_formas_pago"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["org_id", "orden_pago_id"],
+            ["ordenes_pago.org_id", "ordenes_pago.id"],
+            name="fk_orden_pago_formas_pago_ordenes_pago",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(
+            "forma in ('efectivo', 'cheque', 'transferencia', 'tarjeta')",
+            name="ck_orden_pago_formas_pago_forma",
+        ),
+        CheckConstraint("monto > 0", name="ck_orden_pago_formas_pago_monto_positivo"),
+    )
+
+    id: Mapped[BigIntPk]
+    orden_pago_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    #: Ver `app.core.formas_pago.FORMAS_PAGO`. La base lo hace cumplir con un CHECK.
+    forma: Mapped[str] = mapped_column(String(20))
+    monto: Mapped[Money2]
+    creado_en: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class ProveedorSaldo(Base):

@@ -4,8 +4,10 @@ from uuid import UUID
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     Date,
     ForeignKey,
+    ForeignKeyConstraint,
     Integer,
     Numeric,
     String,
@@ -152,6 +154,90 @@ class ClienteSaldo(Base):
     org_id: Mapped[UUID] = mapped_column(primary_key=True)
     cliente_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     saldo: Mapped[Money2]
+
+
+class Recibo(Base, OrgMixin):
+    """Comprobante de un cobro a un cliente. APPEND-ONLY: emitido no se edita.
+
+    Es el documento que le faltaba a la cuenta corriente. Antes de existir, una cobranza escribía
+    un Haber suelto con `ref_tipo`/`ref_id` en NULL, mientras la venta y la nota de crédito sí
+    referenciaban el suyo. El movimiento de una cobranza apunta acá con `ref_tipo='recibo'`.
+
+    NO tiene columna `anulado`, y no es un olvido. Un recibo no se anula por sí mismo: se revierte
+    el MOVIMIENTO que generó, con `service.registrar_ajuste`, y el estado "anulado" queda derivado
+    (existe una reversa del movimiento que apunta a este recibo). Misma filosofía que el saldo:
+    estado calculado, nunca columna mutable que pueda desincronizarse del ledger.
+
+    `total` se GUARDA a propósito, igual que en `Comprobante`: es un snapshot congelado al emitir,
+    no un acumulado. Un recibo es papel que dice "recibí $X" — el número tiene que ser
+    autocontenido. Que el detalle de formas de pago sume EXACTO ese total lo hace cumplir un
+    constraint trigger diferido de la base (0010), no solo el service.
+
+    Numeración correlativa propia (`tipo='REC'`) con el mismo `Numerador` que las ventas, así que
+    los recibos no comparten contador con las facturas.
+    """
+
+    __tablename__ = "recibos"
+    __table_args__ = (
+        UniqueConstraint(
+            "org_id", "tipo", "pto_venta", "numero", name="uq_recibos_org_tipo_pv_num"
+        ),
+        #: Destino de la FK compuesta de `ReciboFormaPago`. Redundante como unicidad (`id` ya es
+        #: PK), pero Postgres exige un unique sobre las columnas exactas que referencia una FK.
+        UniqueConstraint("org_id", "id", name="uq_recibos_org_id"),
+        CheckConstraint("total > 0", name="ck_recibos_total_positivo"),
+    )
+
+    id: Mapped[BigIntPk]
+    cliente_id: Mapped[int] = mapped_column(
+        ForeignKey("clientes.id", ondelete="RESTRICT"), index=True
+    )
+    tipo: Mapped[str] = mapped_column(String(10))  # 'REC'
+    pto_venta: Mapped[int] = mapped_column(Integer)
+    numero: Mapped[int] = mapped_column(BigInteger)
+    fecha: Mapped[date] = mapped_column(Date, server_default=func.current_date())
+    total: Mapped[Money2]
+    creado_en: Mapped[datetime] = mapped_column(server_default=func.now())
+    creado_por: Mapped[UUID | None]
+
+
+class ReciboFormaPago(Base, OrgMixin):
+    """Con qué se cobró un recibo: efectivo, cheque, transferencia o tarjeta. APPEND-ONLY.
+
+    Es 1:N y no una columna en el recibo porque el pago mixto es real en el mostrador (5.000 en
+    efectivo y un cheque por 15.000), y porque cuando llegue el módulo de caja CADA RENGLÓN se
+    convierte en un movimiento de caja o en un cheque de la cartera. Por eso tampoco hay unique
+    (recibo, forma): dos cheques distintos son dos renglones legítimos.
+
+    En esta etapa `cheque` es solo la etiqueta con su monto; banco, número y fecha de cobro llegan
+    con `app/caja/`.
+
+    La FK a `recibos` es COMPUESTA (org_id, recibo_id), a diferencia de `ComprobanteItem`. Con una
+    FK simple un renglón podría apuntar al recibo de OTRA organización: el trigger que valida la
+    suma corre bajo RLS, no vería ese recibo, y dejaría pasar el renglón en silencio.
+    """
+
+    __tablename__ = "recibo_formas_pago"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["org_id", "recibo_id"],
+            ["recibos.org_id", "recibos.id"],
+            name="fk_recibo_formas_pago_recibos",
+            ondelete="CASCADE",
+        ),
+        CheckConstraint(
+            "forma in ('efectivo', 'cheque', 'transferencia', 'tarjeta')",
+            name="ck_recibo_formas_pago_forma",
+        ),
+        CheckConstraint("monto > 0", name="ck_recibo_formas_pago_monto_positivo"),
+    )
+
+    id: Mapped[BigIntPk]
+    recibo_id: Mapped[int] = mapped_column(BigInteger, index=True)
+    #: Ver `app.core.formas_pago.FORMAS_PAGO`. La base lo hace cumplir con un CHECK.
+    forma: Mapped[str] = mapped_column(String(20))
+    monto: Mapped[Money2]
+    creado_en: Mapped[datetime] = mapped_column(server_default=func.now())
 
 
 class NotaCredito(Base, OrgMixin, TimestampMixin):
