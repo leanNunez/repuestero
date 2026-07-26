@@ -9,6 +9,12 @@ class Settings(BaseSettings):
     database_url: str
     migrations_database_url: str = ""
 
+    #: Zona horaria del NEGOCIO. No es cosmética: `current_date` de Postgres —que es lo que fecha
+    #: por defecto ventas, compras, recibos y los dos ledgers— se evalúa en la zona de la sesión.
+    #: El server corre en UTC (Supabase y el contenedor local), así que sin esto una cobranza
+    #: cargada a las 21:30 en el mostrador se guardaba con la fecha de MAÑANA. Ver `app/core/db.py`.
+    tz_negocio: str = "America/Argentina/Buenos_Aires"
+
     supabase_url: str = ""
     supabase_jwks_url: str = ""
     supabase_jwt_secret: str = ""

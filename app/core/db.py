@@ -2,12 +2,49 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from uuid import UUID
 
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
+from sqlalchemy.engine import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.core.config import get_settings
 
 _settings = get_settings()
+
+
+@event.listens_for(Engine, "connect")
+def _fijar_zona_horaria(dbapi_connection, _record) -> None:
+    """Toda conexión nueva arranca en la zona horaria del NEGOCIO, no en la del server.
+
+    Está enganchado a la CLASE `Engine` y no a un engine puntual a propósito: en este repo hay más
+    de cuarenta `create_engine` (tests, seeds, importador, reindex), y un `connect_args` por engine
+    es exactamente la clase de cosa que el próximo se olvida. Acá alcanza con que el proceso haya
+    importado este módulo.
+
+    Por qué importa, y no es cosmético: el server corre en UTC (Supabase y el contenedor local),
+    y `current_date` —que es el `server_default` de la fecha en ventas, compras, recibos y los dos
+    ledgers— se evalúa en la zona de la SESIÓN. Sin esto, a partir de las 21:00 hora argentina la
+    base ya está en el día siguiente: una cobranza cargada a las 21:30 se guardaba con fecha de
+    mañana, y el cierre del sábado se llevaba movimientos del domingo.
+
+    Peor todavía, había DOS relojes en desacuerdo: la base fechaba en UTC y
+    `fechas.validar_fecha_movimiento` validaba con la hora local de Python. En esa franja el
+    sistema guardaba solo una fecha que rechazaba si se la mandabas escrita.
+
+    `set_config(..., false)` = alcance de SESIÓN (no de transacción, como los GUCs de RLS): tiene
+    que sobrevivir a cada commit, porque describe a la conexión y no al request.
+
+    Y por eso mismo va en AUTOCOMMIT: un `SET` de sesión igual es transaccional, así que corriendo
+    en la transacción implícita que abre psycopg se perdía con el primer rollback que el pool emite
+    al reciclar la conexión. Es el mismo patrón que documenta SQLAlchemy para fijar `search_path`.
+    """
+    autocommit_previo = dbapi_connection.autocommit
+    dbapi_connection.autocommit = True
+    try:
+        with dbapi_connection.cursor() as cur:
+            cur.execute("select set_config('TimeZone', %s, false)", (_settings.tz_negocio,))
+    finally:
+        dbapi_connection.autocommit = autocommit_previo
+
 
 engine = create_engine(_settings.database_url, pool_pre_ping=True, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
