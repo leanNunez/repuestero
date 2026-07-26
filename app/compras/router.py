@@ -22,8 +22,10 @@ from app.compras.schemas import (
     CompraResponse,
     CuentaLeer,
     CuentaPagina,
+    FormaPagoLeer,
     MovimientoLeer,
     MovimientoPagina,
+    OrdenPagoLeer,
     PagoProveedorCrear,
     PagoProveedorResponse,
     SaldoProveedorLeer,
@@ -86,27 +88,45 @@ def registrar_pago(
     body: PagoProveedorCrear,
     tenant: TenantContext = Depends(get_tenant),
 ) -> PagoProveedorResponse:
+    """Paga al proveedor EMITIENDO UNA ORDEN DE PAGO, y la imputa como Haber.
+
+    `formas_pago` puede omitirse: el schema asume el total en efectivo. La orden, en cambio, se
+    emite siempre — no hay pago sin documento.
+    """
+    formas = [service.FormaPago(forma=f.forma, monto=f.monto) for f in body.formas_pago or []]
     try:
-        movimiento = service.registrar_pago(
+        pago = service.registrar_pago(
             tenant.session,
             tenant.org_id,
             proveedor_codigo=body.proveedor_codigo,
             monto=body.monto,
+            formas_pago=formas,
             fecha=body.fecha,
+            pto_venta=body.pto_venta,
             usuario_id=tenant.user_id,
         )
     except service.CompraInvalida as exc:
         raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from None
+    except IntegrityError:
+        # El unique de la orden atajó una colisión de numeración. Mismo 409 que la compra.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "No pude asignar el número de orden de pago. Reintentá."
+        ) from None
     except Exception:  # noqa: BLE001 — nunca filtrar internals (skill web-security)
         logger.exception("Error en POST /compras/pagos")
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR, "No pude registrar el pago."
         ) from None
 
+    movimiento, orden = pago.movimiento, pago.orden
     return PagoProveedorResponse(
         movimiento_id=movimiento.id,
         proveedor_id=movimiento.proveedor_id,
         saldo=service.saldo_proveedor(tenant.session, tenant.org_id, movimiento.proveedor_id),
+        documento_id=orden.id,
+        documento_tipo=orden.tipo,
+        documento_pto_venta=orden.pto_venta,
+        documento_numero=orden.numero,
     )
 
 
@@ -223,6 +243,30 @@ def listar_movimientos_proveedor(
             nombre=proveedor.razon_social,
             saldo=service.saldo_proveedor(tenant.session, tenant.org_id, proveedor_id),
         ),
+    )
+
+
+@router.get("/ordenes-pago/{orden_id}", response_model=OrdenPagoLeer)
+def obtener_orden_pago(
+    orden_id: int,
+    tenant: TenantContext = Depends(get_tenant),
+) -> OrdenPagoLeer:
+    """La orden de pago de un pago, con su detalle de formas.
+
+    Va ANTES de `/{compra_id}` a propósito: FastAPI resuelve por orden de declaración, y si esta
+    ruta quedara después, `/compras/ordenes-pago/12` entraría por la genérica y `ordenes-pago`
+    explotaría al convertirse a int. Espejo de `/ventas/recibos/{id}`.
+    """
+    orden = service.obtener_orden_pago(tenant.session, tenant.org_id, orden_id)
+    if orden is None:
+        # El RLS ya filtró por org: una orden de otra organización llega acá como None. 404, no
+        # 403 — no se le confirma a nadie que ese id existe en otro tenant.
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "No existe esa orden de pago.")
+
+    formas = service.formas_de_orden_pago(tenant.session, tenant.org_id, orden_id)
+    return OrdenPagoLeer(
+        **OrdenPagoLeer.model_validate(orden).model_dump(exclude={"formas_pago"}),
+        formas_pago=[FormaPagoLeer.model_validate(f) for f in formas],
     )
 
 

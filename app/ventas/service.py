@@ -22,6 +22,7 @@ from app.catalogo import service as catalogo
 from app.clientes import service as clientes
 from app.clientes.models import Cliente
 from app.core.formas_pago import FORMAS_PAGO
+from app.core.numeracion import asignar_numero
 from app.inventario import service as inventario
 from app.ventas.models import (
     ClienteSaldo,
@@ -30,7 +31,6 @@ from app.ventas.models import (
     CtaCteMovimiento,
     NotaCredito,
     NotaCreditoItem,
-    Numerador,
     Recibo,
     ReciboFormaPago,
 )
@@ -48,36 +48,6 @@ class VentaInvalida(ValueError):
 class NotaCreditoInvalida(ValueError):
     """La NC no cierra: la venta no existe, el artículo no está en ella, se acredita más de lo
     vendido, o ya está totalmente acreditada. El router lo traduce a un 422."""
-
-
-def asignar_numero(session: Session, org_id: UUID, *, tipo: str, pto_venta: int) -> int:
-    """Devuelve el próximo número correlativo para (tipo, punto de venta), bajo lock.
-
-    `with_for_update()` sobre la fila del numerador serializa a dos cajas facturando a la vez:
-    la segunda espera a que la primera libere la fila. Es el reemplazo del `Max(Numero)+1` del
-    legacy, que con dos cajas duplicaba el número. Corre DENTRO de la transacción de la venta.
-
-    En la PRIMERÍSIMA venta de un (tipo, pto_venta) la fila no existe: se crea con `ultimo=0`.
-    Dos transacciones creándola a la vez es una carrera rarísima que atrapa el unique
-    `uq_numeradores_org_tipo_pv` (una gana, la otra se lleva un IntegrityError y reintenta).
-    """
-    fila = session.scalar(
-        select(Numerador)
-        .where(
-            Numerador.org_id == org_id,
-            Numerador.tipo == tipo,
-            Numerador.pto_venta == pto_venta,
-        )
-        .with_for_update()
-    )
-    if fila is None:
-        fila = Numerador(org_id=org_id, tipo=tipo, pto_venta=pto_venta, ultimo=0)
-        session.add(fila)
-        session.flush()
-
-    fila.ultimo += 1
-    session.flush()
-    return fila.ultimo
 
 
 def _stock_disponible(
