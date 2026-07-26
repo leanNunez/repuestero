@@ -7,6 +7,7 @@ avisar. Este módulo es el único lugar que tiene que acordarse de todos.
 Lo importa `alembic/env.py`. Cuando agregues un feature, sumá su import acá.
 """
 
+from app.caja import models as caja_models
 from app.catalogo import models as catalogo_models
 from app.clientes import models as clientes_models
 from app.compatibilidad import models as compatibilidad_models
@@ -52,11 +53,14 @@ TABLAS_TENANT: tuple[str, ...] = (
     "prov_cta_cte_movimientos",
     "ordenes_pago",
     "orden_pago_formas_pago",
+    "caja_movimientos",
+    "cheques",
 )
 
 __all__ = [
     "Base",
     "TABLAS_TENANT",
+    "caja_models",
     "catalogo_models",
     "clientes_models",
     "compatibilidad_models",
