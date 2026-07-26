@@ -196,6 +196,14 @@ class AjusteCrear(BaseModel):
         return self
 
 
+class AnulacionCrear(BaseModel):
+    """Anular una orden de pago. Espejo de `ventas.AnulacionCrear`."""
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    motivo: str = Field(min_length=3, max_length=200)
+
+
 class AjusteResponse(BaseModel):
     movimiento_id: int
     proveedor_id: int

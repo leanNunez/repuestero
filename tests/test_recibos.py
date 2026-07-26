@@ -27,6 +27,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from app.caja import service as caja
 from app.clientes import service as clientes
 from app.core import db as core_db
 from app.core.config import get_settings
@@ -239,16 +240,14 @@ def test_un_cliente_inexistente_no_emite_recibo(sesion, org):
 # =========================================================================== recibo vs. ajuste
 
 
-def test_revertir_una_cobranza_no_borra_su_recibo(sesion, org):
-    """El recibo es papel entregado: se revierte el MOVIMIENTO, el documento queda vivo."""
+def test_anular_una_cobranza_no_borra_su_recibo(sesion, org):
+    """El recibo es papel entregado: se revierte su EFECTO, el documento queda vivo.
+
+    Sigue sin haber columna `anulado` en `recibos`, y no es un olvido: el estado queda DERIVADO de
+    que existe una reversa del movimiento que lo referencia. Una fila menos que desincronizar.
+    """
     cobranza = _cobrar(sesion, org, "1000")
-    service.registrar_ajuste(
-        sesion,
-        org.id,
-        cliente_id=org.cliente,
-        motivo="cobré de más",
-        revierte_movimiento_id=cobranza.movimiento.id,
-    )
+    service.anular_recibo(sesion, org.id, cobranza.recibo.id, motivo="cobré de más")
 
     assert service.obtener_recibo(sesion, org.id, cobranza.recibo.id) is not None
 
@@ -257,26 +256,33 @@ def test_la_reversa_apunta_al_movimiento_y_no_al_recibo(sesion, org):
     """Si apuntara al recibo, ids de dos tablas competirían en el mismo espacio del índice único
     parcial de la 0009 y el `anulado` del extracto se rompería EN SILENCIO."""
     cobranza = _cobrar(sesion, org, "1000")
-    reversa = service.registrar_ajuste(
-        sesion,
-        org.id,
-        cliente_id=org.cliente,
-        motivo="cobré de más",
-        revierte_movimiento_id=cobranza.movimiento.id,
-    )
+    reversa = service.anular_recibo(sesion, org.id, cobranza.recibo.id, motivo="cobré de más")
 
     assert (reversa.ref_tipo, reversa.ref_id) == ("ajuste_de", cobranza.movimiento.id)
 
 
-def test_una_cobranza_con_recibo_sigue_siendo_reversible(sesion, org):
-    """Sigue en MOVIMIENTOS_REVERSIBLES: el recibo todavía no tiene efectos fuera del ledger.
-    Cuando exista app/caja/ esto cambia, y está anotado al lado de la constante."""
+def test_una_cobranza_YA_NO_se_revierte_desde_el_extracto(sesion, org):
+    """El cambio que trajo `app/caja/`, hecho test.
+
+    Mientras el recibo no movía nada fuera del ledger, revertir el Haber cancelaba el 100% de su
+    efecto. Desde que mueve caja y cartera, revertir solo el ledger dejaría esas dos cosas vivas —
+    el pecado que este diseño existe para no repetir. La anulación correcta es `anular_recibo`.
+    """
     cobranza = _cobrar(sesion, org, "1000")
 
     filas, _ = service.movimientos_cliente(sesion, org.id, org.cliente, limite=100)
     fila = next(f for f in filas if f.id == cobranza.movimiento.id)
-    assert fila.reversible is True
+    assert fila.reversible is False
     assert fila.anulado is False
+
+    with pytest.raises(service.VentaInvalida, match="no se revierte desde la cuenta corriente"):
+        service.registrar_ajuste(
+            sesion,
+            org.id,
+            cliente_id=org.cliente,
+            motivo="por izquierda",
+            revierte_movimiento_id=cobranza.movimiento.id,
+        )
 
 
 def test_el_extracto_muestra_la_referencia_de_la_cobranza(sesion, org):
@@ -308,7 +314,10 @@ def test_una_cobranza_vieja_sin_recibo_sigue_leyendose(sesion, org):
     fila = next(f for f in filas if f.id == vieja.id)
     assert fila.ref_tipo is None
     assert fila.ref_id is None
-    assert fila.reversible is True  # se sigue pudiendo corregir con un ajuste
+    # Tampoco es reversible desde el extracto: 'cobranza' salió de MOVIMIENTOS_REVERSIBLES para
+    # TODAS, viejas incluidas. Estas no tienen recibo que anular, así que se corrigen con un
+    # ajuste MANUAL, que deja el motivo escrito.
+    assert fila.reversible is False
 
 
 # =========================================================================== lecturas
@@ -511,3 +520,119 @@ def test_colision_de_numeracion_da_409(cliente_http, monkeypatch):
         "/ventas/cobranzas", json={"cliente_codigo": "CLI-REC", "monto": "20"}
     )
     assert segunda.status_code == 409
+
+
+# =========================================================================== caja y cartera
+
+
+def test_un_cobro_en_efectivo_entra_a_la_caja(sesion, org):
+    """EL test de este PR. Antes el saldo del cliente bajaba y el dinero no aparecía en ningún
+    lado: la cobranza no tenía efecto fuera del ledger."""
+    antes = caja.saldo_efectivo(sesion, org.id)
+
+    _cobrar(sesion, org, "1000")
+
+    assert caja.saldo_efectivo(sesion, org.id) == antes + Decimal("1000")
+
+
+def test_un_pago_mixto_reparte_entre_caja_y_cartera(sesion, org):
+    """El caso que justifica que el detalle de formas sea 1:N, ahora con consecuencias.
+
+    5.000 en efectivo + 15.000 en cheque NO son 20.000 en el cajón: son 5.000 en el cajón y un
+    papel de 15.000 en la cartera. Confundirlos es exactamente el error que el módulo evita.
+    """
+    antes = caja.saldo_efectivo(sesion, org.id)
+
+    cobranza = _cobrar(
+        sesion,
+        org,
+        "20000",
+        formas_pago=[
+            service.FormaPago(EFECTIVO, Decimal("5000")),
+            service.FormaPago("cheque", Decimal("15000")),
+        ],
+    )
+
+    assert caja.saldo_efectivo(sesion, org.id) == antes + Decimal("5000")
+
+    cheques = caja.cheques_de_documento(
+        sesion, org.id, ref_tipo=service.REF_RECIBO, ref_id=cobranza.recibo.id
+    )
+    assert [(c.importe, c.origen, c.estado) for c in cheques] == [
+        (Decimal("15000.00"), "recibido", "en_cartera")
+    ]
+
+
+def test_los_movimientos_de_caja_referencian_al_recibo(sesion, org):
+    """Sin la referencia no habría forma de anular: la anulación busca por (ref_tipo, ref_id)."""
+    cobranza = _cobrar(sesion, org, "1000")
+
+    filas, _ = caja.movimientos(sesion, org.id)
+    del_recibo = [f for f in filas if f.ref_id == cobranza.recibo.id and f.ref_tipo == "recibo"]
+
+    assert len(del_recibo) == 1
+    assert del_recibo[0].concepto == "cobranza"
+    assert del_recibo[0].ingreso == Decimal("1000.00")
+
+
+def test_anular_revierte_las_tres_cosas_a_la_vez(sesion, org):
+    """La razón de que `anular_recibo` exista y de que 'cobranza' saliera de REVERSIBLES.
+
+    Revertir solo el ledger dejaría la caja con la plata y el cheque en la cartera: el sistema
+    diría que el cliente sigue debiendo Y que tenemos su dinero. Las tres reversas van juntas.
+    """
+    saldo_cta_antes = service.saldo_cliente(sesion, org.id, org.cliente)
+    caja_antes = caja.saldo_efectivo(sesion, org.id)
+
+    cobranza = _cobrar(
+        sesion,
+        org,
+        "20000",
+        formas_pago=[
+            service.FormaPago(EFECTIVO, Decimal("5000")),
+            service.FormaPago("cheque", Decimal("15000")),
+        ],
+    )
+    service.anular_recibo(sesion, org.id, cobranza.recibo.id, motivo="cargada dos veces")
+
+    assert service.saldo_cliente(sesion, org.id, org.cliente) == saldo_cta_antes
+    assert caja.saldo_efectivo(sesion, org.id) == caja_antes
+
+    cheques = caja.cheques_de_documento(
+        sesion, org.id, ref_tipo=service.REF_RECIBO, ref_id=cobranza.recibo.id
+    )
+    assert [c.estado for c in cheques] == ["anulado"]
+
+
+def test_no_se_puede_anular_si_el_cheque_ya_se_movio(sesion, org):
+    """La reja que evita que la cartera y el banco digan cosas distintas.
+
+    Si el cheque ya se depositó, el dinero siguió su camino fuera de este documento. Deshacerlo
+    desde acá dejaría la cartera limpia y el banco con un depósito que nadie explica.
+    """
+    cobranza = _cobrar(
+        sesion, org, "15000", formas_pago=[service.FormaPago("cheque", Decimal("15000"))]
+    )
+    cheques = caja.cheques_de_documento(
+        sesion, org.id, ref_tipo=service.REF_RECIBO, ref_id=cobranza.recibo.id
+    )
+    cheques[0].estado = "depositado"
+    sesion.flush()
+
+    with pytest.raises(service.VentaInvalida, match="cheques que ya se movieron"):
+        service.anular_recibo(sesion, org.id, cobranza.recibo.id, motivo="tarde")
+
+
+def test_anular_dos_veces_el_mismo_recibo_se_rechaza(sesion, org):
+    cobranza = _cobrar(sesion, org, "1000")
+    service.anular_recibo(sesion, org.id, cobranza.recibo.id, motivo="primera")
+
+    with pytest.raises(service.VentaInvalida, match="ya fue anulado"):
+        service.anular_recibo(sesion, org.id, cobranza.recibo.id, motivo="segunda")
+
+
+def test_la_anulacion_necesita_motivo(sesion, org):
+    cobranza = _cobrar(sesion, org, "1000")
+
+    with pytest.raises(service.VentaInvalida, match="necesita un motivo"):
+        service.anular_recibo(sesion, org.id, cobranza.recibo.id, motivo="   ")

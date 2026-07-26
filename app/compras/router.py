@@ -14,6 +14,7 @@ from app.compras import service
 from app.compras.schemas import (
     AjusteCrear,
     AjusteResponse,
+    AnulacionCrear,
     CompraCrear,
     CompraDetalle,
     CompraItemLeer,
@@ -248,6 +249,43 @@ def listar_movimientos_proveedor(
             nombre=proveedor.razon_social,
             saldo=service.saldo_proveedor(tenant.session, tenant.org_id, proveedor_id),
         ),
+    )
+
+
+@router.post("/ordenes-pago/{orden_id}/anular", response_model=AjusteResponse)
+def anular_orden_pago(
+    orden_id: int,
+    body: AnulacionCrear,
+    tenant: TenantContext = Depends(get_tenant),
+) -> AjusteResponse:
+    """Anula una orden de pago: revierte cuenta corriente, caja y cartera en UNA transacción.
+
+    Espejo de `POST /ventas/recibos/{id}/anular`.
+    """
+    try:
+        reversa = service.anular_orden_pago(
+            tenant.session,
+            tenant.org_id,
+            orden_id,
+            motivo=body.motivo,
+            usuario_id=tenant.user_id,
+        )
+    except service.CompraInvalida as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from None
+    except IntegrityError:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Esa orden de pago ya fue anulada."
+        ) from None
+    except Exception:  # noqa: BLE001 — nunca filtrar internals (skill web-security)
+        logger.exception("Error en POST /compras/ordenes-pago/%s/anular", orden_id)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, "No pude anular la orden de pago."
+        ) from None
+
+    return AjusteResponse(
+        movimiento_id=reversa.id,
+        proveedor_id=reversa.proveedor_id,
+        saldo=service.saldo_proveedor(tenant.session, tenant.org_id, reversa.proveedor_id),
     )
 
 

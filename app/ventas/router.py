@@ -16,6 +16,7 @@ from app.ventas import service
 from app.ventas.schemas import (
     AjusteCrear,
     AjusteResponse,
+    AnulacionCrear,
     CobranzaCrear,
     CobranzaResponse,
     CuentaLeer,
@@ -232,6 +233,46 @@ def listar_movimientos_cliente(
             saldo=service.saldo_cliente(tenant.session, tenant.org_id, cliente_id),
             limite=cliente.limite_cta_cte,
         ),
+    )
+
+
+@router.post("/recibos/{recibo_id}/anular", response_model=AjusteResponse)
+def anular_recibo(
+    recibo_id: int,
+    body: AnulacionCrear,
+    tenant: TenantContext = Depends(get_tenant),
+) -> AjusteResponse:
+    """Anula un recibo: revierte cuenta corriente, caja y cartera en UNA transacción.
+
+    Reemplaza a "revertir la cobranza" desde el extracto, que dejó de alcanzar cuando el recibo
+    empezó a mover plata fuera del ledger. Ver `service.anular_recibo`.
+    """
+    try:
+        reversa = service.anular_recibo(
+            tenant.session,
+            tenant.org_id,
+            recibo_id,
+            motivo=body.motivo,
+            usuario_id=tenant.user_id,
+        )
+    except service.VentaInvalida as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, str(exc)) from None
+    except IntegrityError:
+        # El índice único parcial de la 0009 atajó una doble anulación simultánea: el chequeo del
+        # service pasó y otra transacción se metió en el medio.
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY, "Ese recibo ya fue anulado."
+        ) from None
+    except Exception:  # noqa: BLE001 — nunca filtrar internals (skill web-security)
+        logger.exception("Error en POST /ventas/recibos/%s/anular", recibo_id)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR, "No pude anular el recibo."
+        ) from None
+
+    return AjusteResponse(
+        movimiento_id=reversa.id,
+        cliente_id=reversa.cliente_id,
+        saldo=service.saldo_cliente(tenant.session, tenant.org_id, reversa.cliente_id),
     )
 
 

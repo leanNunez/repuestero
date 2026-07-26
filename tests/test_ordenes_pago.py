@@ -20,6 +20,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 
+from app.caja import service as caja
 from app.compras import service as compras
 from app.compras.models import OrdenPago, OrdenPagoFormaPago, ProvCtaCteMovimiento
 from app.core import db as core_db
@@ -223,28 +224,16 @@ def test_un_proveedor_inexistente_no_emite_orden(sesion, org):
 # =========================================================================== orden vs. ajuste
 
 
-def test_revertir_un_pago_no_borra_su_orden(sesion, org):
+def test_anular_un_pago_no_borra_su_orden(sesion, org):
     pago = _pagar(sesion, org, "1000")
-    compras.registrar_ajuste(
-        sesion,
-        org.id,
-        proveedor_id=org.proveedor,
-        motivo="pagué de más",
-        revierte_movimiento_id=pago.movimiento.id,
-    )
+    compras.anular_orden_pago(sesion, org.id, pago.orden.id, motivo="pagué de más")
 
     assert compras.obtener_orden_pago(sesion, org.id, pago.orden.id) is not None
 
 
 def test_la_reversa_apunta_al_movimiento_y_no_a_la_orden(sesion, org):
     pago = _pagar(sesion, org, "1000")
-    reversa = compras.registrar_ajuste(
-        sesion,
-        org.id,
-        proveedor_id=org.proveedor,
-        motivo="pagué de más",
-        revierte_movimiento_id=pago.movimiento.id,
-    )
+    reversa = compras.anular_orden_pago(sesion, org.id, pago.orden.id, motivo="pagué de más")
 
     assert (reversa.ref_tipo, reversa.ref_id) == ("ajuste_de", pago.movimiento.id)
 
@@ -273,7 +262,9 @@ def test_un_pago_viejo_sin_orden_sigue_leyendose(sesion, org):
     filas, _ = compras.movimientos_proveedor(sesion, org.id, org.proveedor, limite=100)
     fila = next(f for f in filas if f.id == viejo.id)
     assert fila.ref_tipo is None
-    assert fila.reversible is True
+    # Espejo de la nota en `test_recibos`: 'pago' salió de MOVIMIENTOS_REVERSIBLES para todos,
+    # viejos incluidos. Estos no tienen orden que anular y se corrigen con un ajuste MANUAL.
+    assert fila.reversible is False
 
 
 # =========================================================================== lecturas
@@ -465,3 +456,55 @@ def test_colision_de_numeracion_da_409(cliente_http, monkeypatch):
         "/compras/pagos", json={"proveedor_codigo": "PROV-OP", "monto": "20"}
     )
     assert segunda.status_code == 409
+
+
+# =========================================================================== caja y cartera
+
+
+def test_un_pago_en_efectivo_SALE_de_la_caja(sesion, org):
+    """Espejo del lado clientes, con el signo al revés: acá la plata se va del cajón."""
+    antes = caja.saldo_efectivo(sesion, org.id)
+
+    _pagar(sesion, org, "1000")
+
+    assert caja.saldo_efectivo(sesion, org.id) == antes - Decimal("1000")
+
+
+def test_el_cheque_que_firmamos_entra_a_la_cartera_como_EMITIDO(sesion, org):
+    """El `origen` no lo elige el caller: lo deduce el service del sentido del dinero.
+
+    Si sale plata, el cheque lo firmamos nosotros. Preguntárselo al caller sería darle la
+    oportunidad de contradecir algo que ya dijo al elegir el concepto.
+    """
+    pago = _pagar(sesion, org, "15000", formas_pago=[compras.FormaPago("cheque", Decimal("15000"))])
+
+    cheques = caja.cheques_de_documento(
+        sesion, org.id, ref_tipo=compras.REF_ORDEN_PAGO, ref_id=pago.orden.id
+    )
+    assert [(c.importe, c.origen, c.estado) for c in cheques] == [
+        (Decimal("15000.00"), "emitido", "en_cartera")
+    ]
+
+
+def test_anular_la_orden_revierte_las_tres_cosas(sesion, org):
+    saldo_antes = compras.saldo_proveedor(sesion, org.id, org.proveedor)
+    caja_antes = caja.saldo_efectivo(sesion, org.id)
+
+    pago = _pagar(
+        sesion,
+        org,
+        "20000",
+        formas_pago=[
+            compras.FormaPago(EFECTIVO, Decimal("5000")),
+            compras.FormaPago("cheque", Decimal("15000")),
+        ],
+    )
+    compras.anular_orden_pago(sesion, org.id, pago.orden.id, motivo="pagado dos veces")
+
+    assert compras.saldo_proveedor(sesion, org.id, org.proveedor) == saldo_antes
+    assert caja.saldo_efectivo(sesion, org.id) == caja_antes
+
+    cheques = caja.cheques_de_documento(
+        sesion, org.id, ref_tipo=compras.REF_ORDEN_PAGO, ref_id=pago.orden.id
+    )
+    assert [c.estado for c in cheques] == ["anulado"]

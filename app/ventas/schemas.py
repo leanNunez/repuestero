@@ -218,6 +218,20 @@ class AjusteCrear(BaseModel):
         return self
 
 
+class AnulacionCrear(BaseModel):
+    """Anular un recibo. Solo lleva el motivo: el importe lo calcula el sistema desde el documento.
+
+    Es lo que reemplazó a "revertir la cobranza" desde el extracto, porque un recibo dejó de tener
+    un solo efecto. Ver `service.anular_recibo`.
+    """
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    #: Obligatorio, igual que en un ajuste: una anulación sin motivo es una fila que en seis meses
+    #: nadie puede explicar.
+    motivo: str = Field(min_length=3, max_length=200)
+
+
 class AjusteResponse(BaseModel):
     movimiento_id: int
     cliente_id: int

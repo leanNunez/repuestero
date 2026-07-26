@@ -7,21 +7,35 @@ Este PR cubre la CARGA MANUAL. La derivación desde el recibo y la orden de pago
 siguiente, y con ella sale `'cobranza'` de `MOVIMIENTOS_REVERSIBLES`.
 """
 
+from collections.abc import Sequence
 from datetime import date
 from decimal import Decimal
-from typing import Any
+from typing import Any, NamedTuple
 from uuid import UUID
 
 from sqlalchemy import Row, func, select
 from sqlalchemy.orm import Session
 
-from app.caja.models import CajaMovimiento, CajaSaldo
+from app.caja.models import CajaMovimiento, CajaSaldo, Cheque
 from app.core.conceptos_caja import CONCEPTOS_DERIVADOS, CONCEPTOS_MANUALES, es_ingreso
 from app.core.formas_pago import FORMAS_PAGO
+
+#: Estado inicial de un cheque que entra a la cartera.
+EN_CARTERA = "en_cartera"
+
+#: Estado terminal de un cheque cuyo documento se dio de baja.
+ANULADO = "anulado"
 
 
 class CajaInvalida(ValueError):
     """Error de negocio de caja. El router lo traduce a 422."""
+
+
+class Asiento(NamedTuple):
+    """Lo que un documento dejó escrito en caja: sus movimientos y los cheques que generó."""
+
+    movimientos: list[CajaMovimiento]
+    cheques: list[Cheque]
 
 
 def registrar_movimiento(
@@ -85,6 +99,160 @@ def registrar_movimiento(
     session.add(movimiento)
     session.flush()
     return movimiento
+
+
+def asentar_documento(
+    session: Session,
+    org_id: UUID,
+    *,
+    concepto: str,
+    ref_tipo: str,
+    ref_id: int,
+    formas: Sequence[tuple[str, Decimal]],
+    fecha: date | None = None,
+    usuario_id: UUID | None = None,
+) -> Asiento:
+    """Escribe en caja lo que un documento movió. UN movimiento por forma de pago.
+
+    Es el otro lado de `registrar_movimiento`: acá el concepto TIENE que ser derivado, porque
+    estas filas las emite el sistema y llevan la referencia al documento que las causó. Las dos
+    funciones son la misma reja mirada desde cada lado.
+
+    Un renglón `'cheque'` genera además su fila en la CARTERA. Es lo que
+    `app/core/formas_pago.py:12-15` dejó anotado desde que existe el recibo: "cada renglón de
+    forma de pago se convierte en un cheque de la cartera. Esa es la razón de que el detalle sea
+    1:N y no una columna: un recibo puede cancelarse con dos cheques distintos".
+
+    El cheque nace con el importe y la referencia, y SIN banco ni número: un renglón de forma de
+    pago no los trae. Completarlos es tarea de la pantalla de cartera.
+
+    `formas` viaja como tuplas `(forma, monto)` y no como el `FormaPago` de ventas a propósito:
+    caja no conoce los tipos de ventas ni de compras — si los importara, el módulo de más abajo
+    dependería de los de más arriba y la dependencia quedaría al revés.
+    """
+    if concepto not in CONCEPTOS_DERIVADOS:
+        raise CajaInvalida(
+            f"El concepto {concepto!r} no lo emite un documento; se carga a mano con "
+            "`registrar_movimiento`."
+        )
+    if not formas:
+        raise CajaInvalida("Un documento sin formas de pago no mueve caja.")
+
+    entra = es_ingreso(concepto)
+    movimientos: list[CajaMovimiento] = []
+    cheques: list[Cheque] = []
+
+    for forma, monto in formas:
+        if monto <= 0:
+            raise CajaInvalida("El monto de cada forma de pago debe ser mayor a cero.")
+
+        movimiento = CajaMovimiento(
+            org_id=org_id,
+            concepto=concepto,
+            forma=forma,
+            ingreso=monto if entra else Decimal("0"),
+            egreso=Decimal("0") if entra else monto,
+            ref_tipo=ref_tipo,
+            ref_id=ref_id,
+            creado_por=usuario_id,
+        )
+        if fecha is not None:
+            movimiento.fecha = fecha
+        session.add(movimiento)
+        movimientos.append(movimiento)
+
+        if forma == "cheque":
+            cheque = Cheque(
+                org_id=org_id,
+                # Si entra plata, el cheque me lo dieron; si sale, lo firmé yo. No hace falta que
+                # el caller lo diga: ya lo dijo eligiendo el concepto.
+                origen="recibido" if entra else "emitido",
+                importe=monto,
+                estado=EN_CARTERA,
+                ref_tipo=ref_tipo,
+                ref_id=ref_id,
+                creado_por=usuario_id,
+            )
+            session.add(cheque)
+            cheques.append(cheque)
+
+    session.flush()
+    return Asiento(movimientos=movimientos, cheques=cheques)
+
+
+def cheques_de_documento(
+    session: Session, org_id: UUID, *, ref_tipo: str, ref_id: int
+) -> list[Cheque]:
+    """Los cheques que generó un documento, en el orden en que se cargaron."""
+    return list(
+        session.scalars(
+            select(Cheque)
+            .where(Cheque.org_id == org_id, Cheque.ref_tipo == ref_tipo, Cheque.ref_id == ref_id)
+            .order_by(Cheque.id)
+        )
+    )
+
+
+def revertir_documento(
+    session: Session,
+    org_id: UUID,
+    *,
+    concepto: str,
+    ref_tipo: str,
+    ref_id: int,
+    usuario_id: UUID | None = None,
+) -> Asiento:
+    """Deshace en caja lo que un documento había movido, y saca sus cheques de la cartera.
+
+    No edita nada: escribe el movimiento CONTRARIO por cada uno de los originales, que es como se
+    corrige un libro append-only. El saldo vuelve a donde estaba porque la suma se cancela, no
+    porque alguien haya borrado una fila.
+
+    **Un cheque que ya se movió bloquea la anulación.** Si se depositó, se cobró o se entregó, el
+    dinero ya siguió su camino fuera de este documento y deshacerlo desde acá dejaría la cartera
+    diciendo una cosa y el banco otra. Ese caso se resuelve con el flujo del cheque (rechazo,
+    devolución), no anulando el papel que lo trajo.
+    """
+    originales = list(
+        session.scalars(
+            select(CajaMovimiento).where(
+                CajaMovimiento.org_id == org_id,
+                CajaMovimiento.ref_tipo == ref_tipo,
+                CajaMovimiento.ref_id == ref_id,
+            )
+        )
+    )
+
+    cheques = cheques_de_documento(session, org_id, ref_tipo=ref_tipo, ref_id=ref_id)
+    movidos = [c for c in cheques if c.estado != EN_CARTERA]
+    if movidos:
+        estados = ", ".join(sorted({c.estado for c in movidos}))
+        raise CajaInvalida(
+            f"No se puede anular: el documento tiene cheques que ya se movieron ({estados}). "
+            "Resolvelo desde la cartera."
+        )
+
+    contrarios: list[CajaMovimiento] = []
+    for original in originales:
+        contrario = CajaMovimiento(
+            org_id=org_id,
+            concepto=concepto,
+            forma=original.forma,
+            # El espejo: lo que entró vuelve a salir y al revés.
+            ingreso=original.egreso,
+            egreso=original.ingreso,
+            ref_tipo=ref_tipo,
+            ref_id=ref_id,
+            creado_por=usuario_id,
+        )
+        session.add(contrario)
+        contrarios.append(contrario)
+
+    for cheque in cheques:
+        cheque.estado = ANULADO
+
+    session.flush()
+    return Asiento(movimientos=contrarios, cheques=cheques)
 
 
 def saldo_por_forma(session: Session, org_id: UUID) -> dict[str, Decimal]:
