@@ -56,10 +56,17 @@ APP_ROLE = "app_user"
 FORMAS_PAGO = ("efectivo", "cheque", "transferencia", "tarjeta")
 
 #: Copia CONGELADA de `app.core.conceptos_caja`. Mismo criterio que arriba.
-CONCEPTOS_INGRESO = ("cobranza", "cheque_cobrado", "aporte", "otro_ingreso")
+CONCEPTOS_INGRESO = (
+    "cobranza",
+    "cheque_cobrado",
+    "anulacion_pago",  # anular una orden de pago devuelve la plata al cajón
+    "aporte",
+    "otro_ingreso",
+)
 CONCEPTOS_EGRESO = (
     "pago_proveedor",
     "cheque_rechazado",
+    "anulacion_cobranza",  # anular un recibo saca del cajón lo que había entrado
     "gasto",
     "retiro",
     "otro_egreso",
@@ -68,7 +75,16 @@ CONCEPTOS_EGRESO = (
 #: Ciclo de vida del papel. Las transiciones válidas las impone el service (0011 solo acota el
 #: vocabulario): un CHECK no puede mirar el estado anterior sin un trigger, y la máquina de
 #: estados es política de dominio, no del esquema.
-ESTADOS_CHEQUE = ("en_cartera", "depositado", "cobrado", "rechazado", "entregado")
+ESTADOS_CHEQUE = (
+    "en_cartera",
+    "depositado",
+    "cobrado",
+    "rechazado",
+    "entregado",
+    #: El documento que lo trajo fue anulado. Terminal: el papel vuelve a quien lo firmó. No es
+    #: `rechazado` (eso lo decide el banco, no nosotros) ni `entregado` (eso va a un proveedor).
+    "anulado",
+)
 ORIGENES_CHEQUE = ("recibido", "emitido")
 
 

@@ -96,9 +96,13 @@ class Cheque(Base, OrgMixin):
     #: 'recibido' (me lo dio un cliente) | 'emitido' (lo firmé yo, va a un proveedor)
     origen: Mapped[str] = mapped_column(String(10))
     importe: Mapped[Money2]
-    #: 'en_cartera' | 'depositado' | 'cobrado' | 'rechazado' | 'entregado'. Las transiciones
-    #: VÁLIDAS las impone el service: un CHECK no puede mirar el estado anterior sin un trigger,
-    #: y la máquina de estados es política de dominio, no del esquema.
+    #: 'en_cartera' | 'depositado' | 'cobrado' | 'rechazado' | 'entregado' | 'anulado'. Las
+    #: transiciones VÁLIDAS las impone el service: un CHECK no puede mirar el estado anterior sin
+    #: un trigger, y la máquina de estados es política de dominio, no del esquema.
+    #:
+    #: `anulado` es terminal y distinto de los otros dos finales a propósito: `rechazado` lo
+    #: decide el banco y `entregado` va a un proveedor, mientras que `anulado` significa "el
+    #: documento que lo trajo se dio de baja y el papel vuelve a quien lo firmó".
     estado: Mapped[str] = mapped_column(String(15), server_default="en_cartera")
     banco: Mapped[str | None] = mapped_column(String(80))
     numero: Mapped[str | None] = mapped_column(String(40))

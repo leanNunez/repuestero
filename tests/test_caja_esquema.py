@@ -285,6 +285,21 @@ def test_un_cheque_conciliado_necesita_fecha_de_conciliacion(sesion, org):
         _cheque(sesion, org, conciliado=True, fecha_conciliacion=None)
 
 
+@pytest.mark.parametrize(
+    "estado", ["en_cartera", "depositado", "cobrado", "rechazado", "entregado", "anulado"]
+)
+def test_el_check_acepta_todos_los_estados_del_ciclo_de_vida(sesion, org, estado):
+    """El candado del vocabulario de estados, igual que el de conceptos y formas.
+
+    `anulado` está desde el día uno aunque su código llegue con la anulación del recibo: es el
+    estado terminal de un cheque cuyo documento se dio de baja, y agregarlo al CHECK después
+    sería otra migración por algo que ya sabíamos.
+    """
+    c = _cheque(sesion, org, estado=estado)
+
+    assert sesion.scalar(select(Cheque.estado).where(Cheque.id == c.id)) == estado
+
+
 def test_un_cheque_nace_en_cartera(sesion, org):
     """El default del esquema: quien lo inserta no tiene que acordarse del estado inicial."""
     c = _cheque(sesion, org)
