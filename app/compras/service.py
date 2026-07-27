@@ -243,10 +243,18 @@ class FormaPago(NamedTuple):
 
 
 class Pago(NamedTuple):
-    """Lo que deja un pago: el documento y su asiento. Espejo de `ventas.Cobranza`."""
+    """Lo que deja un pago: el documento, su asiento, y lo que hay que mirar.
+
+    Espejo de `ventas.Cobranza`, con una diferencia: un pago SACA plata, así que puede dejar la caja
+    en negativo. `advertencias` es ese aviso — no bloquea nada, el pago ya está escrito.
+    """
 
     orden: OrdenPago
     movimiento: ProvCtaCteMovimiento
+    #: Sin default a propósito: un `= []` en un NamedTuple es UNA sola lista compartida por todas
+    #: las instancias, y basta que alguien le haga `.append` para que el próximo pago herede
+    #: advertencias que no son suyas.
+    advertencias: list[str]
 
 
 def _validar_formas(formas: Sequence[FormaPago], total: Decimal) -> None:
@@ -353,7 +361,16 @@ def registrar_pago(
     )
 
     session.flush()
-    return Pago(orden=orden, movimiento=movimiento)
+    # Un pago SACA plata, así que puede dejar la caja en negativo. Se ADVIERTE, no se bloquea: sin
+    # roles ni override, frenar el pago deja el mostrador parado y la operación termina ocurriendo
+    # fuera del sistema, que es peor. Solo las formas que este pago tocó.
+    return Pago(
+        orden=orden,
+        movimiento=movimiento,
+        advertencias=caja.advertencias_de_saldo(
+            session, org_id, formas=[f.forma for f in formas_pago]
+        ),
+    )
 
 
 def anular_orden_pago(

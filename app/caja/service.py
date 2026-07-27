@@ -15,7 +15,7 @@ Tres caminos escriben acá, y la diferencia importa:
 El invariante que los separa: **si hay documento, caja no se toca a mano**.
 """
 
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from datetime import date
 from decimal import Decimal
 from typing import Any, NamedTuple
@@ -580,6 +580,49 @@ def saldo_por_forma(session: Session, org_id: UUID) -> dict[str, Decimal]:
     for forma, saldo in filas:
         saldos[forma] = saldo
     return saldos
+
+
+#: Cómo se nombra cada forma cuando se le habla a una persona. `efectivo` es "el efectivo" y no
+#: "el cajón" porque es la palabra que usa el resto de la UI.
+_NOMBRE_FORMA = {
+    "efectivo": "El efectivo",
+    "cheque": "La cartera de cheques",
+    "transferencia": "El saldo por transferencias",
+    "tarjeta": "El saldo por tarjeta",
+}
+
+
+def advertencias_de_saldo(
+    session: Session, org_id: UUID, *, formas: Iterable[str] | None = None
+) -> list[str]:
+    """Un mensaje por cada forma cuyo saldo quedó en NEGATIVO. Advierte; no bloquea.
+
+    Un saldo negativo es **físicamente imposible**: si el cajón dice −8.500, nadie sacó plata que no
+    estaba — alguien cargó mal, o falta cargar un ingreso. Es información valiosa y por eso se dice.
+
+    ## Por qué advertir y no bloquear
+
+    Misma razón que el límite de crédito: **no hay roles ni mecanismo de override**. Un bloqueo duro
+    deja el mostrador parado cuando el que puede autorizar no está, y el resultado real de eso no es
+    que la operación no ocurra — es que ocurre fuera del sistema, que es peor. Cuando existan roles
+    (Fase 3) se puede revisar.
+
+    Que no bloquee es parte del contrato: **el movimiento se escribe igual**, y el caller decide qué
+    hacer con el texto. Nunca lanza.
+
+    `formas` acota el chequeo a las que la operación tocó, para no avisar de un negativo viejo que
+    no tiene nada que ver con lo que la persona acaba de hacer. Sin argumento revisa todas, que es
+    lo que sirve para una pantalla.
+    """
+    saldos = saldo_por_forma(session, org_id)
+    a_revisar = sorted(set(formas)) if formas is not None else sorted(saldos)
+
+    return [
+        f"{_NOMBRE_FORMA.get(forma, forma)} quedó en {saldos[forma]:,.2f}. "
+        "Un saldo negativo no puede pasar en la realidad: revisá si falta cargar un ingreso."
+        for forma in a_revisar
+        if saldos.get(forma, Decimal("0")) < 0
+    ]
 
 
 def saldo_efectivo(session: Session, org_id: UUID) -> Decimal:
