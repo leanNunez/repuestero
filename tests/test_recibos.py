@@ -318,6 +318,55 @@ def test_una_cobranza_vieja_sin_recibo_sigue_leyendose(sesion, org):
     # TODAS, viejas incluidas. Estas no tienen recibo que anular, así que se corrigen con un
     # ajuste MANUAL, que deja el motivo escrito.
     assert fila.reversible is False
+    # Y tampoco anulable: sin recibo detrás no hay documento que dar de baja. La pantalla no le
+    # ofrece a nadie un botón que iba a fallar.
+    assert fila.anulable is False
+
+
+# =========================================================================== el botón Anular
+
+
+def test_la_cobranza_llega_marcada_como_anulable(sesion, org):
+    """La pregunta "¿puedo apretar Anular en esta fila?", resuelta en el SQL y no en el front.
+
+    Va calculada por la misma razón que `reversible`: si el front la dedujera de `ref_tipo`, la
+    regla viviría en dos lugares y el botón terminaría ofreciendo lo que el service rechaza.
+    """
+    cobranza = _cobrar(sesion, org, "1000")
+
+    filas, _ = service.movimientos_cliente(sesion, org.id, org.cliente, limite=100)
+    fila = next(f for f in filas if f.id == cobranza.movimiento.id)
+
+    assert fila.anulable is True
+    # El id del RECIBO viaja en `ref_id`: es lo que el front necesita para armar la URL.
+    assert fila.ref_id == cobranza.recibo.id
+
+
+def test_un_recibo_ya_anulado_no_vuelve_a_ser_anulable(sesion, org):
+    """La misma condición que chequea `anular_recibo`, así que el botón desaparece justo cuando la
+    operación empezaría a fallar."""
+    cobranza = _cobrar(sesion, org, "1000")
+    service.anular_recibo(sesion, org.id, cobranza.recibo.id, motivo="me equivoqué de cliente")
+
+    filas, _ = service.movimientos_cliente(sesion, org.id, org.cliente, limite=100)
+    fila = next(f for f in filas if f.id == cobranza.movimiento.id)
+
+    assert fila.anulable is False
+    assert fila.anulado is True
+
+
+def test_un_ajuste_es_reversible_pero_NO_anulable(sesion, org):
+    """Las dos banderas son excluyentes por construcción, y por eso la tabla nunca tiene que
+    combinarlas: un ajuste no tiene documento detrás que dar de baja."""
+    ajuste = service.registrar_ajuste(
+        sesion, org.id, cliente_id=org.cliente, motivo="diferencia de redondeo", debe=Decimal("10")
+    )
+
+    filas, _ = service.movimientos_cliente(sesion, org.id, org.cliente, limite=100)
+    fila = next(f for f in filas if f.id == ajuste.id)
+
+    assert fila.reversible is True
+    assert fila.anulable is False
 
 
 # =========================================================================== lecturas

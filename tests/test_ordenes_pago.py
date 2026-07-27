@@ -265,6 +265,39 @@ def test_un_pago_viejo_sin_orden_sigue_leyendose(sesion, org):
     # Espejo de la nota en `test_recibos`: 'pago' salió de MOVIMIENTOS_REVERSIBLES para todos,
     # viejos incluidos. Estos no tienen orden que anular y se corrigen con un ajuste MANUAL.
     assert fila.reversible is False
+    # `False` y no `None`: en SQL `NULL = 'orden_pago'` da NULL, y sin el `coalesce` del service
+    # esta fila viajaría con `anulable = None` y Pydantic —que lo declara `bool`— respondería 500 al
+    # abrir el extracto de un proveedor con un pago viejo. Este assert es el que lo caza.
+    assert fila.anulable is False
+
+
+# =========================================================================== el botón Anular
+
+
+def test_el_pago_llega_marcado_como_anulable(sesion, org):
+    """Espejo de `test_recibos.test_la_cobranza_llega_marcada_como_anulable`.
+
+    Ventas y compras son gemelos: lo que se agrega en uno se agrega en el otro. Que este test
+    faltara fue exactamente el bug del PR #47.
+    """
+    pago = _pagar(sesion, org, "1000")
+
+    filas, _ = compras.movimientos_proveedor(sesion, org.id, org.proveedor, limite=100)
+    fila = next(f for f in filas if f.id == pago.movimiento.id)
+
+    assert fila.anulable is True
+    assert fila.ref_id == pago.orden.id
+
+
+def test_una_orden_ya_anulada_no_vuelve_a_ser_anulable(sesion, org):
+    pago = _pagar(sesion, org, "1000")
+    compras.anular_orden_pago(sesion, org.id, pago.orden.id, motivo="pagué de más")
+
+    filas, _ = compras.movimientos_proveedor(sesion, org.id, org.proveedor, limite=100)
+    fila = next(f for f in filas if f.id == pago.movimiento.id)
+
+    assert fila.anulable is False
+    assert fila.anulado is True
 
 
 # =========================================================================== lecturas

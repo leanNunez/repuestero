@@ -107,6 +107,31 @@ export function useImputar(tab: Solapa) {
   });
 }
 
+/** Anular el DOCUMENTO (recibo u orden de pago), no el movimiento del ledger.
+ *
+ * Es lo que reemplazó a "Revertir" en las cobranzas y los pagos. La diferencia no es de nombre:
+ * revertir tocaba solo la cuenta corriente y dejaba vivos el ingreso de caja y el cheque que ese
+ * recibo había generado. Anular revierte las tres cosas en UNA transacción del lado del servidor.
+ *
+ * Por eso invalida también `["caja"]`: el saldo del cajón y la cartera cambiaron. */
+export function useAnularDocumento(tab: Solapa) {
+  const qc = useQueryClient();
+  const ruta = tab === "clientes" ? "/ventas/recibos" : "/compras/ordenes-pago";
+
+  return useMutation<AjusteResponse, Error, { documentoId: number; motivo: string }>({
+    mutationFn: ({ documentoId, motivo }) =>
+      apiPost(`${ruta}/${documentoId}/anular`, { motivo }, ajusteResponseSchema),
+    // Sin retry: un 422 acá es "ese recibo ya fue anulado", y reintentarlo a ciegas es justo lo que
+    // el índice único parcial de la 0009 previene del lado de la base.
+    retry: false,
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ["cuenta-corriente"] });
+      void qc.invalidateQueries({ queryKey: ["caja"] });
+      void qc.invalidateQueries({ queryKey: ["dashboard"] });
+    },
+  });
+}
+
 /** Ajuste de cuenta corriente: reversa de un movimiento, o corrección manual.
  *
  * El ledger es append-only, así que esto es lo ÚNICO que puede arreglar una cobranza mal cargada.

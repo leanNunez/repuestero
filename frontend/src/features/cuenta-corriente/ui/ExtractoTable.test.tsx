@@ -19,6 +19,7 @@ function mov(over: Partial<Movimiento> = {}): Movimiento {
     anulado: false,
     // Una venta no es reversible; el backend lo resuelve y la tabla solo lee este flag.
     reversible: false,
+    anulable: false,
     // Por defecto se cargó el mismo día en que pasó, que es el caso normal.
     creado_en: "2026-03-20T14:32:00Z",
     saldo_acumulado: "1200.00",
@@ -34,6 +35,7 @@ function pintar(movimientos: Movimiento[] | undefined, over = {}) {
       isError={false}
       onRetry={vi.fn()}
       onRevertir={vi.fn()}
+      onAnular={vi.fn()}
       {...over}
     />,
   );
@@ -128,6 +130,55 @@ describe("ExtractoTable", () => {
       // Es el caso de una venta: espeja un comprobante y se corrige con una nota de crédito.
       pintar([mov({ tipo: "venta", reversible: false })]);
       expect(screen.queryByRole("button", { name: /Revertir/ })).toBeNull();
+    });
+  });
+
+  describe("anular", () => {
+    // Mismo criterio que `reversible`: la tabla NO decide qué se puede anular. Lee `anulable`, que
+    // el backend calcula con la MISMA condición que chequea `anular_recibo`.
+
+    it("ofrece anular la cobranza y avisa cuál es", async () => {
+      const onAnular = vi.fn();
+      const cobranza = mov({
+        id: 7,
+        tipo: "cobranza",
+        debe: "0.00",
+        haber: "300.00",
+        ref_tipo: "recibo",
+        ref_id: 12,
+        reversible: false,
+        anulable: true,
+      });
+      pintar([cobranza], { onAnular });
+
+      await userEvent.click(screen.getByRole("button", { name: /Anular recibo #12/ }));
+
+      expect(onAnular).toHaveBeenCalledWith(cobranza);
+    });
+
+    it("una cobranza NO ofrece Revertir: eso lo reemplazó Anular", () => {
+      // Revertir tocaba solo el ledger y dejaba vivos el ingreso de caja y el cheque. El backend
+      // sacó 'cobranza' de MOVIMIENTOS_REVERSIBLES justo por eso.
+      pintar([mov({ tipo: "cobranza", reversible: false, anulable: true })]);
+
+      expect(screen.queryByRole("button", { name: /Revertir/ })).toBeNull();
+      expect(screen.getByRole("button", { name: /Anular/ })).toBeInTheDocument();
+    });
+
+    it("un ajuste ofrece Revertir y NO Anular: no tiene documento detrás", () => {
+      pintar([mov({ tipo: "ajuste", reversible: true, anulable: false })]);
+
+      expect(screen.getByRole("button", { name: /Revertir/ })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Anular/ })).toBeNull();
+    });
+
+    it("un recibo ya anulado no se anula de nuevo", () => {
+      // El backend manda `anulable: false` en ese caso, y el índice único parcial de la 0009 lo
+      // rechazaría igual si alguien insistiera.
+      pintar([mov({ tipo: "cobranza", anulado: true, reversible: false, anulable: false })]);
+
+      expect(screen.queryByRole("button", { name: /Anular/ })).toBeNull();
+      expect(screen.getByText("Anulado")).toBeInTheDocument();
     });
 
     it("un movimiento anulado muestra el estado en vez del botón", () => {

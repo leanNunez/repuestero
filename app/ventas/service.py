@@ -761,6 +761,23 @@ def movimientos_cliente(
         ~ya_revertido,
     ).label("reversible")
 
+    # La otra pregunta: "¿puedo apretar ANULAR en esta fila?". Es la que reemplazó a Revertir en las
+    # cobranzas cuando el recibo empezó a mover plata fuera del ledger.
+    #
+    # La condición es la MISMA que chequea `anular_recibo` (hay un movimiento que apunta al recibo,
+    # y todavía no fue revertido), y eso es a propósito: si el botón apareciera con otro criterio,
+    # la pantalla ofrecería una operación que el service rechaza. `ref_id` ya viaja en la fila, así
+    # que el front tiene el id del recibo para armar la URL sin adivinar nada.
+    #
+    # El `coalesce` NO es decorativo: `ref_tipo` es NULLABLE (las cobranzas anteriores a la 0010 no
+    # tienen documento), y en SQL `NULL = 'recibo'` da NULL, no false. Sin esto la fila viaja con
+    # `anulable = None` y Pydantic —que lo declara `bool`— explota con un 500 en cuanto alguien abre
+    # el extracto de un cliente con una cobranza vieja. `reversible` no lo necesita porque `tipo` es
+    # NOT NULL.
+    anulable = func.coalesce(
+        and_(CtaCteMovimiento.ref_tipo == REF_RECIBO, ~ya_revertido), False
+    ).label("anulable")
+
     filtros = (CtaCteMovimiento.org_id == org_id, CtaCteMovimiento.cliente_id == cliente_id)
 
     total = session.scalar(select(func.count()).select_from(CtaCteMovimiento).where(*filtros)) or 0
@@ -786,6 +803,7 @@ def movimientos_cliente(
             CtaCteMovimiento.creado_en,
             anulado,
             reversible,
+            anulable,
             acumulado,
         )
         .where(*filtros)

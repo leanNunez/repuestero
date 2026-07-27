@@ -15,6 +15,8 @@ interface Props {
   onRetry: () => void;
   /** Abrir el formulario de ajuste en modo reversa para esta fila. */
   onRevertir: (m: Movimiento) => void;
+  /** Anular el DOCUMENTO de esta fila (el recibo o la orden de pago), no el movimiento. */
+  onAnular: (m: Movimiento) => void;
 }
 
 /** Referencia legible del movimiento: "Comprobante #123", "Recibo #47".
@@ -35,7 +37,14 @@ function referencia(m: Movimiento): string {
   return `${nombre.charAt(0).toUpperCase()}${nombre.slice(1)} #${m.ref_id}`;
 }
 
-export function ExtractoTable({ movimientos, isLoading, isError, onRetry, onRevertir }: Props) {
+export function ExtractoTable({
+  movimientos,
+  isLoading,
+  isError,
+  onRetry,
+  onRevertir,
+  onAnular,
+}: Props) {
   if (isLoading) {
     return (
       <div className="space-y-2">
@@ -122,9 +131,11 @@ export function ExtractoTable({ movimientos, isLoading, isError, onRetry, onReve
               <td className="px-4 py-2.5 text-right align-top font-medium tabular-nums">
                 {pesos(m.saldo_acumulado)}
               </td>
-              {/* Un movimiento anulado muestra el estado en vez del botón. Del resto, `reversible`
-                  ya viene resuelto por el backend: los tipos que espejan un comprobante llegan en
-                  false porque se corrigen por su propio flujo, no desde el ledger. */}
+              {/* Un movimiento anulado muestra el estado en vez del botón. Del resto, `reversible` y
+                  `anulable` vienen YA resueltos por el backend, y son excluyentes por construcción:
+                  un ajuste se revierte desde el ledger, y una cobranza se anula desde su documento
+                  —porque el recibo movió además caja y cartera, y revertir solo el ledger dejaría
+                  esas dos cosas vivas—. El front no combina nada: dibuja el botón que le dicen. */}
               <td className="whitespace-nowrap px-4 py-2.5 align-top">
                 {m.anulado && <Badge variant="warning">Anulado</Badge>}
                 {m.reversible && (
@@ -135,6 +146,16 @@ export function ExtractoTable({ movimientos, isLoading, isError, onRetry, onReve
                     aria-label={`Revertir ${etiquetaTipo(m.tipo).toLowerCase()} del ${fechaCorta(m.fecha)}`}
                   >
                     Revertir
+                  </Button>
+                )}
+                {m.anulable && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => onAnular(m)}
+                    aria-label={`Anular ${referencia(m).toLowerCase()} del ${fechaCorta(m.fecha)}`}
+                  >
+                    Anular
                   </Button>
                 )}
               </td>
