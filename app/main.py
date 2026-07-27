@@ -7,6 +7,7 @@ from slowapi.errors import RateLimitExceeded
 
 from app.asistente import seguridad
 from app.asistente.router import router as asistente_router
+from app.caja.router import router as caja_router
 from app.catalogo.router import router as catalogo_router
 from app.clientes.router import router as clientes_router
 from app.compatibilidad.router import router as compatibilidad_router
@@ -56,6 +57,7 @@ app.include_router(ingesta_visual_router)
 app.include_router(ventas_router)
 app.include_router(compras_router)
 app.include_router(proveedores_router)
+app.include_router(caja_router)
 
 
 @app.on_event("startup")
