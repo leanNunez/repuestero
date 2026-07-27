@@ -81,6 +81,10 @@ class MovimientoCajaResponse(BaseModel):
     forma: str
     #: El saldo de la forma que se acaba de mover, ya recalculado.
     saldo: Decimal
+    #: Lo que hay que mirar, sin que nada se haya bloqueado. Hoy: el saldo quedó en negativo, que es
+    #: físicamente imposible. Mismo nombre de campo que `VentaResponse.advertencias` y que
+    #: `ingesta_visual`, para que el front lea la misma clave en todos lados.
+    advertencias: list[str] = Field(default_factory=list)
 
 
 # ================================================================================ cartera

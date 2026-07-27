@@ -96,6 +96,67 @@ def sesion(org):
     eng.dispose()
 
 
+# =========================================================================== caja en negativo
+
+
+def test_un_saldo_negativo_advierte(sesion, org):
+    """Un saldo negativo es físicamente imposible: nadie sacó plata que no estaba. O se cargó de
+    más, o falta cargar un ingreso. El sistema lo dice con el número, no con un "revisá la caja"."""
+    service.registrar_movimiento(
+        sesion, org.id, concepto="gasto", forma="efectivo", monto=SALDO_EFECTIVO + Decimal("500")
+    )
+
+    avisos = service.advertencias_de_saldo(sesion, org.id, formas=["efectivo"])
+
+    assert len(avisos) == 1
+    assert "-500.00" in avisos[0]
+    assert "efectivo" in avisos[0].lower()
+
+
+def test_advertir_NO_bloquea_el_movimiento(sesion, org):
+    """El contrato de la regla. Sin roles ni override, frenar el gasto deja el mostrador parado y la
+    operación termina ocurriendo fuera del sistema, que es peor que un cajón en rojo."""
+    m = service.registrar_movimiento(
+        sesion, org.id, concepto="gasto", forma="efectivo", monto=SALDO_EFECTIVO + Decimal("500")
+    )
+
+    assert m.id is not None, "el movimiento se escribe igual"
+    assert service.saldo_efectivo(sesion, org.id) == Decimal("-500")
+
+
+def test_un_saldo_sano_no_advierte_nada(sesion, org):
+    """La otra mitad: si advirtiera siempre, nadie leería la advertencia cuando importa."""
+    service.registrar_movimiento(
+        sesion, org.id, concepto="gasto", forma="efectivo", monto=Decimal("100")
+    )
+
+    assert service.advertencias_de_saldo(sesion, org.id) == []
+
+
+def test_solo_advierte_de_las_formas_que_se_tocaron(sesion, org):
+    """Un negativo viejo en otra forma no tiene nada que ver con lo que la persona acaba de hacer.
+    Mezclarlos haría que el aviso se lea como ruido."""
+    service.registrar_movimiento(
+        sesion, org.id, concepto="gasto", forma="tarjeta", monto=Decimal("300")
+    )
+
+    assert service.advertencias_de_saldo(sesion, org.id, formas=["efectivo"]) == []
+    assert len(service.advertencias_de_saldo(sesion, org.id, formas=["tarjeta"])) == 1
+    # Sin argumento revisa TODAS: es lo que sirve para una pantalla.
+    assert len(service.advertencias_de_saldo(sesion, org.id)) == 1
+
+
+def test_advierte_de_cada_forma_en_negativo(sesion, org):
+    for forma in ("efectivo", "tarjeta"):
+        service.registrar_movimiento(
+            sesion, org.id, concepto="gasto", forma=forma, monto=SALDO_EFECTIVO + Decimal("1")
+        )
+
+    avisos = service.advertencias_de_saldo(sesion, org.id)
+
+    assert len(avisos) == 2
+
+
 # =========================================================================== el signo
 
 
@@ -306,6 +367,40 @@ def test_endpoint_registra_un_gasto_y_devuelve_el_saldo(cliente):
 
     assert Decimal(body["saldo"]) == antes - Decimal("750")
     assert body["movimiento_id"] > 0
+
+
+def test_endpoint_advierte_del_negativo_pero_devuelve_201(cliente):
+    """El contrato completo por HTTP: la operación se ACEPTA (201) y el aviso viaja en el cuerpo.
+
+    Si esto fuera un 422, el mostrador quedaría trabado esperando a alguien que autorice, y no hay
+    quién: no existen roles todavía.
+    """
+    saldo = Decimal(cliente.get("/caja/saldo").json()["efectivo"])
+
+    r = cliente.post(
+        "/caja/movimientos",
+        json={"concepto": "retiro", "forma": "efectivo", "monto": str(saldo + Decimal("1000"))},
+    )
+
+    assert r.status_code == 201
+    body = r.json()
+    assert len(body["advertencias"]) == 1
+    assert Decimal(body["saldo"]) == Decimal("-1000")
+
+    # Se deja la caja como estaba: este test COMMITEA (lo hace `get_tenant`) y los demás leen de acá.
+    cliente.post(
+        "/caja/movimientos",
+        json={"concepto": "aporte", "forma": "efectivo", "monto": str(saldo + Decimal("1000"))},
+    )
+
+
+def test_endpoint_no_advierte_cuando_el_saldo_queda_sano(cliente):
+    r = cliente.post(
+        "/caja/movimientos", json={"concepto": "gasto", "forma": "efectivo", "monto": "1"}
+    )
+
+    assert r.status_code == 201
+    assert r.json()["advertencias"] == []
 
 
 def test_endpoint_rechaza_un_concepto_derivado(cliente):

@@ -360,6 +360,8 @@ def test_la_respuesta_trae_el_documento_emitido(cliente_http):
         "documento_tipo",
         "documento_pto_venta",
         "documento_numero",
+        # Un pago SACA plata: si deja una forma de la caja en negativo lo avisa acá, sin bloquear.
+        "advertencias",
     }
     assert body["documento_tipo"] == "OP"
 

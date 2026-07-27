@@ -154,6 +154,11 @@ class PagoProveedorResponse(BaseModel):
     documento_tipo: str
     documento_pto_venta: int
     documento_numero: int
+    #: Lo que hay que mirar, sin que nada se haya bloqueado: hoy, que el pago dejó una forma de la
+    #: caja en negativo. Un pago SACA plata, así que este es el camino por el que la caja se va a
+    #: negativo sin que nadie cargue nada a mano. Mismo nombre de campo que
+    #: `VentaResponse.advertencias` y que `ingesta_visual`, para que el front lea la misma clave.
+    advertencias: list[str] = Field(default_factory=list)
 
 
 class AjusteCrear(BaseModel):

@@ -74,6 +74,11 @@ def registrar_movimiento(
         concepto=movimiento.concepto,
         forma=movimiento.forma,
         saldo=service.saldo_por_forma(tenant.session, tenant.org_id)[movimiento.forma],
+        # Solo la forma que se acaba de tocar: un negativo viejo en otra forma no tiene nada que ver
+        # con lo que la persona acaba de hacer, y avisarlo acá sería ruido.
+        advertencias=service.advertencias_de_saldo(
+            tenant.session, tenant.org_id, formas=[movimiento.forma]
+        ),
     )
 
 

@@ -128,6 +128,7 @@ def registrar_pago(
         documento_tipo=orden.tipo,
         documento_pto_venta=orden.pto_venta,
         documento_numero=orden.numero,
+        advertencias=pago.advertencias,
     )
 
 

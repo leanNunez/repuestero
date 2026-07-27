@@ -266,6 +266,48 @@ def test_pago_baja_el_saldo(sesion, org):
     assert service.saldo_proveedor(sesion, org.id, prov_id) == compra.total - Decimal("42.00")
 
 
+def test_pagar_en_efectivo_sin_fondos_advierte_pero_paga(sesion, org):
+    """El camino por el que la caja se va a negativo SIN que nadie cargue nada a mano, y el que más
+    importa: pagarle 50.000 a un proveedor con 0 en el cajón.
+
+    Se advierte y **se paga igual**. Bloquear acá dejaría el mostrador parado sin nadie que pueda
+    autorizar —no hay roles todavía— y el pago terminaría ocurriendo fuera del sistema.
+    """
+    service.crear_compra(sesion, org.id, datos=_compra(condicion="cta_cte"))
+
+    pago = service.registrar_pago(
+        sesion,
+        org.id,
+        proveedor_codigo="PROV-1",
+        monto=Decimal("50000.00"),
+        formas_pago=[service.FormaPago("efectivo", Decimal("50000.00"))],
+    )
+
+    assert pago.orden.id is not None, "el pago se registra igual"
+    assert len(pago.advertencias) == 1
+    assert "-50,000.00" in pago.advertencias[0]
+
+
+def test_pagar_con_fondos_no_advierte(sesion, org):
+    """Si advirtiera siempre, nadie leería la advertencia cuando importa."""
+    from app.caja import service as caja
+
+    service.crear_compra(sesion, org.id, datos=_compra(condicion="cta_cte"))
+    caja.registrar_movimiento(
+        sesion, org.id, concepto="aporte", forma="efectivo", monto=Decimal("1000")
+    )
+
+    pago = service.registrar_pago(
+        sesion,
+        org.id,
+        proveedor_codigo="PROV-1",
+        monto=Decimal("42.00"),
+        formas_pago=[service.FormaPago("efectivo", Decimal("42.00"))],
+    )
+
+    assert pago.advertencias == []
+
+
 def test_prov_cta_cte_es_append_only(sesion, org):
     service.crear_compra(sesion, org.id, datos=_compra(condicion="cta_cte"))
     prov_id = _proveedor_id(sesion)
