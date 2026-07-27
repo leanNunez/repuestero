@@ -1,0 +1,202 @@
+import { getRouteApi } from "@tanstack/react-router";
+import { useState } from "react";
+
+import type { Cheque } from "@/entities/caja/schema";
+import { pesos } from "@/entities/remito/formato";
+import {
+  ESTADOS_CHEQUE,
+  FORMAS,
+  cambiarSolapa,
+  etiquetaEstado,
+  etiquetaForma,
+  filtrarEstado,
+  filtrarForma,
+  type Busqueda,
+} from "@/features/caja/model/estado";
+import {
+  CARTERA_PAGE_SIZE,
+  MOV_PAGE_SIZE,
+  useCartera,
+  useConciliarCheque,
+  useMovimientosCaja,
+  useRegistrarMovimiento,
+  useSaldoCaja,
+  useTransicionCheque,
+  type Transicion,
+} from "@/features/caja/model/hooks";
+import { CarteraTable } from "@/features/caja/ui/CarteraTable";
+import { FormularioConciliar } from "@/features/caja/ui/FormularioConciliar";
+import { FormularioMovimiento } from "@/features/caja/ui/FormularioMovimiento";
+import { MovimientosTable } from "@/features/caja/ui/MovimientosTable";
+import { SaldoCards } from "@/features/caja/ui/SaldoCards";
+import { Solapas } from "@/features/caja/ui/Solapas";
+import { Pagination } from "@/shared/ui/pagination";
+
+const route = getRouteApi("/caja");
+
+const filtroClass =
+  "h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
+
+export function CajaPage() {
+  const s = route.useSearch();
+  const navigate = route.useNavigate();
+
+  const saldo = useSaldoCaja();
+  const movimientos = useMovimientosCaja(s.forma, s.page);
+  const cartera = useCartera(s.estado, s.cpage);
+
+  const registrar = useRegistrarMovimiento();
+  const transicionar = useTransicionCheque();
+  const conciliar = useConciliarCheque();
+
+  // `null` = panel de conciliación cerrado. NO viaja en la URL: una conciliación a medio hacer no
+  // es algo que quieras compartir en un link ni restaurar al volver atrás.
+  const [aConciliar, setAConciliar] = useState<Cheque | null>(null);
+
+  const ir = (proxima: Busqueda) => {
+    if (proxima.tab !== s.tab) setAConciliar(null);
+    navigate({ search: () => proxima, replace: true });
+  };
+
+  const enCaja = s.tab === "caja";
+
+  return (
+    <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Solapas activa={s.tab} onCambiar={(tab) => ir(cambiarSolapa(s, tab))} />
+
+        {!enCaja && cartera.data && (
+          <p className="text-sm text-muted-foreground">
+            En cartera:{" "}
+            <span className="font-medium tabular-nums text-foreground">
+              {pesos(cartera.data.valor_en_cartera)}
+            </span>
+          </p>
+        )}
+      </div>
+
+      <SaldoCards saldo={saldo.data} isLoading={saldo.isLoading} />
+
+      {enCaja ? (
+        <section
+          id="panel-caja"
+          role="tabpanel"
+          aria-labelledby="solapa-caja"
+          className="space-y-3"
+        >
+          <FormularioMovimiento
+            cargando={registrar.isPending}
+            error={registrar.error?.message ?? null}
+            advertencias={registrar.data?.advertencias ?? []}
+            onRegistrar={(v) => registrar.mutate(v)}
+          />
+
+          <div className="flex items-center gap-2">
+            <label htmlFor="filtro-forma" className="text-xs text-muted-foreground">
+              Forma
+            </label>
+            <select
+              id="filtro-forma"
+              value={s.forma ?? ""}
+              onChange={(e) => ir(filtrarForma(s, e.target.value || null))}
+              className={filtroClass}
+            >
+              <option value="">Todas</option>
+              {FORMAS.map((f) => (
+                <option key={f} value={f}>
+                  {etiquetaForma(f)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <MovimientosTable
+            movimientos={movimientos.data?.items}
+            isLoading={movimientos.isLoading}
+            isError={movimientos.isError}
+            onRetry={() => void movimientos.refetch()}
+          />
+
+          <Pagination
+            page={s.page}
+            pageSize={MOV_PAGE_SIZE}
+            total={movimientos.data?.total ?? 0}
+            onPageChange={(page) => ir({ ...s, page })}
+          />
+        </section>
+      ) : (
+        <section
+          id="panel-cartera"
+          role="tabpanel"
+          aria-labelledby="solapa-cartera"
+          className="space-y-3"
+        >
+          <div className="flex items-center gap-2">
+            <label htmlFor="filtro-estado" className="text-xs text-muted-foreground">
+              Estado
+            </label>
+            <select
+              id="filtro-estado"
+              value={s.estado ?? ""}
+              onChange={(e) => ir(filtrarEstado(s, e.target.value || null))}
+              className={filtroClass}
+            >
+              <option value="">Todos</option>
+              {ESTADOS_CHEQUE.map((e) => (
+                <option key={e} value={e}>
+                  {etiquetaEstado(e)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <FormularioConciliar
+            cheque={aConciliar}
+            cargando={conciliar.isPending}
+            error={conciliar.error?.message ?? null}
+            onCerrar={() => {
+              setAConciliar(null);
+              conciliar.reset();
+            }}
+            onConciliar={(fecha) => {
+              if (!aConciliar) return;
+              conciliar.mutate(
+                { id: aConciliar.id, fecha },
+                { onSuccess: () => setAConciliar(null) },
+              );
+            }}
+          />
+
+          {transicionar.error && (
+            <p role="alert" className="text-sm text-destructive">
+              {transicionar.error.message}
+            </p>
+          )}
+
+          <CarteraTable
+            cheques={cartera.data?.items}
+            isLoading={cartera.isLoading}
+            isError={cartera.isError}
+            onRetry={() => void cartera.refetch()}
+            ocupado={transicionar.isPending ? (transicionar.variables?.id ?? null) : null}
+            onTransicion={(cheque: Cheque, t: Transicion) => {
+              transicionar.reset();
+              transicionar.mutate({ id: cheque.id, transicion: t });
+            }}
+            onConciliar={(cheque: Cheque) => {
+              conciliar.reset();
+              setAConciliar(cheque);
+            }}
+          />
+
+          <Pagination
+            page={s.cpage}
+            pageSize={CARTERA_PAGE_SIZE}
+            total={cartera.data?.total ?? 0}
+            onPageChange={(cpage) => ir({ ...s, cpage })}
+          />
+        </section>
+      )}
+    </div>
+  );
+}
