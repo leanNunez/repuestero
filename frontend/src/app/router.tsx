@@ -5,7 +5,9 @@ import {
   Outlet,
 } from "@tanstack/react-router";
 
+import { parseBusqueda as parseBusquedaCaja } from "@/features/caja/model/estado";
 import { parseBusqueda } from "@/features/cuenta-corriente/model/estado";
+import { CajaPage } from "@/pages/caja/CajaPage";
 import { ArticuloPage } from "@/pages/catalogo/ArticuloPage";
 import { CatalogoPage } from "@/pages/catalogo/CatalogoPage";
 import { ClientesPage } from "@/pages/clientes/ClientesPage";
@@ -94,9 +96,18 @@ const cuentaCorrienteRoute = createRoute({
   validateSearch: parseBusqueda,
 });
 
+const cajaRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/caja",
+  component: CajaPage,
+  // Igual que en cuenta corriente: el parseo vive en el feature y es una función pura, para poder
+  // testear a mano una URL manipulada sin montar el router.
+  validateSearch: parseBusquedaCaja,
+});
+
 // Módulos de Fase 2 todavía sin backend: navegables, pero caen en la pantalla "próximamente".
-// `/ventas`, `/compras` y `/cuenta-corriente` salieron de acá: ya tienen pantalla de verdad.
-const FASE2_PATHS = ["/facturacion", "/caja"] as const;
+// `/ventas`, `/compras`, `/cuenta-corriente` y `/caja` salieron de acá: ya tienen pantalla de verdad.
+const FASE2_PATHS = ["/facturacion"] as const;
 
 const fase2Routes = FASE2_PATHS.map((path) =>
   createRoute({ getParentRoute: () => rootRoute, path, component: ProximamentePage }),
@@ -112,6 +123,7 @@ const routeTree = rootRoute.addChildren([
   ventasRoute,
   comprasRoute,
   cuentaCorrienteRoute,
+  cajaRoute,
   ...fase2Routes,
 ]);
 
