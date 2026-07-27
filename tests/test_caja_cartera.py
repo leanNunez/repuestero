@@ -271,10 +271,53 @@ def test_conciliar_marca_el_cheque_con_su_fecha(sesion, org):
 
 def test_conciliar_dos_veces_no_pasa(sesion, org):
     cheque = _cobrar_con_cheque(sesion, org)
+    service.cobrar(sesion, org.id, cheque.id)
     service.conciliar(sesion, org.id, cheque.id, fecha=date(2026, 3, 20))
 
     with pytest.raises(service.CajaInvalida, match="ya estaba conciliado"):
         service.conciliar(sesion, org.id, cheque.id, fecha=date(2026, 3, 21))
+
+
+@pytest.mark.parametrize("transicion", ["depositar", "cobrar", "rechazar"])
+def test_se_concilia_lo_que_paso_por_el_banco(sesion, org, transicion):
+    cheque = _cobrar_con_cheque(sesion, org)
+    getattr(service, transicion)(sesion, org.id, cheque.id)
+
+    service.conciliar(sesion, org.id, cheque.id, fecha=date(2026, 3, 20))
+
+    assert cheque.conciliado is True
+
+
+def test_un_cheque_en_cartera_no_se_concilia(sesion, org):
+    """Está en tu mano, no en el banco: no puede figurar en ningún resumen todavía."""
+    cheque = _cobrar_con_cheque(sesion, org)
+
+    with pytest.raises(service.CajaInvalida, match="no pasó por el banco"):
+        service.conciliar(sesion, org.id, cheque.id, fecha=date(2026, 3, 20))
+
+
+def test_un_cheque_anulado_no_se_concilia(sesion, org):
+    """El bug que destapó probar la pantalla: la cartera ofrecía "Conciliar" en un cheque anulado.
+
+    Un cheque cuyo documento se dio de baja **nunca existió para el banco**, así que cruzarlo contra
+    el resumen es pedir una operación imposible.
+    """
+    cheque = _cobrar_con_cheque(sesion, org)
+    service.revertir_documento(
+        sesion, org.id, concepto="anulacion_cobranza", ref_tipo="recibo", ref_id=1
+    )
+
+    with pytest.raises(service.CajaInvalida, match="no pasó por el banco"):
+        service.conciliar(sesion, org.id, cheque.id, fecha=date(2026, 3, 20))
+
+
+def test_un_cheque_entregado_no_se_concilia(sesion, org):
+    """Se lo diste a un proveedor: entra al banco de OTRO, no al tuyo."""
+    cheque = _cobrar_con_cheque(sesion, org)
+    service.entregar(sesion, org.id, cheque.id)
+
+    with pytest.raises(service.CajaInvalida, match="no pasó por el banco"):
+        service.conciliar(sesion, org.id, cheque.id, fecha=date(2026, 3, 20))
 
 
 # =========================================================================== listado
@@ -425,6 +468,9 @@ def test_endpoint_estado_inventado_es_422(cliente):
 
 def test_endpoint_conciliar_exige_fecha(cliente, cheque_http):
     """Sin fecha no se puede auditar, que es todo el punto de conciliar."""
+    # Primero pasa por el banco: un cheque en cartera todavía no se concilia.
+    cliente.post(f"/caja/cheques/{cheque_http}/cobrar")
+
     assert cliente.post(f"/caja/cheques/{cheque_http}/conciliar", json={}).status_code == 422
 
     r = cliente.post(
@@ -432,3 +478,13 @@ def test_endpoint_conciliar_exige_fecha(cliente, cheque_http):
     )
     assert r.status_code == 200
     assert r.json()["conciliado"] is True
+
+
+def test_endpoint_conciliar_un_cheque_en_cartera_es_422(cliente, cheque_http):
+    """La reja del estado también por HTTP, con un mensaje que explica el porqué."""
+    r = cliente.post(
+        f"/caja/cheques/{cheque_http}/conciliar", json={"fecha": date.today().isoformat()}
+    )
+
+    assert r.status_code == 422
+    assert "banco" in r.json()["detail"]

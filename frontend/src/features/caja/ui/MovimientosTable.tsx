@@ -5,7 +5,7 @@ import { Badge } from "@/shared/ui/badge";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { EmptyState, ErrorState } from "@/shared/ui/states";
 
-import { etiquetaConcepto } from "../model/estado";
+import { etiquetaConcepto, etiquetaForma } from "../model/estado";
 
 interface Props {
   movimientos: MovimientoCaja[] | undefined;
@@ -63,6 +63,12 @@ export function MovimientosTable({ movimientos, isLoading, isError, onRetry }: P
             <th scope="col" className="px-4 py-2.5 font-medium">
               Origen
             </th>
+            {/* Sin esta columna, la de Saldo es ilegible: el acumulado se calcula POR FORMA, así
+                que en el listado sin filtrar los números saltan entre particiones distintas y
+                parecen incoherentes. La forma es la que explica el salto. */}
+            <th scope="col" className="px-4 py-2.5 font-medium">
+              Forma
+            </th>
             <th scope="col" className="px-4 py-2.5 text-right font-medium">
               Entra
             </th>
@@ -71,6 +77,7 @@ export function MovimientosTable({ movimientos, isLoading, isError, onRetry }: P
             </th>
             <th scope="col" className="px-4 py-2.5 text-right font-medium">
               Saldo
+              <span className="block text-[0.7rem] font-normal normal-case">de esa forma</span>
             </th>
           </tr>
         </thead>
@@ -98,6 +105,9 @@ export function MovimientosTable({ movimientos, isLoading, isError, onRetry }: P
               </td>
               <td className="px-4 py-2.5 align-top text-muted-foreground">
                 {m.ref_tipo ? origen(m) : <Badge>A mano</Badge>}
+              </td>
+              <td className="whitespace-nowrap px-4 py-2.5 align-top text-muted-foreground">
+                {etiquetaForma(m.forma)}
               </td>
               <td className="px-4 py-2.5 text-right align-top tabular-nums">
                 {Number(m.ingreso) > 0 ? pesos(m.ingreso) : "—"}

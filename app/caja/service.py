@@ -65,6 +65,21 @@ TRANSICIONES: dict[str, frozenset[str]] = {
 #: Un cheque que YO recibí: su ciclo de vida mueve mi caja.
 RECIBIDO = "recibido"
 
+#: Un cheque que firmé yo y va a un proveedor.
+EMITIDO = "emitido"
+
+#: Los únicos estados que se pueden conciliar, y el porqué: conciliar es cruzar el papel contra el
+#: RESUMEN BANCARIO, así que solo tiene sentido cuando el cheque tuvo un desenlace en el banco.
+#:
+#: - `depositado`, `cobrado`, `rechazado` → pasaron por el banco y figuran en el resumen.
+#: - `en_cartera` → está en tu mano; no aparece en ningún resumen todavía.
+#: - `entregado` → se lo diste a un proveedor: entra al banco de OTRO, no al tuyo.
+#: - `anulado` → el documento que lo trajo se dio de baja. Nunca existió para el banco.
+#:
+#: Sin esta reja, la pantalla ofrecía "Conciliar" en un cheque anulado, que es pedirle a alguien
+#: que cruce contra el resumen algo que no puede estar ahí.
+ESTADOS_CONCILIABLES: frozenset[str] = frozenset({DEPOSITADO, COBRADO, RECHAZADO})
+
 
 class CajaInvalida(ValueError):
     """Error de negocio de caja. El router lo traduce a 422."""
@@ -505,10 +520,19 @@ def conciliar(session: Session, org_id: UUID, cheque_id: int, *, fecha: date) ->
     La fecha es OBLIGATORIA —el CHECK `ck_cheques_conciliado_con_fecha` de la 0011 la exige— porque
     una conciliación sin fecha no se puede auditar, que es todo el punto de conciliar. El blueprint
     (§5.G) cuenta con esto: "cheques sin conciliar" es una de las anomalías que auditoría detecta.
+
+    **Solo los estados con desenlace bancario** (ver `ESTADOS_CONCILIABLES`): conciliar un cheque que
+    nunca pasó por el banco es cruzar contra un resumen algo que no puede figurar ahí.
     """
     cheque = _buscar_cheque(session, org_id, cheque_id)
     if cheque.conciliado:
         raise CajaInvalida(f"El cheque {cheque_id} ya estaba conciliado.")
+
+    if cheque.estado not in ESTADOS_CONCILIABLES:
+        raise CajaInvalida(
+            f"Un cheque {cheque.estado!r} no se concilia: no pasó por el banco, así que no puede "
+            "figurar en el resumen. Se concilian los depositados, cobrados y rechazados."
+        )
 
     cheque.conciliado = True
     cheque.fecha_conciliacion = fecha
