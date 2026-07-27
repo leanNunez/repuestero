@@ -25,6 +25,26 @@ de carga manual los rechaza. Sin esa reja, un operador podría cargar "cobranza 
 además del recibo que ya la generó, y la caja diría el doble de lo que hay en el cajón — que es
 exactamente el desastre que el legacy tenía y que este módulo existe para no repetir.
 
+## Cuando un hecho tiene DOS patas
+
+Un concepto lleva su signo pegado: `gasto` resta, `cobranza` suma, y el CHECK
+`ck_caja_movimientos_concepto_coherente` lo hace cumplir. Eso alcanza para la plata que entra o
+sale del negocio, que es la mayoría de los casos.
+
+Pero **cobrar un cheque no entra ni sale: se mueve entre formas**. El papel deja la cartera y la
+plata aparece en el cajón (o en el banco). Es UN hecho con DOS patas, y como cada concepto tiene
+un solo signo, hacen falta dos valores:
+
+- `cheque_cobrado_cartera` (egreso, forma `cheque`) — el papel sale de la cartera.
+- `cheque_cobrado` (ingreso, forma `efectivo` o `transferencia`) — la plata entra.
+
+Escribir solo la segunda pata fue el bug que motivó la migración 0012: la caja habría dicho que
+tiene el cheque Y la plata, o sea el doble de lo que hay. Si algún día aparece otra transferencia
+entre formas (un depósito de efectivo al banco, por ejemplo), sigue este mismo patrón de par.
+
+Las salidas de cartera que NO son cobro ya tenían su concepto de egreso y no necesitaron uno
+nuevo: `cheque_rechazado` cuando el banco lo devuelve, `pago_proveedor` cuando se endosa.
+
 Las migraciones NO importan esto: cada una congela su propia copia en el CHECK que crea (misma
 regla que `formas_pago`). El candado que evita que las copias se separen es un test que inserta
 todos los conceptos y verifica que la base los acepte.
@@ -46,8 +66,9 @@ CONCEPTOS_INGRESO: frozenset[str] = frozenset(
 #: Conceptos que RESTAN plata.
 CONCEPTOS_EGRESO: frozenset[str] = frozenset(
     {
-        "pago_proveedor",  # derivado: una orden de pago emitida
+        "pago_proveedor",  # derivado: una orden de pago emitida, o un cheque endosado
         "cheque_rechazado",  # derivado: un cheque que volvió, revierte su ingreso
+        "cheque_cobrado_cartera",  # derivado: el cheque SALE de la cartera porque se cobró
         "anulacion_cobranza",  # derivado: anular un recibo saca lo que había entrado
         "gasto",  # manual: flete, librería, lo que sea que salga del cajón
         "retiro",  # manual: el dueño saca plata
@@ -66,6 +87,7 @@ CONCEPTOS_DERIVADOS: frozenset[str] = frozenset(
         "cobranza",
         "pago_proveedor",
         "cheque_cobrado",
+        "cheque_cobrado_cartera",
         "cheque_rechazado",
         "anulacion_cobranza",
         "anulacion_pago",
@@ -85,6 +107,7 @@ ConceptoLiteral = Literal[
     "otro_ingreso",
     "pago_proveedor",
     "cheque_rechazado",
+    "cheque_cobrado_cartera",
     "anulacion_cobranza",
     "gasto",
     "retiro",
