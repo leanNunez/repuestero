@@ -291,6 +291,14 @@ class MovimientoLeer(BaseModel):
     #: contempla que un movimiento anulado no se revierte de nuevo. Viaja calculado para que la
     #: regla de qué se puede revertir viva SOLO en `service.MOVIMIENTOS_REVERSIBLES`.
     reversible: bool = False
+    #: "¿Puedo apretar ANULAR en esta fila?". Es la operación que REEMPLAZÓ a Revertir en las
+    #: cobranzas: cuando el recibo empezó a mover caja y cartera, revertir solo el ledger dejaba esas
+    #: dos cosas vivas. Anular el recibo revierte las tres en una transacción.
+    #:
+    #: Viaja calculado con la MISMA condición que chequea `service.anular_recibo`, por la misma razón
+    #: que `reversible`: si el front la dedujera de `ref_tipo`, la regla viviría en dos lugares y el
+    #: botón terminaría ofreciendo lo que el service rechaza. El id del recibo va en `ref_id`.
+    anulable: bool = False
     #: Saldo DESPUÉS de este movimiento, en orden cronológico. Lo calcula el SQL sobre todo el
     #: ledger: el front solo ve una página y no puede conocer el acumulado de las anteriores.
     saldo_acumulado: Decimal

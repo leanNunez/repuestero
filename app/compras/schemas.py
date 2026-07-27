@@ -264,6 +264,10 @@ class MovimientoLeer(BaseModel):
     #: "¿Puedo apretar Revertir en esta fila?" — ya contempla que un movimiento anulado no se
     #: revierte de nuevo. Viaja calculado para que la regla viva SOLO en el service.
     reversible: bool = False
+    #: "¿Puedo apretar ANULAR en esta fila?". Espejo de `ventas.MovimientoLeer.anulable`: la
+    #: operación que reemplazó a Revertir en los pagos, porque anular la orden de pago revierte
+    #: ledger, caja y cartera en una transacción. El id de la orden va en `ref_id`.
+    anulable: bool = False
     #: Saldo DESPUÉS de este movimiento, en orden cronológico. Lo calcula el SQL sobre todo el
     #: ledger: el front solo ve una página y no puede conocer el acumulado de las anteriores.
     saldo_acumulado: Decimal

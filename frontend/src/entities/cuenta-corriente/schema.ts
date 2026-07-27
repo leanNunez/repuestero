@@ -49,6 +49,13 @@ export const movimientoSchema = z.object({
    *  movimiento anulado no se revierte de nuevo, así que el front no combina nada: dibuja el
    *  botón si esto es true. La regla de QUÉ es reversible vive solo en los services de Python. */
   reversible: z.boolean(),
+  /** Lo mismo para ANULAR, que es la operación que reemplazó a Revertir en las cobranzas y los
+   *  pagos: cuando el recibo empezó a mover caja y cartera, revertir solo el ledger dejaba esas dos
+   *  cosas vivas. Anular el documento revierte las tres en una transacción.
+   *
+   *  Viaja calculado por la misma razón que `reversible`: deducirlo acá de `ref_tipo` pondría la
+   *  regla en dos lugares. El id del documento a anular está en `ref_id`. */
+  anulable: z.boolean(),
   /** Saldo después de este movimiento. Lo calcula el backend sobre TODO el ledger: no se
    *  recalcula acá, porque el front solo tiene una página. */
   saldo_acumulado: z.string(),

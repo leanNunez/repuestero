@@ -2,6 +2,7 @@ import { getRouteApi } from "@tanstack/react-router";
 import { Search } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import type { Movimiento } from "@/entities/cuenta-corriente/schema";
 import { pesos } from "@/entities/remito/formato";
 import {
   buscar,
@@ -16,12 +17,14 @@ import {
   MOV_PAGE_SIZE,
   PAGE_SIZE,
   useAjustar,
+  useAnularDocumento,
   useCuentas,
   useImputar,
   useMovimientos,
 } from "@/features/cuenta-corriente/model/hooks";
 import { ExtractoTable } from "@/features/cuenta-corriente/ui/ExtractoTable";
 import { FormularioAjuste } from "@/features/cuenta-corriente/ui/FormularioAjuste";
+import { FormularioAnulacion } from "@/features/cuenta-corriente/ui/FormularioAnulacion";
 import { FormularioImputacion } from "@/features/cuenta-corriente/ui/FormularioImputacion";
 import { ListadoCuentas } from "@/features/cuenta-corriente/ui/ListadoCuentas";
 import { Solapas } from "@/features/cuenta-corriente/ui/Solapas";
@@ -43,9 +46,14 @@ export function CuentaCorrientePage() {
   const imputar = useImputar(s.tab);
   const ajustar = useAjustar(s.tab, s.sel);
 
+  const anular = useAnularDocumento(s.tab);
+
   // `null` = formulario de ajuste cerrado. NO viaja en la URL: un ajuste a medio escribir no es
   // algo que quieras compartir en un link ni restaurar al volver atrás.
   const [modoAjuste, setModoAjuste] = useState<ModoAjuste | null>(null);
+  // Mismo criterio para la anulación, con su propio estado: son dos operaciones distintas y tener
+  // una sola variable haría que abrir una cierre la otra por accidente.
+  const [aAnular, setAAnular] = useState<Movimiento | null>(null);
 
   // Toda la navegación pasa por acá: las transiciones son funciones puras de `estado.ts`, así que
   // la página no decide qué resetear — eso está testeado aparte.
@@ -53,7 +61,10 @@ export function CuentaCorrientePage() {
     // Cambiar de cuenta o de solapa cierra el ajuste. Si no, el formulario quedaría abierto en
     // modo reversa apuntando al movimiento de la cuenta ANTERIOR: el backend lo rechazaría por el
     // filtro de cliente, pero la pantalla estaría mintiendo hasta que la persona apriete.
-    if (proxima.tab !== s.tab || proxima.sel !== s.sel) setModoAjuste(null);
+    if (proxima.tab !== s.tab || proxima.sel !== s.sel) {
+      setModoAjuste(null);
+      setAAnular(null);
+    }
     navigate({ search: () => proxima, replace: true });
   };
 
@@ -188,6 +199,23 @@ export function CuentaCorrientePage() {
                 }}
               />
 
+              <FormularioAnulacion
+                movimiento={aAnular}
+                cargando={anular.isPending}
+                error={anular.error?.message ?? null}
+                onCerrar={() => {
+                  setAAnular(null);
+                  anular.reset();
+                }}
+                onAnular={(motivo) => {
+                  if (aAnular?.ref_id == null) return;
+                  anular.mutate(
+                    { documentoId: aAnular.ref_id, motivo },
+                    { onSuccess: () => setAAnular(null) },
+                  );
+                }}
+              />
+
               <ExtractoTable
                 movimientos={movimientos.data?.items}
                 isLoading={movimientos.isLoading}
@@ -195,7 +223,13 @@ export function CuentaCorrientePage() {
                 onRetry={() => void movimientos.refetch()}
                 onRevertir={(m) => {
                   ajustar.reset();
+                  setAAnular(null);
                   setModoAjuste({ kind: "storno", movimiento: m });
+                }}
+                onAnular={(m) => {
+                  anular.reset();
+                  setModoAjuste(null);
+                  setAAnular(m);
                 }}
               />
 

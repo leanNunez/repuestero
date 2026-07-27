@@ -665,6 +665,17 @@ def movimientos_proveedor(
         ~ya_revertido,
     ).label("reversible")
 
+    # Espejo exacto de `ventas.movimientos_cliente`: "¿puedo apretar ANULAR en esta fila?", con la
+    # MISMA condición que chequea `anular_orden_pago`. Si el botón apareciera con otro criterio, la
+    # pantalla ofrecería una operación que el service rechaza.
+    #
+    # El `coalesce` es obligatorio y no cosmético: `ref_tipo` es NULLABLE, y en SQL
+    # `NULL = 'orden_pago'` da NULL. Sin esto la fila viaja con `anulable = None` y Pydantic —que lo
+    # declara `bool`— responde 500 al abrir el extracto de un proveedor con un pago viejo.
+    anulable = func.coalesce(
+        and_(ProvCtaCteMovimiento.ref_tipo == REF_ORDEN_PAGO, ~ya_revertido), False
+    ).label("anulable")
+
     filtros = (
         ProvCtaCteMovimiento.org_id == org_id,
         ProvCtaCteMovimiento.proveedor_id == proveedor_id,
@@ -691,6 +702,7 @@ def movimientos_proveedor(
             ProvCtaCteMovimiento.creado_en,
             anulado,
             reversible,
+            anulable,
             acumulado,
         )
         .where(*filtros)
