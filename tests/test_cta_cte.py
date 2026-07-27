@@ -191,6 +191,22 @@ def _cobrar(sesion, org_id, *, cliente_codigo: str, monto: Decimal, **kw) -> Cta
     ).movimiento
 
 
+def _anular_cobranza(sesion, org_id, movimiento, motivo="anulada") -> CtaCteMovimiento:
+    """Anula el RECIBO que generó este movimiento.
+
+    Reemplaza al viejo `registrar_ajuste(revierte_movimiento_id=<cobranza>)`: desde que un recibo
+    mueve caja y cartera, revertir solo el ledger dejaría esas dos cosas vivas.
+    """
+    assert movimiento.ref_tipo == service.REF_RECIBO, "este movimiento no salió de un recibo"
+    return service.anular_recibo(sesion, org_id, movimiento.ref_id, motivo=motivo)
+
+
+def _anular_pago(sesion, org_id, movimiento, motivo="anulado") -> ProvCtaCteMovimiento:
+    """Espejo de `_anular_cobranza`, del lado proveedor."""
+    assert movimiento.ref_tipo == compras.REF_ORDEN_PAGO, "este movimiento no salió de una orden"
+    return compras.anular_orden_pago(sesion, org_id, movimiento.ref_id, motivo=motivo)
+
+
 def _pagar(sesion, org_id, *, proveedor_codigo: str, monto: Decimal, **kw) -> ProvCtaCteMovimiento:
     """Paga en efectivo y devuelve el MOVIMIENTO. Espejo de `_cobrar`.
 
@@ -431,41 +447,40 @@ def test_prov_storno_deja_el_saldo_igual_que_antes_del_pago(sesion, org):
     pago = _pagar(sesion, org.id, proveedor_codigo="PROV-DEUDA", monto=Decimal("3000"))
     assert compras.saldo_proveedor(sesion, org.id, org.prov.deuda) == antes - Decimal("3000")
 
-    compras.registrar_ajuste(
-        sesion,
-        org.id,
-        proveedor_id=org.prov.deuda,
-        motivo="pago cargado dos veces",
-        revierte_movimiento_id=pago.id,
-    )
+    _anular_pago(sesion, org.id, pago, motivo="pago cargado dos veces")
     assert compras.saldo_proveedor(sesion, org.id, org.prov.deuda) == antes
 
 
 def test_prov_storno_espeja_el_monto_y_referencia_el_original(sesion, org):
-    pago = _primer_movimiento_prov(sesion, org.id, org.prov.deuda, "pago")
+    """Sujeto: un ajuste manual. Ver la nota del test espejo del lado cliente."""
+    original = compras.registrar_ajuste(
+        sesion, org.id, proveedor_id=org.prov.deuda, motivo="bonificación", haber=Decimal("400")
+    )
 
     ajuste = compras.registrar_ajuste(
         sesion,
         org.id,
         proveedor_id=org.prov.deuda,
         motivo="duplicado",
-        revierte_movimiento_id=pago.id,
+        revierte_movimiento_id=original.id,
     )
 
     assert ajuste.tipo == "ajuste"
-    assert (ajuste.debe, ajuste.haber) == (pago.haber, pago.debe)
-    assert (ajuste.ref_tipo, ajuste.ref_id) == (compras.REF_REVERSA, pago.id)
+    assert (ajuste.debe, ajuste.haber) == (original.haber, original.debe)
+    assert (ajuste.ref_tipo, ajuste.ref_id) == (compras.REF_REVERSA, original.id)
     assert ajuste.motivo == "duplicado"
 
 
 def test_prov_no_se_puede_revertir_dos_veces(sesion, org):
-    pago = _primer_movimiento_prov(sesion, org.id, org.prov.deuda, "pago")
+    original = compras.registrar_ajuste(
+        sesion, org.id, proveedor_id=org.prov.deuda, motivo="bonificación", haber=Decimal("150")
+    )
     compras.registrar_ajuste(
         sesion,
         org.id,
         proveedor_id=org.prov.deuda,
         motivo="primera",
-        revierte_movimiento_id=pago.id,
+        revierte_movimiento_id=original.id,
     )
 
     with pytest.raises(compras.CompraInvalida, match="ya fue revertido"):
@@ -474,19 +489,21 @@ def test_prov_no_se_puede_revertir_dos_veces(sesion, org):
             org.id,
             proveedor_id=org.prov.deuda,
             motivo="segunda",
-            revierte_movimiento_id=pago.id,
+            revierte_movimiento_id=original.id,
         )
 
 
 def test_prov_el_indice_unico_ataja_la_doble_reversa_simultanea(sesion, org):
     """La garantía real es el índice de la 0009, no el chequeo del service."""
-    pago = _primer_movimiento_prov(sesion, org.id, org.prov.deuda, "pago")
+    original = compras.registrar_ajuste(
+        sesion, org.id, proveedor_id=org.prov.deuda, motivo="bonificación", haber=Decimal("70")
+    )
     compras.registrar_ajuste(
         sesion,
         org.id,
         proveedor_id=org.prov.deuda,
         motivo="primera",
-        revierte_movimiento_id=pago.id,
+        revierte_movimiento_id=original.id,
     )
 
     sesion.add(
@@ -494,9 +511,9 @@ def test_prov_el_indice_unico_ataja_la_doble_reversa_simultanea(sesion, org):
             org_id=org.id,
             proveedor_id=org.prov.deuda,
             tipo="ajuste",
-            debe=pago.haber,
+            debe=original.haber,
             ref_tipo=compras.REF_REVERSA,
-            ref_id=pago.id,
+            ref_id=original.id,
             motivo="segunda, por atrás del service",
         )
     )
@@ -589,33 +606,30 @@ def test_prov_el_extracto_dice_que_se_puede_revertir(sesion, org):
     filas, _ = compras.movimientos_proveedor(sesion, org.id, org.prov.deuda, limite=100)
     por_tipo = {f.tipo: f.reversible for f in filas}
 
-    assert por_tipo["pago"] is True
+    # 'pago' salió de la lista al llegar `app/caja/`: se anula con `anular_orden_pago`.
+    assert por_tipo["pago"] is False
     assert por_tipo["compra"] is False  # espeja un documento de compra
 
 
 def test_prov_un_movimiento_ya_revertido_deja_de_ser_reversible(sesion, org):
-    pago = _pagar(sesion, org.id, proveedor_codigo="PROV-DEUDA", monto=Decimal("90"))
+    original = compras.registrar_ajuste(
+        sesion, org.id, proveedor_id=org.prov.deuda, motivo="bonificación", haber=Decimal("90")
+    )
     compras.registrar_ajuste(
         sesion,
         org.id,
         proveedor_id=org.prov.deuda,
         motivo="duplicado",
-        revierte_movimiento_id=pago.id,
+        revierte_movimiento_id=original.id,
     )
 
     filas, _ = compras.movimientos_proveedor(sesion, org.id, org.prov.deuda, limite=100)
-    assert {f.id: f.reversible for f in filas}[pago.id] is False
+    assert {f.id: f.reversible for f in filas}[original.id] is False
 
 
 def test_prov_el_extracto_marca_anulado_y_trae_el_motivo(sesion, org):
     pago = _pagar(sesion, org.id, proveedor_codigo="PROV-DEUDA", monto=Decimal("600"))
-    ajuste = compras.registrar_ajuste(
-        sesion,
-        org.id,
-        proveedor_id=org.prov.deuda,
-        motivo="duplicado",
-        revierte_movimiento_id=pago.id,
-    )
+    ajuste = _anular_pago(sesion, org.id, pago, motivo="duplicado")
 
     filas, _ = compras.movimientos_proveedor(sesion, org.id, org.prov.deuda, limite=100)
     por_id = {f.id: f for f in filas}
@@ -766,45 +780,41 @@ def test_storno_deja_el_saldo_igual_que_antes_de_la_cobranza(sesion, org):
     cobranza = _cobrar(sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("5000"))
     assert service.saldo_cliente(sesion, org.id, org.cli.deuda) == antes - Decimal("5000")
 
-    service.registrar_ajuste(
-        sesion,
-        org.id,
-        cliente_id=org.cli.deuda,
-        motivo="cobranza cargada dos veces",
-        revierte_movimiento_id=cobranza.id,
-    )
+    _anular_cobranza(sesion, org.id, cobranza, motivo="cobranza cargada dos veces")
     assert service.saldo_cliente(sesion, org.id, org.cli.deuda) == antes
 
 
 def test_storno_espeja_el_monto_y_referencia_el_original(sesion, org):
-    """El importe lo calcula el SERVICE desde el original: nunca viaja en el pedido."""
-    cobranza = _primer_movimiento(sesion, org.id, org.cli.deuda, "cobranza")
+    """El importe lo calcula el SERVICE desde el original: nunca viaja en el pedido.
+
+    El sujeto es un AJUSTE manual y no una cobranza: desde `app/caja/`, 'cobranza' salió de
+    `MOVIMIENTOS_REVERSIBLES` y se anula con `anular_recibo`. El ajuste sigue siendo reversible
+    desde el extracto porque NO tiene efectos fuera del ledger, así que es el sujeto correcto
+    para probar el mecanismo del storno en sí.
+    """
+    original = service.registrar_ajuste(
+        sesion, org.id, cliente_id=org.cli.deuda, motivo="condonación", haber=Decimal("350")
+    )
 
     ajuste = service.registrar_ajuste(
         sesion,
         org.id,
         cliente_id=org.cli.deuda,
         motivo="duplicada",
-        revierte_movimiento_id=cobranza.id,
+        revierte_movimiento_id=original.id,
     )
 
     assert ajuste.tipo == "ajuste"
-    assert ajuste.debe == cobranza.haber  # el haber vuelve como debe
-    assert ajuste.haber == cobranza.debe
-    assert (ajuste.ref_tipo, ajuste.ref_id) == (service.REF_REVERSA, cobranza.id)
+    assert ajuste.debe == original.haber  # el haber vuelve como debe
+    assert ajuste.haber == original.debe
+    assert (ajuste.ref_tipo, ajuste.ref_id) == (service.REF_REVERSA, original.id)
     assert ajuste.motivo == "duplicada"
 
 
 def test_el_acumulado_del_extracto_vuelve_al_valor_previo(sesion, org):
     """Ata la window function del extracto a la vista: las dos tienen que ver la reversa igual."""
     cobranza = _cobrar(sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("777"))
-    service.registrar_ajuste(
-        sesion,
-        org.id,
-        cliente_id=org.cli.deuda,
-        motivo="mal cargada",
-        revierte_movimiento_id=cobranza.id,
-    )
+    _anular_cobranza(sesion, org.id, cobranza, motivo="mal cargada")
 
     filas, _ = service.movimientos_cliente(sesion, org.id, org.cli.deuda, limite=1)
     assert filas[0].saldo_acumulado == service.saldo_cliente(sesion, org.id, org.cli.deuda)
@@ -812,13 +822,15 @@ def test_el_acumulado_del_extracto_vuelve_al_valor_previo(sesion, org):
 
 def test_no_se_puede_revertir_dos_veces_el_mismo_movimiento(sesion, org):
     """Revertir dos veces duplicaría la corrección, y en un ledger append-only no hay vuelta."""
-    cobranza = _primer_movimiento(sesion, org.id, org.cli.deuda, "cobranza")
+    original = service.registrar_ajuste(
+        sesion, org.id, cliente_id=org.cli.deuda, motivo="condonación", haber=Decimal("120")
+    )
     service.registrar_ajuste(
         sesion,
         org.id,
         cliente_id=org.cli.deuda,
         motivo="primera",
-        revierte_movimiento_id=cobranza.id,
+        revierte_movimiento_id=original.id,
     )
 
     with pytest.raises(service.VentaInvalida, match="ya fue revertido"):
@@ -827,7 +839,7 @@ def test_no_se_puede_revertir_dos_veces_el_mismo_movimiento(sesion, org):
             org.id,
             cliente_id=org.cli.deuda,
             motivo="segunda",
-            revierte_movimiento_id=cobranza.id,
+            revierte_movimiento_id=original.id,
         )
 
 
@@ -837,13 +849,15 @@ def test_el_indice_unico_ataja_la_doble_reversa_simultanea(sesion, org):
     Se saltea el service a propósito, porque eso es exactamente lo que pasa cuando dos requests
     pasan el chequeo previo antes de que cualquiera de los dos haya insertado.
     """
-    cobranza = _primer_movimiento(sesion, org.id, org.cli.deuda, "cobranza")
+    original = service.registrar_ajuste(
+        sesion, org.id, cliente_id=org.cli.deuda, motivo="condonación", haber=Decimal("60")
+    )
     service.registrar_ajuste(
         sesion,
         org.id,
         cliente_id=org.cli.deuda,
         motivo="primera",
-        revierte_movimiento_id=cobranza.id,
+        revierte_movimiento_id=original.id,
     )
 
     sesion.add(
@@ -851,9 +865,9 @@ def test_el_indice_unico_ataja_la_doble_reversa_simultanea(sesion, org):
             org_id=org.id,
             cliente_id=org.cli.deuda,
             tipo="ajuste",
-            debe=cobranza.haber,
+            debe=original.haber,
             ref_tipo=service.REF_REVERSA,
-            ref_id=cobranza.id,
+            ref_id=original.id,
             motivo="segunda, por atrás del service",
         )
     )
@@ -1016,13 +1030,7 @@ def test_el_extracto_marca_anulado_solo_el_movimiento_revertido(sesion, org):
     """Sin este flag el extracto muestra un haber y su contra-debe sin ninguna pista de que se
     cancelan entre sí, y el operador tiene que adivinar."""
     cobranza = _cobrar(sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("900"))
-    ajuste = service.registrar_ajuste(
-        sesion,
-        org.id,
-        cliente_id=org.cli.deuda,
-        motivo="duplicada",
-        revierte_movimiento_id=cobranza.id,
-    )
+    ajuste = _anular_cobranza(sesion, org.id, cobranza, motivo="duplicada")
 
     filas, _ = service.movimientos_cliente(sesion, org.id, org.cli.deuda, limite=100)
     por_id = {f.id: f for f in filas}
@@ -1041,30 +1049,34 @@ def test_el_extracto_dice_que_se_puede_revertir(sesion, org):
     filas, _ = service.movimientos_cliente(sesion, org.id, org.cli.deuda, limite=100)
     por_tipo = {f.tipo: f.reversible for f in filas}
 
-    assert por_tipo["cobranza"] is True
+    # 'cobranza' salió de la lista al llegar `app/caja/`: un recibo mueve caja y cartera, así que
+    # revertir solo el ledger dejaría esas dos cosas vivas. Se anula con `anular_recibo`.
+    assert por_tipo["cobranza"] is False
     # Espejan un comprobante: se corrigen con una nota de crédito, no desde el ledger.
     assert por_tipo["venta"] is False
     assert por_tipo["nota_credito"] is False
 
 
 def test_un_movimiento_ya_revertido_deja_de_ser_reversible(sesion, org):
-    """EL caso que un flag "solo por tipo" se comería: la cobranza sigue siendo de un tipo
-    reversible, pero revertirla de nuevo duplicaría la corrección."""
-    cobranza = _cobrar(sesion, org.id, cliente_codigo="CLI-DEUDA", monto=Decimal("120"))
+    """EL caso que un flag "solo por tipo" se comería: el ajuste sigue siendo de un tipo
+    reversible, pero revertirlo de nuevo duplicaría la corrección."""
+    original = service.registrar_ajuste(
+        sesion, org.id, cliente_id=org.cli.deuda, motivo="condonación", haber=Decimal("90")
+    )
     filas, _ = service.movimientos_cliente(sesion, org.id, org.cli.deuda, limite=100)
-    assert {f.id: f.reversible for f in filas}[cobranza.id] is True
+    assert {f.id: f.reversible for f in filas}[original.id] is True
 
     ajuste = service.registrar_ajuste(
         sesion,
         org.id,
         cliente_id=org.cli.deuda,
         motivo="duplicada",
-        revierte_movimiento_id=cobranza.id,
+        revierte_movimiento_id=original.id,
     )
 
     filas, _ = service.movimientos_cliente(sesion, org.id, org.cli.deuda, limite=100)
     por_id = {f.id: f for f in filas}
-    assert por_id[cobranza.id].reversible is False
+    assert por_id[original.id].reversible is False
     # La reversa sí se puede revertir: deshacer una corrección equivocada tiene que ser posible.
     assert por_id[ajuste.id].reversible is True
 
@@ -1261,9 +1273,13 @@ def _url_ajustes(cliente_id: int) -> str:
     return f"/ventas/clientes/{cliente_id}/ajustes"
 
 
-def test_endpoint_ajuste_revierte_una_cobranza_de_punta_a_punta(cliente, org):
-    """El recorrido completo del bug que motivó la feature: se carga una cobranza mal, se
-    revierte, y el saldo vuelve exactamente a donde estaba."""
+def test_endpoint_anular_recibo_de_punta_a_punta(cliente, org):
+    """El recorrido completo: se carga una cobranza mal, se ANULA el recibo, y el saldo vuelve
+    exactamente a donde estaba.
+
+    Pasa por `/recibos/{id}/anular` y no por `/ajustes` porque desde `app/caja/` una cobranza
+    dejó de tener un solo efecto: la anulación revierte ledger, caja y cartera en una transacción.
+    """
     antes = Decimal(
         cliente.get(f"/ventas/clientes/{org.cli.deuda}/movimientos").json()["cuenta"]["saldo"]
     )
@@ -1273,10 +1289,10 @@ def test_endpoint_ajuste_revierte_una_cobranza_de_punta_a_punta(cliente, org):
     ).json()
 
     r = cliente.post(
-        _url_ajustes(org.cli.deuda),
-        json={"revierte_movimiento_id": cobranza["movimiento_id"], "motivo": "cargada dos veces"},
+        f"/ventas/recibos/{cobranza['documento_id']}/anular",
+        json={"motivo": "cargada dos veces"},
     )
-    assert r.status_code == 201
+    assert r.status_code == 200
     assert Decimal(r.json()["saldo"]) == antes
 
     # Y el extracto marca la cobranza como anulada.
@@ -1300,14 +1316,31 @@ def test_endpoint_extracto_expone_motivo_y_anulado(cliente, org):
     assert isinstance(mov["debe"], str)  # la plata sigue viajando como string
 
 
-def test_endpoint_ajuste_doble_reversa_es_422(cliente, org):
+def test_endpoint_anular_dos_veces_el_mismo_recibo_es_422(cliente, org):
     cobranza = cliente.post(
         "/ventas/cobranzas", json={"cliente_codigo": "CLI-DEUDA", "monto": "10.00"}
     ).json()
-    payload = {"revierte_movimiento_id": cobranza["movimiento_id"], "motivo": "primera"}
+    url = f"/ventas/recibos/{cobranza['documento_id']}/anular"
 
-    assert cliente.post(_url_ajustes(org.cli.deuda), json=payload).status_code == 201
-    assert cliente.post(_url_ajustes(org.cli.deuda), json=payload).status_code == 422
+    assert cliente.post(url, json={"motivo": "primera"}).status_code == 200
+    assert cliente.post(url, json={"motivo": "segunda"}).status_code == 422
+
+
+def test_endpoint_revertir_una_cobranza_desde_el_ajuste_es_422(cliente, org):
+    """La puerta vieja quedó CERRADA, y este test la deja clavada.
+
+    Sin él, alguien podría reponer 'cobranza' en `MOVIMIENTOS_REVERSIBLES` y la suite no diría
+    nada — volviendo a dejar caja y cartera vivas después de una reversa.
+    """
+    cobranza = cliente.post(
+        "/ventas/cobranzas", json={"cliente_codigo": "CLI-DEUDA", "monto": "11.00"}
+    ).json()
+
+    r = cliente.post(
+        _url_ajustes(org.cli.deuda),
+        json={"revierte_movimiento_id": cobranza["movimiento_id"], "motivo": "por izquierda"},
+    )
+    assert r.status_code == 422
 
 
 def test_endpoint_ajuste_de_una_venta_es_422(cliente, org):
@@ -1349,9 +1382,8 @@ def test_endpoint_ajuste_payload_incoherente_es_422(cliente, org, payload):
     assert cliente.post(_url_ajustes(org.cli.deuda), json=payload).status_code == 422
 
 
-def test_endpoint_ajuste_proveedor_revierte_un_pago(cliente, org):
+def test_endpoint_anular_orden_de_pago_de_punta_a_punta(cliente, org):
     """El espejo completo por HTTP: mismo contrato contra el otro prefijo."""
-    url = f"/compras/proveedores/{org.prov.deuda}/ajustes"
     antes = Decimal(
         cliente.get(f"/compras/proveedores/{org.prov.deuda}/movimientos").json()["cuenta"]["saldo"]
     )
@@ -1359,20 +1391,14 @@ def test_endpoint_ajuste_proveedor_revierte_un_pago(cliente, org):
     pago = cliente.post(
         "/compras/pagos", json={"proveedor_codigo": "PROV-DEUDA", "monto": "250.00"}
     ).json()
+    url = f"/compras/ordenes-pago/{pago['documento_id']}/anular"
 
-    r = cliente.post(
-        url, json={"revierte_movimiento_id": pago["movimiento_id"], "motivo": "pago duplicado"}
-    )
-    assert r.status_code == 201
+    r = cliente.post(url, json={"motivo": "pago duplicado"})
+    assert r.status_code == 200
     assert Decimal(r.json()["saldo"]) == antes
 
-    # Segunda reversa del mismo movimiento: rechazada.
-    assert (
-        cliente.post(
-            url, json={"revierte_movimiento_id": pago["movimiento_id"], "motivo": "otra vez"}
-        ).status_code
-        == 422
-    )
+    # Segunda anulación de la misma orden: rechazada.
+    assert cliente.post(url, json={"motivo": "otra vez"}).status_code == 422
 
 
 def test_endpoint_ajuste_proveedor_expone_motivo_y_anulado(cliente, org):

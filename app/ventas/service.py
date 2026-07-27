@@ -18,6 +18,7 @@ from uuid import UUID
 from sqlalchemy import Row, and_, func, join, or_, select
 from sqlalchemy.orm import Session, aliased
 
+from app.caja import service as caja
 from app.catalogo import service as catalogo
 from app.clientes import service as clientes
 from app.clientes.models import Cliente
@@ -265,23 +266,26 @@ REF_RECIBO = "recibo"
 #: las facturas ni con las notas de crédito.
 TIPO_RECIBO = "REC"
 
-#: Qué se puede revertir con un storno. Deliberadamente NO están 'venta' ni 'nota_credito': esos
-#: movimientos ESPEJAN un comprobante, y cancelar su efecto desde el ledger dejaría el comprobante
-#: vivo con su cuenta corriente en cero — el ledger dejaría de espejar los comprobantes, en
-#: silencio. Es el pecado del legacy que este diseño existe para no repetir. Una venta se revierte
-#: con una NOTA DE CRÉDITO, que ya existe. Para el caso raro queda el ajuste manual, que deja
-#: escrito el motivo.
+#: Con qué `concepto` viaja a caja el dinero de un recibo, y con cuál vuelve al anularlo.
+CONCEPTO_COBRANZA = "cobranza"
+CONCEPTO_ANULA_COBRANZA = "anulacion_cobranza"
+
+#: Qué se puede revertir con un storno DESDE EL EXTRACTO. Deliberadamente NO están 'venta' ni
+#: 'nota_credito': esos movimientos ESPEJAN un comprobante, y cancelar su efecto desde el ledger
+#: dejaría el comprobante vivo con su cuenta corriente en cero — el ledger dejaría de espejar los
+#: comprobantes, en silencio. Es el pecado del legacy que este diseño existe para no repetir. Una
+#: venta se revierte con una NOTA DE CRÉDITO, que ya existe.
 #:
-#: ⚠️ 'cobranza' AHORA TAMBIÉN espeja un documento (el recibo), así que el argumento de arriba ya
-#: no la distingue. Sigue siendo reversible por otra razón: el recibo TODAVÍA no tiene efectos
-#: fuera del ledger —no hay caja ni cartera de cheques—, así que revertir el Haber cancela el 100%
-#: de su efecto y no queda nada huérfano.
+#: 'cobranza' SALIÓ de esta lista al llegar `app/caja/`, y esta nota registra el porqué porque la
+#: pregunta va a volver. Mientras el recibo no tenía efectos fuera del ledger, revertir el Haber
+#: cancelaba el 100% de su efecto y no quedaba nada huérfano. Desde que un recibo mueve un ingreso
+#: de caja y mete un cheque en la cartera, revertir solo el ledger deja esas dos cosas vivas —
+#: exactamente el problema que 'venta' tiene—. La anulación correcta es `anular_recibo`: reversa
+#: del ledger + reversa de caja + baja del cheque, en una transacción.
 #:
-#: ESA RAZÓN CADUCA CON `app/caja/`. El día que un recibo mueva un ingreso de caja y meta un cheque
-#: en la cartera, revertir solo el ledger va a dejar esas dos cosas vivas —exactamente el problema
-#: que 'venta' tiene hoy—. Ese día 'cobranza' sale de esta lista y la anulación correcta pasa a ser
-#: "anular el recibo": reversa del ledger + reversa de caja + baja del cheque.
-MOVIMIENTOS_REVERSIBLES = frozenset({"cobranza", "ajuste"})
+#: Queda 'ajuste', que sigue siendo reversible porque un ajuste NO tiene efectos fuera del ledger:
+#: es una fila de corrección y nada más. Es la única que se revierte desde el extracto.
+MOVIMIENTOS_REVERSIBLES = frozenset({"ajuste"})
 
 
 def saldo_cliente(session: Session, org_id: UUID, cliente_id: int) -> Decimal:
@@ -416,8 +420,105 @@ def registrar_cobranza(
     if fecha is not None:
         movimiento.fecha = fecha
     session.add(movimiento)
+
+    # La plata ENTRA a la caja, en la MISMA transacción que el recibo y el asiento de cuenta
+    # corriente. Antes de esto el saldo del cliente bajaba y el dinero no aparecía en ningún lado.
+    # Un renglón de forma 'cheque' además entra a la cartera.
+    caja.asentar_documento(
+        session,
+        org_id,
+        concepto=CONCEPTO_COBRANZA,
+        ref_tipo=REF_RECIBO,
+        ref_id=recibo.id,
+        formas=[(f.forma, f.monto) for f in formas_pago],
+        fecha=fecha,
+        usuario_id=usuario_id,
+    )
+
     session.flush()
     return Cobranza(recibo=recibo, movimiento=movimiento)
+
+
+def anular_recibo(
+    session: Session,
+    org_id: UUID,
+    recibo_id: int,
+    *,
+    motivo: str,
+    usuario_id: UUID | None = None,
+) -> CtaCteMovimiento:
+    """Anula un recibo: revierte el ledger, revierte la caja y saca sus cheques de la cartera.
+
+    Es la operación que REEMPLAZA a "revertir la cobranza desde el extracto", y existe porque un
+    recibo dejó de tener un solo efecto. Mientras el recibo no movía nada fuera del ledger,
+    revertir el Haber cancelaba el 100% de su efecto; desde que mueve caja y cartera, revertir
+    solo el ledger deja esas dos cosas vivas — el pecado del legacy que este diseño existe para
+    no repetir. Por eso `'cobranza'` salió de `MOVIMIENTOS_REVERSIBLES`.
+
+    Las TRES reversas van en la misma transacción: o se deshace todo o no se deshace nada.
+
+    El recibo NO se toca (es append-only, y sigue sin tener columna `anulado`): el estado queda
+    DERIVADO de que existe una reversa del movimiento que lo referencia, igual que antes. Una
+    fila menos que pueda desincronizarse.
+    """
+    motivo = motivo.strip()
+    if not motivo:
+        raise VentaInvalida("La anulación necesita un motivo: sin él nadie puede explicarla.")
+
+    recibo = obtener_recibo(session, org_id, recibo_id)
+    if recibo is None:
+        raise VentaInvalida("No existe ese recibo en tu organización.")
+
+    movimiento = session.scalar(
+        select(CtaCteMovimiento).where(
+            CtaCteMovimiento.org_id == org_id,
+            CtaCteMovimiento.ref_tipo == REF_RECIBO,
+            CtaCteMovimiento.ref_id == recibo.id,
+        )
+    )
+    if movimiento is None:
+        raise VentaInvalida("Ese recibo no tiene un movimiento de cuenta corriente que revertir.")
+
+    # Chequeo previo solo para dar un error legible: la garantía REAL es el índice único parcial
+    # de la 0009, porque entre este SELECT y el INSERT entra otra transacción.
+    if session.scalar(
+        select(CtaCteMovimiento.id).where(
+            CtaCteMovimiento.org_id == org_id,
+            CtaCteMovimiento.ref_tipo == REF_REVERSA,
+            CtaCteMovimiento.ref_id == movimiento.id,
+        )
+    ):
+        raise VentaInvalida("Ese recibo ya fue anulado.")
+
+    # La caja PRIMERO: si el documento tiene cheques que ya se movieron, esto levanta y no queda
+    # un ledger revertido con la cartera intacta.
+    try:
+        caja.revertir_documento(
+            session,
+            org_id,
+            concepto=CONCEPTO_ANULA_COBRANZA,
+            ref_tipo=REF_RECIBO,
+            ref_id=recibo.id,
+            usuario_id=usuario_id,
+        )
+    except caja.CajaInvalida as exc:
+        raise VentaInvalida(str(exc)) from None
+
+    reversa = CtaCteMovimiento(
+        org_id=org_id,
+        cliente_id=movimiento.cliente_id,
+        tipo="ajuste",
+        # El espejo exacto: el Haber de la cobranza vuelve como Debe.
+        debe=movimiento.haber,
+        haber=movimiento.debe,
+        ref_tipo=REF_REVERSA,
+        ref_id=movimiento.id,
+        motivo=motivo,
+        creado_por=usuario_id,
+    )
+    session.add(reversa)
+    session.flush()
+    return reversa
 
 
 def obtener_recibo(session: Session, org_id: UUID, recibo_id: int) -> Recibo | None:

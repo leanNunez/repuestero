@@ -18,6 +18,7 @@ from uuid import UUID
 from sqlalchemy import Row, and_, func, join, or_, select
 from sqlalchemy.orm import Session, aliased
 
+from app.caja import service as caja
 from app.catalogo import service as catalogo
 from app.catalogo.schemas import ArticuloActualizar
 from app.compras.models import (
@@ -206,14 +207,19 @@ REF_ORDEN_PAGO = "orden_pago"
 #: contador con los recibos ni con las facturas.
 TIPO_ORDEN_PAGO = "OP"
 
-#: Qué se puede revertir con un storno. NO está 'compra': ese movimiento ESPEJA un documento de
-#: compra, y cancelar su efecto desde el ledger dejaría la compra viva con la cuenta en cero, en
-#: silencio. Espejo de `ventas.MOVIMIENTOS_REVERSIBLES`, donde está la explicación larga.
+#: Con qué `concepto` viaja a caja el dinero de una orden, y con cuál vuelve al anularla.
+CONCEPTO_PAGO = "pago_proveedor"
+CONCEPTO_ANULA_PAGO = "anulacion_pago"
+
+#: Qué se puede revertir con un storno DESDE EL EXTRACTO. NO está 'compra': ese movimiento ESPEJA
+#: un documento de compra, y cancelar su efecto desde el ledger dejaría la compra viva con la
+#: cuenta en cero, en silencio.
 #:
-#: ⚠️ 'pago' AHORA TAMBIÉN espeja un documento (la orden de pago). Sigue siendo reversible porque
-#: esa orden todavía no tiene efectos fuera del ledger —no hay caja ni cartera de cheques—, y esa
-#: razón CADUCA con `app/caja/`. Misma nota que en `ventas`, donde está la explicación larga.
-MOVIMIENTOS_REVERSIBLES = frozenset({"pago", "ajuste"})
+#: 'pago' SALIÓ de esta lista al llegar `app/caja/`: desde que una orden mueve un egreso de caja y
+#: puede meter un cheque emitido en la cartera, revertir solo el ledger deja esas dos cosas vivas.
+#: La anulación correcta es `anular_orden_pago`. Espejo de `ventas.MOVIMIENTOS_REVERSIBLES`, donde
+#: está la explicación larga.
+MOVIMIENTOS_REVERSIBLES = frozenset({"ajuste"})
 
 
 def saldo_proveedor(session: Session, org_id: UUID, proveedor_id: int) -> Decimal:
@@ -331,8 +337,95 @@ def registrar_pago(
     if fecha is not None:
         movimiento.fecha = fecha
     session.add(movimiento)
+
+    # La plata SALE de la caja, en la MISMA transacción que la orden y el asiento de cuenta
+    # corriente. Espejo de `ventas.registrar_cobranza`. Un renglón de forma 'cheque' además entra
+    # a la cartera como cheque EMITIDO (lo firmamos nosotros).
+    caja.asentar_documento(
+        session,
+        org_id,
+        concepto=CONCEPTO_PAGO,
+        ref_tipo=REF_ORDEN_PAGO,
+        ref_id=orden.id,
+        formas=[(f.forma, f.monto) for f in formas_pago],
+        fecha=fecha,
+        usuario_id=usuario_id,
+    )
+
     session.flush()
     return Pago(orden=orden, movimiento=movimiento)
+
+
+def anular_orden_pago(
+    session: Session,
+    org_id: UUID,
+    orden_id: int,
+    *,
+    motivo: str,
+    usuario_id: UUID | None = None,
+) -> ProvCtaCteMovimiento:
+    """Anula una orden de pago: revierte el ledger, revierte la caja y saca sus cheques.
+
+    Espejo exacto de `ventas.anular_recibo`, donde está la explicación larga de por qué esto
+    reemplazó a "revertir el pago desde el extracto".
+    """
+    motivo = motivo.strip()
+    if not motivo:
+        raise CompraInvalida("La anulación necesita un motivo: sin él nadie puede explicarla.")
+
+    orden = obtener_orden_pago(session, org_id, orden_id)
+    if orden is None:
+        raise CompraInvalida("No existe esa orden de pago en tu organización.")
+
+    movimiento = session.scalar(
+        select(ProvCtaCteMovimiento).where(
+            ProvCtaCteMovimiento.org_id == org_id,
+            ProvCtaCteMovimiento.ref_tipo == REF_ORDEN_PAGO,
+            ProvCtaCteMovimiento.ref_id == orden.id,
+        )
+    )
+    if movimiento is None:
+        raise CompraInvalida("Esa orden no tiene un movimiento de cuenta corriente que revertir.")
+
+    # Chequeo previo solo para dar un error legible: la garantía REAL es el índice único parcial
+    # de la 0009.
+    if session.scalar(
+        select(ProvCtaCteMovimiento.id).where(
+            ProvCtaCteMovimiento.org_id == org_id,
+            ProvCtaCteMovimiento.ref_tipo == REF_REVERSA,
+            ProvCtaCteMovimiento.ref_id == movimiento.id,
+        )
+    ):
+        raise CompraInvalida("Esa orden de pago ya fue anulada.")
+
+    # La caja PRIMERO: si hay cheques que ya se movieron, esto levanta y no queda un ledger
+    # revertido con la cartera intacta.
+    try:
+        caja.revertir_documento(
+            session,
+            org_id,
+            concepto=CONCEPTO_ANULA_PAGO,
+            ref_tipo=REF_ORDEN_PAGO,
+            ref_id=orden.id,
+            usuario_id=usuario_id,
+        )
+    except caja.CajaInvalida as exc:
+        raise CompraInvalida(str(exc)) from None
+
+    reversa = ProvCtaCteMovimiento(
+        org_id=org_id,
+        proveedor_id=movimiento.proveedor_id,
+        tipo="ajuste",
+        debe=movimiento.haber,
+        haber=movimiento.debe,
+        ref_tipo=REF_REVERSA,
+        ref_id=movimiento.id,
+        motivo=motivo,
+        creado_por=usuario_id,
+    )
+    session.add(reversa)
+    session.flush()
+    return reversa
 
 
 def obtener_orden_pago(session: Session, org_id: UUID, orden_id: int) -> OrdenPago | None:
