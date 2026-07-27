@@ -3,8 +3,16 @@
 No abre sesión ni commitea — recibe la del request y termina en flush(); el commit lo hace
 `get_tenant` (app/core/rls.py). Mismo contrato que el resto de los services.
 
-Este PR cubre la CARGA MANUAL. La derivación desde el recibo y la orden de pago llega en el
-siguiente, y con ella sale `'cobranza'` de `MOVIMIENTOS_REVERSIBLES`.
+Tres caminos escriben acá, y la diferencia importa:
+
+- **Carga manual** (`registrar_movimiento`): un gasto, un retiro. Sin documento detrás, así que
+  `ref_tipo`/`ref_id` quedan en NULL y solo acepta conceptos de `CONCEPTOS_MANUALES`.
+- **Derivación** (`asentar_documento` / `revertir_documento`): lo emite un recibo o una orden de
+  pago, en su misma transacción.
+- **La cartera** (`depositar`, `cobrar`, `rechazar`, `entregar`): el ciclo de vida del papel, que
+  escribe en caja cada vez que mueve plata.
+
+El invariante que los separa: **si hay documento, caja no se toca a mano**.
 """
 
 from collections.abc import Sequence
@@ -23,12 +31,52 @@ from app.core.formas_pago import FORMAS_PAGO
 #: Estado inicial de un cheque que entra a la cartera.
 EN_CARTERA = "en_cartera"
 
+#: En el banco, esperando que acredite. Todavía vale lo mismo: depositar NO mueve plata.
+DEPOSITADO = "depositado"
+
+#: Terminales. Un cheque que llegó acá no vuelve.
+COBRADO = "cobrado"
+RECHAZADO = "rechazado"
+ENTREGADO = "entregado"
+
 #: Estado terminal de un cheque cuyo documento se dio de baja.
 ANULADO = "anulado"
+
+#: La máquina de estados del papel, explícita y en un solo lugar.
+#:
+#: Un dict y no una cadena de `if` porque las transiciones válidas SON el dominio: escritas así se
+#: leen de un vistazo, se testean recorriéndolas, y agregar un estado es tocar una línea en vez de
+#: auditar todas las ramas de una función.
+#:
+#: Los cuatro terminales apuntan a un conjunto vacío. `anulado` entre ellos es lo que impide
+#: resucitar un cheque cuyo documento se dio de baja: `revertir_documento` lo deja ahí y no hay
+#: arista de salida.
+TRANSICIONES: dict[str, frozenset[str]] = {
+    EN_CARTERA: frozenset({DEPOSITADO, COBRADO, RECHAZADO, ENTREGADO}),
+    # Un cheque en el banco solo puede acreditar o rebotar. No se "des-deposita", y endosarlo es
+    # imposible: el papel ya no lo tenés en la mano.
+    DEPOSITADO: frozenset({COBRADO, RECHAZADO}),
+    COBRADO: frozenset(),
+    RECHAZADO: frozenset(),
+    ENTREGADO: frozenset(),
+    ANULADO: frozenset(),
+}
+
+#: Un cheque que YO recibí: su ciclo de vida mueve mi caja.
+RECIBIDO = "recibido"
 
 
 class CajaInvalida(ValueError):
     """Error de negocio de caja. El router lo traduce a 422."""
+
+
+class ChequeNoEncontrado(LookupError):
+    """No existe ese cheque en esta organización. El router lo traduce a 404.
+
+    Excepción aparte de `CajaInvalida` a propósito: "no existe" y "no se puede" son respuestas
+    distintas, y confundirlas fue exactamente el bug de `GET /ventas/clientes/{id}/saldo` (PR #47),
+    que devolvía 200 con saldo 0 para un cliente inexistente.
+    """
 
 
 class Asiento(NamedTuple):
@@ -253,6 +301,268 @@ def revertir_documento(
 
     session.flush()
     return Asiento(movimientos=contrarios, cheques=cheques)
+
+
+# =================================================================== la cartera: ciclo del papel
+
+
+def _buscar_cheque(session: Session, org_id: UUID, cheque_id: int) -> Cheque:
+    """El cheque de ESTA org, o `ChequeNoEncontrado`.
+
+    El filtro por `org_id` es redundante con el RLS y va igual: si algún día alguien llama a este
+    service con una sesión sin el tenant seteado, la consulta sigue sin cruzar organizaciones.
+    """
+    cheque = session.scalars(
+        select(Cheque).where(Cheque.org_id == org_id, Cheque.id == cheque_id)
+    ).one_or_none()
+    if cheque is None:
+        raise ChequeNoEncontrado(f"No existe el cheque {cheque_id}.")
+    return cheque
+
+
+def _movimiento_de_cheque(
+    org_id: UUID,
+    cheque: Cheque,
+    *,
+    concepto: str,
+    forma: str,
+    fecha: date | None,
+    usuario_id: UUID | None,
+) -> CajaMovimiento:
+    """Una fila de caja causada por la transición de un cheque.
+
+    El signo lo decide el concepto, igual que en `registrar_movimiento`: acá no se pasa "ingreso o
+    egreso" porque sería decir dos veces lo mismo y la segunda es la que se contradice.
+
+    `ref_tipo='cheque'` (el valor ya estaba previsto en el comentario de `ref_tipo` de la 0011)
+    deja el rastro de qué papel movió esta plata, que es lo que hace auditable el extracto.
+    """
+    entra = es_ingreso(concepto)
+    movimiento = CajaMovimiento(
+        org_id=org_id,
+        concepto=concepto,
+        forma=forma,
+        ingreso=cheque.importe if entra else Decimal("0"),
+        egreso=Decimal("0") if entra else cheque.importe,
+        ref_tipo="cheque",
+        ref_id=cheque.id,
+        creado_por=usuario_id,
+    )
+    if fecha is not None:
+        movimiento.fecha = fecha
+    return movimiento
+
+
+def _transicionar(
+    session: Session,
+    org_id: UUID,
+    cheque_id: int,
+    *,
+    destino: str,
+    fecha: date | None = None,
+    usuario_id: UUID | None = None,
+) -> Asiento:
+    """Mueve un cheque de estado y escribe en caja lo que ese movimiento haya movido de plata.
+
+    Es el único lugar que cambia `Cheque.estado`, junto con `revertir_documento`. Las cuatro
+    funciones públicas de abajo son envoltorios finos sobre esto: la validación del grafo y los
+    efectos en caja se escriben una sola vez.
+
+    ## Por qué un cheque EMITIDO no toca la caja acá
+
+    Cuando se registró la orden de pago, `asentar_documento` ya escribió
+    `(forma='cheque', concepto='pago_proveedor', egreso=monto)`: **la plata ya salió**. Si al
+    entregarle el papel al proveedor volviéramos a escribir un egreso, el mismo pago saldría dos
+    veces de la caja.
+
+    Así que para un emitido esto es solo el estado del papel — útil para saber si el proveedor ya
+    lo depositó, sin efecto contable. El rebote de un cheque propio (que revive la deuda y devuelve
+    la plata) se resuelve anulando la orden de pago con `compras.anular_orden_pago`, que deshace el
+    asiento entero; no se parchea desde la cartera.
+    """
+    cheque = _buscar_cheque(session, org_id, cheque_id)
+
+    if destino not in TRANSICIONES[cheque.estado]:
+        posibles = ", ".join(sorted(TRANSICIONES[cheque.estado])) or "ninguno: es un estado final"
+        raise CajaInvalida(
+            f"Un cheque {cheque.estado!r} no puede pasar a {destino!r}. Posibles: {posibles}."
+        )
+
+    movimientos: list[CajaMovimiento] = []
+    if cheque.origen == RECIBIDO:
+        for concepto, forma in _efectos_en_caja(cheque.estado, destino):
+            movimiento = _movimiento_de_cheque(
+                org_id, cheque, concepto=concepto, forma=forma, fecha=fecha, usuario_id=usuario_id
+            )
+            session.add(movimiento)
+            movimientos.append(movimiento)
+
+    cheque.estado = destino
+    session.flush()
+    return Asiento(movimientos=movimientos, cheques=[cheque])
+
+
+def _efectos_en_caja(origen_estado: str, destino: str) -> list[tuple[str, str]]:
+    """Qué asientos escribe una transición, como `(concepto, forma)`.
+
+    **Cobrar escribe DOS**, y esa es la lección que costó una migración: el papel sale de la
+    cartera Y la plata entra por otra forma. Escribir solo la segunda pata dejaría la caja diciendo
+    que tiene el cheque y el dinero — el doble de lo que hay. Ver `app/core/conceptos_caja.py`.
+
+    En qué forma entra la plata depende del CAMINO, no del destino:
+
+    - Cobrado desde `en_cartera` = lo cobré por ventanilla, entró al **cajón** (`efectivo`).
+    - Cobrado desde `depositado` = lo acreditó el **banco** (`transferencia`, la única forma del
+      vocabulario que representa dinero bancario).
+
+    Sin esa distinción, `saldo_efectivo` diría que hay plata en el cajón que en realidad está en el
+    banco, y dejaría de ser arqueable contra lo que se cuenta a mano — que es todo lo que promete.
+    """
+    if destino == DEPOSITADO:
+        # El cheque cambió de lugar físico, no de valor: sigue siendo un cheque y sigue valiendo lo
+        # mismo. No hay plata que mover.
+        return []
+    if destino == COBRADO:
+        forma_destino = "efectivo" if origen_estado == EN_CARTERA else "transferencia"
+        return [("cheque_cobrado_cartera", "cheque"), ("cheque_cobrado", forma_destino)]
+    if destino == RECHAZADO:
+        # El banco lo devolvió: el valor nunca existió. Sale de la cartera y no entra nada — la
+        # deuda del cliente revive por el lado de la cuenta corriente, no acá.
+        return [("cheque_rechazado", "cheque")]
+    if destino == ENTREGADO:
+        # Endoso: el papel se lo di a un proveedor. Sale de mi cartera y no entra nada a mi caja.
+        return [("pago_proveedor", "cheque")]
+    return []
+
+
+def depositar(
+    session: Session,
+    org_id: UUID,
+    cheque_id: int,
+    *,
+    fecha: date | None = None,  # noqa: ARG001 — ver el docstring
+    usuario_id: UUID | None = None,
+) -> Asiento:
+    """Lo llevé al banco. No mueve plata: el cheque vale lo mismo antes y después.
+
+    Acepta `fecha` y NO la usa, para que las cuatro transiciones tengan la misma firma y el router
+    pueda tratarlas igual. No se guarda en ningún lado porque no hay dónde: `fecha` en este módulo
+    es "cuándo se movió la plata", y acá no se movió ninguna. El día que haga falta saber cuándo se
+    depositó, es una columna `fecha_deposito` en `cheques`, no este parámetro.
+    """
+    return _transicionar(session, org_id, cheque_id, destino=DEPOSITADO, usuario_id=usuario_id)
+
+
+def cobrar(
+    session: Session,
+    org_id: UUID,
+    cheque_id: int,
+    *,
+    fecha: date | None = None,
+    usuario_id: UUID | None = None,
+) -> Asiento:
+    """Se hizo efectivo. Escribe las DOS patas: sale de la cartera, entra por efectivo (si fue por
+    ventanilla) o por transferencia (si lo acreditó el banco). Ver `_efectos_en_caja`."""
+    return _transicionar(
+        session, org_id, cheque_id, destino=COBRADO, fecha=fecha, usuario_id=usuario_id
+    )
+
+
+def rechazar(
+    session: Session,
+    org_id: UUID,
+    cheque_id: int,
+    *,
+    fecha: date | None = None,
+    usuario_id: UUID | None = None,
+) -> Asiento:
+    """Volvió rechazado. Sale de la cartera sin acreditar nada."""
+    return _transicionar(
+        session, org_id, cheque_id, destino=RECHAZADO, fecha=fecha, usuario_id=usuario_id
+    )
+
+
+def entregar(
+    session: Session,
+    org_id: UUID,
+    cheque_id: int,
+    *,
+    fecha: date | None = None,
+    usuario_id: UUID | None = None,
+) -> Asiento:
+    """Endosado a un proveedor. Sale de la cartera como `pago_proveedor`."""
+    return _transicionar(
+        session, org_id, cheque_id, destino=ENTREGADO, fecha=fecha, usuario_id=usuario_id
+    )
+
+
+def conciliar(session: Session, org_id: UUID, cheque_id: int, *, fecha: date) -> Cheque:
+    """Marca el cheque como conciliado contra el resumen bancario.
+
+    Es ortogonal al estado: se concilia un cheque cobrado o uno rechazado, y el estado no cambia
+    por conciliarlo. Por eso no pasa por la máquina de estados.
+
+    La fecha es OBLIGATORIA —el CHECK `ck_cheques_conciliado_con_fecha` de la 0011 la exige— porque
+    una conciliación sin fecha no se puede auditar, que es todo el punto de conciliar. El blueprint
+    (§5.G) cuenta con esto: "cheques sin conciliar" es una de las anomalías que auditoría detecta.
+    """
+    cheque = _buscar_cheque(session, org_id, cheque_id)
+    if cheque.conciliado:
+        raise CajaInvalida(f"El cheque {cheque_id} ya estaba conciliado.")
+
+    cheque.conciliado = True
+    cheque.fecha_conciliacion = fecha
+    session.flush()
+    return cheque
+
+
+def cartera(
+    session: Session,
+    org_id: UUID,
+    *,
+    estado: str | None = None,
+    limite: int = 50,
+    offset: int = 0,
+) -> tuple[list[Cheque], int]:
+    """Los cheques de la org, paginados. Sin `estado` trae todos.
+
+    Sin window function ni saldo acumulado, a diferencia de `movimientos`: un cheque no acumula, es
+    un papel con un importe. El total de la cartera se responde con `valor_en_cartera`.
+
+    El orden es por `fecha_cobro` y después por id. Es la pregunta real del mostrador —"qué puedo
+    depositar esta semana"—, y `ix_cheques_org_estado` (org, estado, fecha_cobro) ya cubre este
+    acceso. Los que no tienen `fecha_cobro` cargada quedan al final (`nulls_last`) en vez de
+    encabezar la lista, que es donde menos sirven.
+    """
+    filtros = [Cheque.org_id == org_id]
+    if estado is not None:
+        filtros.append(Cheque.estado == estado)
+
+    total = session.scalar(select(func.count()).select_from(Cheque).where(*filtros)) or 0
+    cheques = session.scalars(
+        select(Cheque)
+        .where(*filtros)
+        .order_by(Cheque.fecha_cobro.asc().nulls_last(), Cheque.id)
+        .limit(limite)
+        .offset(offset)
+    ).all()
+    return list(cheques), total
+
+
+def valor_en_cartera(session: Session, org_id: UUID) -> Decimal:
+    """Cuánto valen los cheques que todavía tengo en la mano.
+
+    Se lee de `cheques` y no de `caja_saldo['cheque']` a propósito, aunque los dos números tengan
+    que coincidir: este es el inventario del papel y aquel es el libro del dinero. Que coincidan es
+    justamente lo que un arqueo verifica — leerlos del mismo lugar haría que el control no controle
+    nada.
+    """
+    total = session.scalar(
+        select(func.coalesce(func.sum(Cheque.importe), 0)).where(
+            Cheque.org_id == org_id, Cheque.estado == EN_CARTERA
+        )
+    )
+    return Decimal(total or 0)
 
 
 def saldo_por_forma(session: Session, org_id: UUID) -> dict[str, Decimal]:
