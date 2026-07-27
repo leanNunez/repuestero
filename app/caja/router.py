@@ -102,7 +102,12 @@ def listar_movimientos(
 @router.get("/saldo", response_model=SaldoCajaLeer)
 def saldo(tenant: TenantContext = Depends(get_tenant)) -> SaldoCajaLeer:
     por_forma = service.saldo_por_forma(tenant.session, tenant.org_id)
-    return SaldoCajaLeer(efectivo=por_forma["efectivo"], por_forma=por_forma)
+    return SaldoCajaLeer(
+        efectivo=por_forma["efectivo"],
+        por_forma=por_forma,
+        # De la tabla `cheques`, no del libro: son números distintos en cuanto hay cheques emitidos.
+        cheques_en_cartera=service.valor_en_cartera(tenant.session, tenant.org_id),
+    )
 
 
 # ================================================================================ cartera

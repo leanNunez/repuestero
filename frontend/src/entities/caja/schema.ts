@@ -35,12 +35,16 @@ export const movimientoCajaPaginaSchema = z.object({
   total: z.number(),
 });
 
-/** El saldo discriminado por forma. `efectivo` viene aparte por ser LA pregunta de caja: es el
- *  número que la pantalla muestra grande, y sacarlo del diccionario en cada consumidor invitaría a
- *  repetir la clave mágica. */
+/** El saldo discriminado por forma, más los dos números que la pantalla muestra grandes.
+ *
+ * `cheques_en_cartera` es DISTINTO de `por_forma.cheque` y por eso viaja aparte: aquel es el neto
+ * de los cheques recibidos menos los emitidos —un cheque propio escribe un egreso sin
+ * contrapartida, porque no entra a la cartera sino que sale del bolsillo— así que se va a negativo
+ * sin que nada esté mal. El valor de la cartera sale de la tabla `cheques`, y es el que se muestra. */
 export const saldoCajaSchema = z.object({
   efectivo: z.string(),
   por_forma: z.record(z.string(), z.string()),
+  cheques_en_cartera: z.string(),
 });
 
 /** Acuse de un alta manual. `advertencias` es la regla "advertir, no bloquear": si el movimiento

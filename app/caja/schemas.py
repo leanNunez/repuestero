@@ -64,15 +64,27 @@ class MovimientoCajaPagina(BaseModel):
 
 
 class SaldoCajaLeer(BaseModel):
-    """El saldo discriminado por forma, más el efectivo aparte por ser LA pregunta de caja.
+    """El saldo discriminado por forma, más los dos números que la pantalla muestra grandes.
 
     `efectivo` es redundante con `por_forma["efectivo"]` a propósito: es el número que la pantalla
     muestra grande, y hacer que el front lo saque de un diccionario invita a que cada consumidor
     repita la clave mágica.
+
+    `cheques_en_cartera` **NO es redundante**: no sale del libro sino de la tabla `cheques`, y es un
+    número DISTINTO de `por_forma["cheque"]`. Ver abajo.
     """
 
     efectivo: Decimal
     por_forma: dict[str, Decimal]
+    #: Cuánto valen los cheques que todavía están en la mano.
+    #:
+    #: Va aparte porque `por_forma["cheque"]` es OTRA COSA: el neto de los recibidos menos los
+    #: emitidos. Un cheque propio escribe un egreso sin contrapartida (no entra a la cartera, sale
+    #: del bolsillo), así que ese neto se va a negativo apenas firmás más de los que tenés —sin que
+    #: nada esté mal— y no sirve para responder "¿cuánto tengo en cheques?".
+    #:
+    #: La pantalla muestra ESTE. Rotular el otro como "cheques en cartera" era mentir.
+    cheques_en_cartera: Decimal
 
 
 class MovimientoCajaResponse(BaseModel):

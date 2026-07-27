@@ -576,14 +576,35 @@ def cartera(
 def valor_en_cartera(session: Session, org_id: UUID) -> Decimal:
     """Cuánto valen los cheques que todavía tengo en la mano.
 
-    Se lee de `cheques` y no de `caja_saldo['cheque']` a propósito, aunque los dos números tengan
-    que coincidir: este es el inventario del papel y aquel es el libro del dinero. Que coincidan es
-    justamente lo que un arqueo verifica — leerlos del mismo lugar haría que el control no controle
-    nada.
+    ## Esto NO es `saldo_por_forma()['cheque']`, y la diferencia importa
+
+    Una versión anterior de este docstring decía que los dos números "tienen que coincidir" y que
+    eso era lo que un arqueo verifica. **Es falso**, y probar el circuito completo lo demostró.
+
+    Un cheque RECIBIDO netea a cero solo: entra con `+importe` cuando lo cobrás y sale con
+    `-importe` cuando se cobra, se rechaza, se entrega o se anula. Hasta ahí los dos números
+    coinciden.
+
+    Pero un cheque EMITIDO —el que firmo yo para pagarle a un proveedor— escribe un EGRESO de la
+    forma `cheque` que **nunca tiene contrapartida**: un cheque propio no entra a mi cartera, sale
+    de mi bolsillo. La relación real es:
+
+        saldo_por_forma()['cheque']  ==  valor_en_cartera  -  (suma de los cheques emitidos)
+
+    Así que `saldo['cheque']` es el NETO de todo lo que pasó por cheques, y puede ser negativo sin
+    que nada esté mal. **El valor de la cartera es este de acá**, y es el que la pantalla muestra.
+
+    ## Solo los RECIBIDOS
+
+    Un cheque emitido también nace `en_cartera` —está firmado y todavía no se lo di a nadie— pero no
+    es un activo mío: es un papel que voy a tener que pagar. Contarlo acá inflaría "cuánto tengo en
+    cheques" con plata que debo, que es el signo exactamente al revés.
     """
     total = session.scalar(
         select(func.coalesce(func.sum(Cheque.importe), 0)).where(
-            Cheque.org_id == org_id, Cheque.estado == EN_CARTERA
+            Cheque.org_id == org_id,
+            Cheque.estado == EN_CARTERA,
+            Cheque.origen == RECIBIDO,
         )
     )
     return Decimal(total or 0)
@@ -637,6 +658,17 @@ def advertencias_de_saldo(
     `formas` acota el chequeo a las que la operación tocó, para no avisar de un negativo viejo que
     no tiene nada que ver con lo que la persona acaba de hacer. Sin argumento revisa todas, que es
     lo que sirve para una pantalla.
+
+    ## `cheque` queda AFUERA, y no es un olvido
+
+    El saldo de la forma `cheque` es el neto de los recibidos menos los emitidos, así que **se va a
+    negativo apenas firmás más cheques de los que tenés en la mano** — lo normal en un negocio que
+    le paga a proveedores con cheque propio. Avisar ahí sería una falsa alarma permanente, y una
+    alarma que suena siempre es una alarma que nadie mira.
+
+    La cantidad que de verdad no puede ser negativa del lado de los cheques es `valor_en_cartera`,
+    y lo es **por construcción**: suma importes positivos de los papeles que todavía tenés. No hay
+    nada que chequear.
     """
     saldos = saldo_por_forma(session, org_id)
     a_revisar = sorted(set(formas)) if formas is not None else sorted(saldos)
@@ -645,7 +677,7 @@ def advertencias_de_saldo(
         f"{_NOMBRE_FORMA.get(forma, forma)} quedó en {saldos[forma]:,.2f}. "
         "Un saldo negativo no puede pasar en la realidad: revisá si falta cargar un ingreso."
         for forma in a_revisar
-        if saldos.get(forma, Decimal("0")) < 0
+        if forma != "cheque" and saldos.get(forma, Decimal("0")) < 0
     ]
 
 

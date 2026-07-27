@@ -19,14 +19,20 @@ import {
  * mixto (5.000 efectivo + 15.000 cheque) y un gasto manual. Si el backend cambia el contrato, esto
  * se pone rojo acá y no en producción. */
 
+/** Capturado con un recibo de 15.000 en cheque MÁS una orden de pago de 4.000 con cheque propio.
+ *
+ * Es el caso que SEPARA los dos números: `por_forma.cheque` = 15.000 − 4.000 = 11.000 (el neto del
+ * libro, que resta el emitido) y `cheques_en_cartera` = 15.000 (lo que tengo en la mano).
+ * Confundirlos era el bug: la pantalla mostraba el neto rotulado "Cheques en cartera". */
 const SALDO = {
-  efectivo: "4700.00",
+  efectivo: "5000.00",
   por_forma: {
+    efectivo: "5000.00",
+    cheque: "11000.00",
     transferencia: "0",
     tarjeta: "0",
-    efectivo: "4700.00",
-    cheque: "15000.00",
   },
+  cheques_en_cartera: "15000.00",
 };
 
 const MOVIMIENTOS = {
@@ -147,8 +153,14 @@ const COBRAR = {
 };
 
 describe("contrato con el backend", () => {
-  it("GET /caja/saldo", () => {
-    expect(() => saldoCajaSchema.parse(SALDO)).not.toThrow();
+  it("GET /caja/saldo separa el neto del libro del valor de la cartera", () => {
+    const s = saldoCajaSchema.parse(SALDO);
+
+    // El invariante real, verificado contra una respuesta de verdad:
+    //     por_forma.cheque  ==  cheques_en_cartera  -  (suma de los emitidos)
+    expect(s.cheques_en_cartera).toBe("15000.00");
+    expect(s.por_forma.cheque).toBe("11000.00");
+    expect(Number(s.por_forma.cheque)).toBeLessThan(Number(s.cheques_en_cartera));
   });
 
   it("GET /caja/movimientos, con y sin referencia", () => {
