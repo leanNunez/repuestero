@@ -20,6 +20,17 @@ class ClienteLeer(BaseModel):
     activo: bool
 
 
+class ClientePagina(BaseModel):
+    """Una página del padrón + el total del resultado filtrado (para paginar en el front).
+
+    Espeja `ArticuloPagina`. El `total` es el del resultado FILTRADO, no el del padrón entero: es
+    lo que el front necesita para saber cuántas páginas hay de lo que se está mirando.
+    """
+
+    items: list[ClienteLeer]
+    total: int
+
+
 class ClienteCrear(BaseModel):
     """Alta de cliente desde la app.
 

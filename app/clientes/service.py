@@ -2,7 +2,7 @@ import re
 from decimal import Decimal
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.clientes.models import Cliente
@@ -146,12 +146,47 @@ def obtener_cliente_por_id(session: Session, org_id: UUID, cliente_id: int) -> C
     return session.scalar(select(Cliente).where(Cliente.org_id == org_id, Cliente.id == cliente_id))
 
 
-def listar_clientes(session: Session, org_id: UUID, *, limite: int = 50) -> list[Cliente]:
-    return list(
-        session.scalars(
-            select(Cliente)
-            .where(Cliente.org_id == org_id, Cliente.activo.is_(True))
-            .order_by(Cliente.denominacion)
-            .limit(limite)
+def listar_clientes(
+    session: Session,
+    org_id: UUID,
+    *,
+    buscar: str | None = None,
+    limite: int = 50,
+    offset: int = 0,
+) -> tuple[list[Cliente], int]:
+    """Página del padrón + total del resultado filtrado. Espeja `catalogo.listar_articulos`.
+
+    Devuelve `(items, total)` y no una lista pelada porque sin el total el front no puede paginar:
+    sabría qué está viendo pero no cuánto falta. Antes esto devolvía los primeros 50 por orden
+    alfabético y nada más, así que un cliente recién dado de alta —o cualquiera de la mitad de
+    abajo del abecedario— era invisible para la app: existía en la base y no había forma de
+    llegar a él desde la pantalla.
+
+    El filtro por `org_id` es explícito aunque RLS ya lo garantice: RLS es la red de seguridad,
+    no el filtro primario.
+
+    `buscar` mira denominación, código Y CUIT. El CUIT entra a propósito: en el mostrador el
+    dato que llega escrito es el de la factura del cliente, no el código interno del sistema.
+    """
+    filtros = [Cliente.org_id == org_id, Cliente.activo.is_(True)]
+    if buscar:
+        patron = f"%{buscar}%"
+        filtros.append(
+            Cliente.denominacion.ilike(patron)
+            | Cliente.codigo.ilike(patron)
+            | Cliente.cuit.ilike(patron)
         )
+
+    total = session.scalar(select(func.count()).select_from(Cliente).where(*filtros)) or 0
+
+    # `codigo` de desempate: dos clientes pueden llamarse igual (dos sucursales de la misma
+    # empresa) y sin un segundo criterio estable la paginación deriva — una fila se repetiría en
+    # una página y faltaría en la otra, según cómo el motor resuelva el empate esa vez.
+    items = session.scalars(
+        select(Cliente)
+        .where(*filtros)
+        .order_by(Cliente.denominacion, Cliente.codigo)
+        .limit(limite)
+        .offset(offset)
     )
+    return list(items), total
