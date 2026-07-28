@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 
 import type { SaldoCaja } from "@/entities/caja/schema";
@@ -13,6 +13,7 @@ const SANO: SaldoCaja = {
     transferencia: "0",
     tarjeta: "0",
   },
+  cheques_en_cartera: "15000.00",
 };
 
 describe("SaldoCards", () => {
@@ -67,5 +68,51 @@ describe("SaldoCards", () => {
     const { container } = render(<SaldoCards saldo={SANO} isLoading={false} />);
 
     expect(container.querySelector('[aria-live="polite"]')).toBeInTheDocument();
+  });
+
+  describe("la tarjeta de cheques muestra la CARTERA, no el neto del libro", () => {
+    // `por_forma.cheque` es el neto de recibidos menos emitidos: un cheque propio resta sin haber
+    // sumado nunca, porque no entra a la cartera sino que sale del bolsillo. Rotular ese número
+    // "Cheques en cartera" era mentir.
+
+    const CON_EMITIDOS: SaldoCaja = {
+      ...SANO,
+      // Firmé más cheques de los que tengo: el neto del libro queda en rojo…
+      por_forma: { ...SANO.por_forma, cheque: "-4000.00" },
+      // …pero la cartera está vacía, que es la verdad de lo que tengo en la mano.
+      cheques_en_cartera: "0.00",
+    };
+
+    it("muestra el valor de la cartera", () => {
+      render(<SaldoCards saldo={CON_EMITIDOS} isLoading={false} />);
+
+      // Dentro de LA tarjeta de cheques, no en cualquier lado: transferencia y tarjeta también
+      // están en cero y un `getByText("$ 0,00")` suelto no probaría nada.
+      const tarjeta = screen.getByText("Cheques en cartera").closest("div")!;
+      expect(within(tarjeta).getByText("$ 0,00")).toBeInTheDocument();
+      // El neto del libro (-4.000) NO se muestra en ningún lado.
+      expect(screen.queryByText(/-\$\s?4\.000,00/)).not.toBeInTheDocument();
+    });
+
+    it("NO grita 'negativo' por el neto del libro", () => {
+      // Tener cheques propios en la calle es lo normal. Una alarma que suena siempre es una alarma
+      // que nadie mira.
+      render(<SaldoCards saldo={CON_EMITIDOS} isLoading={false} />);
+
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    });
+
+    it("pero sí avisa si el EFECTIVO se va a negativo", () => {
+      render(
+        <SaldoCards
+          saldo={{ ...CON_EMITIDOS, por_forma: { ...CON_EMITIDOS.por_forma, efectivo: "-500.00" } }}
+          isLoading={false}
+        />,
+      );
+
+      const alerta = screen.getByRole("alert");
+      expect(alerta).toHaveTextContent("Efectivo está en negativo");
+      expect(alerta).not.toHaveTextContent("cartera de cheques");
+    });
   });
 });

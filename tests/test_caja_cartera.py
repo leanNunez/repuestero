@@ -271,10 +271,53 @@ def test_conciliar_marca_el_cheque_con_su_fecha(sesion, org):
 
 def test_conciliar_dos_veces_no_pasa(sesion, org):
     cheque = _cobrar_con_cheque(sesion, org)
+    service.cobrar(sesion, org.id, cheque.id)
     service.conciliar(sesion, org.id, cheque.id, fecha=date(2026, 3, 20))
 
     with pytest.raises(service.CajaInvalida, match="ya estaba conciliado"):
         service.conciliar(sesion, org.id, cheque.id, fecha=date(2026, 3, 21))
+
+
+@pytest.mark.parametrize("transicion", ["depositar", "cobrar", "rechazar"])
+def test_se_concilia_lo_que_paso_por_el_banco(sesion, org, transicion):
+    cheque = _cobrar_con_cheque(sesion, org)
+    getattr(service, transicion)(sesion, org.id, cheque.id)
+
+    service.conciliar(sesion, org.id, cheque.id, fecha=date(2026, 3, 20))
+
+    assert cheque.conciliado is True
+
+
+def test_un_cheque_en_cartera_no_se_concilia(sesion, org):
+    """Está en tu mano, no en el banco: no puede figurar en ningún resumen todavía."""
+    cheque = _cobrar_con_cheque(sesion, org)
+
+    with pytest.raises(service.CajaInvalida, match="no pasó por el banco"):
+        service.conciliar(sesion, org.id, cheque.id, fecha=date(2026, 3, 20))
+
+
+def test_un_cheque_anulado_no_se_concilia(sesion, org):
+    """El bug que destapó probar la pantalla: la cartera ofrecía "Conciliar" en un cheque anulado.
+
+    Un cheque cuyo documento se dio de baja **nunca existió para el banco**, así que cruzarlo contra
+    el resumen es pedir una operación imposible.
+    """
+    cheque = _cobrar_con_cheque(sesion, org)
+    service.revertir_documento(
+        sesion, org.id, concepto="anulacion_cobranza", ref_tipo="recibo", ref_id=1
+    )
+
+    with pytest.raises(service.CajaInvalida, match="no pasó por el banco"):
+        service.conciliar(sesion, org.id, cheque.id, fecha=date(2026, 3, 20))
+
+
+def test_un_cheque_entregado_no_se_concilia(sesion, org):
+    """Se lo diste a un proveedor: entra al banco de OTRO, no al tuyo."""
+    cheque = _cobrar_con_cheque(sesion, org)
+    service.entregar(sesion, org.id, cheque.id)
+
+    with pytest.raises(service.CajaInvalida, match="no pasó por el banco"):
+        service.conciliar(sesion, org.id, cheque.id, fecha=date(2026, 3, 20))
 
 
 # =========================================================================== listado
@@ -292,16 +335,71 @@ def test_la_cartera_se_filtra_por_estado(sesion, org):
 
 
 def test_el_valor_en_cartera_cuenta_solo_los_que_estan_en_la_mano(sesion, org):
-    """Se lee de `cheques` y no de `caja_saldo`, aunque los dos números tengan que coincidir: uno
-    es el inventario del papel y el otro el libro del dinero. Que coincidan es lo que un arqueo
-    verifica."""
+    """Con SOLO cheques recibidos, el inventario del papel y el libro del dinero coinciden: cada
+    recibido entra con +importe y sale con -importe."""
     uno = _cobrar_con_cheque(sesion, org, ref_id=1)
     _cobrar_con_cheque(sesion, org, ref_id=2, importe=Decimal("5000"))
     service.cobrar(sesion, org.id, uno.id)
 
     assert service.valor_en_cartera(sesion, org.id) == Decimal("5000")
-    # El arqueo: el inventario del papel y el libro del dinero dicen lo mismo.
     assert service.saldo_por_forma(sesion, org.id)["cheque"] == Decimal("5000")
+
+
+def test_un_cheque_EMITIDO_separa_la_cartera_del_neto_del_libro(sesion, org):
+    """El invariante que faltaba, y que probar el circuito completo destapó.
+
+    Una versión anterior del código afirmaba que `valor_en_cartera` y `saldo['cheque']` "tienen que
+    coincidir" y que eso era un arqueo. **Es falso en cuanto hay cheques emitidos**: un cheque
+    propio escribe un egreso sin contrapartida —no entra a la cartera, sale del bolsillo— así que:
+
+        saldo['cheque']  ==  valor_en_cartera  -  (suma de los emitidos)
+
+    Con la afirmación vieja, un arqueo construido sobre esa igualdad daba falso positivo para
+    siempre. Y la pantalla mostraba ese neto rotulado "Cheques en cartera".
+    """
+    _cobrar_con_cheque(sesion, org, ref_id=1, importe=Decimal("10000"))
+    _pagar_con_cheque(sesion, org, ref_id=2)  # emitido por 15.000
+
+    en_cartera = service.valor_en_cartera(sesion, org.id)
+    neto_libro = service.saldo_por_forma(sesion, org.id)["cheque"]
+
+    # Lo que tengo en la mano: SOLO el recibido. El emitido también nace `en_cartera`, pero no es
+    # un activo mío — es un papel que voy a tener que pagar.
+    assert en_cartera == Decimal("10000")
+    # El neto del libro resta el emitido, y puede quedar NEGATIVO sin que nada esté mal.
+    assert neto_libro == Decimal("10000") - IMPORTE
+    assert neto_libro < 0
+    assert neto_libro == en_cartera - IMPORTE
+
+
+def test_un_cheque_emitido_sin_entregar_no_infla_la_cartera(sesion, org):
+    """Nace `en_cartera` como cualquiera, pero no es plata que tengo: es plata que debo."""
+    _pagar_con_cheque(sesion, org, ref_id=1)
+
+    assert service.valor_en_cartera(sesion, org.id) == Decimal("0")
+
+
+def test_el_neto_de_cheques_en_negativo_NO_dispara_advertencia(sesion, org):
+    """La otra cara del mismo bug: tener cheques propios en la calle es lo NORMAL.
+
+    Si la advertencia mirara `saldo['cheque']`, gritaría en cuanto firmás más de los que tenés — y
+    una alarma que suena siempre es una alarma que nadie mira. La cantidad que de verdad no puede
+    ser negativa del lado de los cheques es `valor_en_cartera`, y lo es por construcción.
+    """
+    _pagar_con_cheque(sesion, org, ref_id=1)
+
+    assert service.saldo_por_forma(sesion, org.id)["cheque"] < 0
+    assert service.advertencias_de_saldo(sesion, org.id) == []
+    assert service.advertencias_de_saldo(sesion, org.id, formas=["cheque"]) == []
+
+
+def test_el_efectivo_en_negativo_SIGUE_advirtiendo(sesion, org):
+    """El recorte es SOLO para cheques: el cajón no puede tener menos que cero."""
+    service.registrar_movimiento(
+        sesion, org.id, concepto="gasto", forma="efectivo", monto=Decimal("100")
+    )
+
+    assert len(service.advertencias_de_saldo(sesion, org.id)) == 1
 
 
 def test_los_cheques_sin_fecha_de_cobro_van_al_final(sesion, org):
@@ -425,6 +523,9 @@ def test_endpoint_estado_inventado_es_422(cliente):
 
 def test_endpoint_conciliar_exige_fecha(cliente, cheque_http):
     """Sin fecha no se puede auditar, que es todo el punto de conciliar."""
+    # Primero pasa por el banco: un cheque en cartera todavía no se concilia.
+    cliente.post(f"/caja/cheques/{cheque_http}/cobrar")
+
     assert cliente.post(f"/caja/cheques/{cheque_http}/conciliar", json={}).status_code == 422
 
     r = cliente.post(
@@ -432,3 +533,13 @@ def test_endpoint_conciliar_exige_fecha(cliente, cheque_http):
     )
     assert r.status_code == 200
     assert r.json()["conciliado"] is True
+
+
+def test_endpoint_conciliar_un_cheque_en_cartera_es_422(cliente, cheque_http):
+    """La reja del estado también por HTTP, con un mensaje que explica el porqué."""
+    r = cliente.post(
+        f"/caja/cheques/{cheque_http}/conciliar", json={"fecha": date.today().isoformat()}
+    )
+
+    assert r.status_code == 422
+    assert "banco" in r.json()["detail"]

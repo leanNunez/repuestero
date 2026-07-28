@@ -332,10 +332,13 @@ def test_endpoint_saldo_shape(cliente):
     assert r.status_code == 200
     body = r.json()
 
-    assert set(body) == {"efectivo", "por_forma"}
+    # `cheques_en_cartera` va aparte de `por_forma["cheque"]` y NO es redundante: aquel es el neto
+    # de recibidos menos emitidos y puede ser negativo; este es lo que hay en la mano.
+    assert set(body) == {"efectivo", "por_forma", "cheques_en_cartera"}
     assert set(body["por_forma"]) == {"efectivo", "cheque", "transferencia", "tarjeta"}
     # Plata como STRING, nunca float: es la regla no negociable del proyecto llegando al JSON.
     assert isinstance(body["efectivo"], str)
+    assert isinstance(body["cheques_en_cartera"], str)
 
 
 def test_endpoint_movimientos_shape(cliente):

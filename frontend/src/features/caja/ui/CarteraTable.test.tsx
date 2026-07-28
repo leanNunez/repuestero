@@ -64,12 +64,52 @@ describe("CarteraTable", () => {
     render(
       <CarteraTable
         {...props}
-        cheques={[cheque({ conciliado: true, fecha_conciliacion: "2026-07-20" })]}
+        cheques={[
+          cheque({ estado: "cobrado", conciliado: true, fecha_conciliacion: "2026-07-20" }),
+        ]}
       />,
     );
 
     expect(screen.queryByRole("button", { name: /Conciliar/i })).not.toBeInTheDocument();
     expect(screen.getByText("Conciliado")).toBeInTheDocument();
+  });
+
+  describe("conciliar solo lo que pasó por el banco", () => {
+    // Conciliar es cruzar contra el RESUMEN BANCARIO. Un cheque que nunca entró al banco no puede
+    // figurar ahí, así que ofrecerlo es pedir una operación imposible. El service lo rechaza con
+    // un 422; esto evita que la persona llegue a apretarlo.
+
+    it.each(["depositado", "cobrado", "rechazado"])("%s SÍ se concilia", (estado) => {
+      render(<CarteraTable {...props} cheques={[cheque({ estado })]} />);
+
+      expect(screen.getByRole("button", { name: /Conciliar/i })).toBeInTheDocument();
+    });
+
+    it.each(["anulado", "en_cartera", "entregado"])("%s NO se concilia", (estado) => {
+      render(<CarteraTable {...props} cheques={[cheque({ estado })]} />);
+
+      expect(screen.queryByRole("button", { name: /Conciliar/i })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("un cheque EMITIDO no se deposita ni se cobra", () => {
+    // Es un papel que firmé yo: lo deposita y lo cobra el proveedor, en SU banco. Lo único que
+    // puedo registrar es que se lo entregué, y que volvió rechazado.
+
+    it("solo ofrece Entregar y Rechazó", () => {
+      render(<CarteraTable {...props} cheques={[cheque({ origen: "emitido" })]} />);
+
+      expect(screen.getByRole("button", { name: /Entregar/i })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Rechazó/i })).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /Depositar/i })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /^Cobrar/i })).not.toBeInTheDocument();
+    });
+
+    it("el mismo estado en un RECIBIDO sí ofrece las cuatro", () => {
+      render(<CarteraTable {...props} cheques={[cheque({ origen: "recibido" })]} />);
+
+      expect(screen.getByRole("button", { name: /Depositar/i })).toBeInTheDocument();
+    });
   });
 
   it("sin banco ni número cargados, identifica el papel por su id", () => {

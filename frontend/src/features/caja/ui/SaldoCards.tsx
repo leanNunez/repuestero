@@ -32,7 +32,20 @@ export function SaldoCards({ saldo, isLoading }: Props) {
     );
   }
 
-  const enNegativo = FORMAS.filter((f) => estaEnNegativo(saldo.por_forma[f] ?? "0"));
+  // Lo que se MUESTRA por forma. `cheque` no sale del libro: `por_forma.cheque` es el neto de
+  // recibidos menos emitidos —un cheque propio resta sin haber sumado nunca— así que rotularlo
+  // "Cheques en cartera" era mentir, y podía mostrar un negativo con la cartera llena o vacía. El
+  // valor de la cartera viene de la tabla `cheques`.
+  const valores = FORMAS.map((forma) => ({
+    forma,
+    valor: forma === "cheque" ? saldo.cheques_en_cartera : (saldo.por_forma[forma] ?? "0"),
+  }));
+
+  // La advertencia se calcula sobre lo que se MUESTRA, no sobre el libro: si mirara
+  // `por_forma.cheque` gritaría "negativo" cada vez que hay cheques propios en la calle, que es lo
+  // normal. Una alarma que suena siempre es una alarma que nadie mira. El backend hace el mismo
+  // recorte en `advertencias_de_saldo`.
+  const enNegativo = valores.filter((v) => estaEnNegativo(v.valor));
 
   return (
     <div className="space-y-3">
@@ -43,16 +56,15 @@ export function SaldoCards({ saldo, isLoading }: Props) {
         >
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
           <div className="space-y-1">
-            {enNegativo.map((f) => (
-              <p key={f}>{avisoDeNegativo(f, saldo.por_forma[f] ?? "0")}</p>
+            {enNegativo.map(({ forma, valor }) => (
+              <p key={forma}>{avisoDeNegativo(forma, valor)}</p>
             ))}
           </div>
         </div>
       )}
 
       <div aria-live="polite" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {FORMAS.map((forma) => {
-          const valor = saldo.por_forma[forma] ?? "0";
+        {valores.map(({ forma, valor }) => {
           const negativo = estaEnNegativo(valor);
           const esEfectivo = forma === "efectivo";
 

@@ -9,7 +9,7 @@ import { EmptyState, ErrorState } from "@/shared/ui/states";
 import { etiquetaEstado } from "../model/estado";
 import type { Transicion } from "../model/hooks";
 
-/** Qué se puede hacer con un cheque según su estado, y con qué etiqueta.
+/** Qué se puede hacer con un cheque RECIBIDO según su estado, y con qué etiqueta.
  *
  * ## Por qué esto NO es la máquina de estados
  *
@@ -24,7 +24,7 @@ import type { Transicion } from "../model/hooks";
  *
  * Los estados terminales no aparecen: no tienen salida.
  */
-const ACCIONES: Record<string, { id: Transicion; label: string }[]> = {
+const RECIBIDO: Record<string, { id: Transicion; label: string }[]> = {
   en_cartera: [
     { id: "depositar", label: "Depositar" },
     { id: "cobrar", label: "Cobrar" },
@@ -36,6 +36,28 @@ const ACCIONES: Record<string, { id: Transicion; label: string }[]> = {
     { id: "rechazar", label: "Rebotó" },
   ],
 };
+
+/** Un cheque EMITIDO es un papel que firmé yo, no uno que me dieron.
+ *
+ * No lo deposito ni lo cobro: eso lo hace el proveedor, en su banco. Lo único que puedo registrar
+ * es que se lo entregué, y que volvió rechazado si el banco no me lo pagó. Ofrecer "Depositar" o
+ * "Cobrar" sobre un cheque propio no describe ninguna operación real. */
+const EMITIDO: Record<string, { id: Transicion; label: string }[]> = {
+  en_cartera: [
+    { id: "entregar", label: "Entregar" },
+    { id: "rechazar", label: "Rechazó" },
+  ],
+};
+
+function accionesDe(cheque: Cheque): { id: Transicion; label: string }[] {
+  const tabla = cheque.origen === "emitido" ? EMITIDO : RECIBIDO;
+  return tabla[cheque.estado] ?? [];
+}
+
+/** Conciliar es cruzar contra el RESUMEN BANCARIO, así que solo tiene sentido en los estados que
+ *  pasaron por el banco. Espeja `ESTADOS_CONCILIABLES` del service, que es quien lo hace cumplir con
+ *  un 422: un cheque `anulado` o `en_cartera` no puede figurar en ningún resumen. */
+const CONCILIABLES = new Set(["depositado", "cobrado", "rechazado"]);
 
 const TONO_ESTADO: Record<string, "default" | "warning" | "danger" | "success"> = {
   en_cartera: "default",
@@ -115,7 +137,7 @@ export function CarteraTable({
         </thead>
         <tbody>
           {cheques.map((c) => {
-            const acciones = ACCIONES[c.estado] ?? [];
+            const acciones = accionesDe(c);
             const enVuelo = ocupado === c.id;
 
             return (
@@ -160,7 +182,7 @@ export function CarteraTable({
                         {a.label}
                       </Button>
                     ))}
-                    {!c.conciliado && (
+                    {!c.conciliado && CONCILIABLES.has(c.estado) && (
                       <Button
                         variant="ghost"
                         size="sm"
