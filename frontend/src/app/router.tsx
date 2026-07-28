@@ -67,6 +67,13 @@ const clientesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/clientes",
   component: ClientesPage,
+  validateSearch: (search: Record<string, unknown>): { q: string; page: number } => {
+    const page = Number(search.page);
+    return {
+      q: typeof search.q === "string" ? search.q : "",
+      page: Number.isInteger(page) && page >= 1 ? page : 1,
+    };
+  },
 });
 
 const ingestaVisualRoute = createRoute({
