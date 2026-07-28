@@ -1,10 +1,15 @@
-import { useProveedores } from "@/features/proveedores/model/hooks";
+import { useEffect, useState } from "react";
 
-const selectClass =
-  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+import type { Proveedor } from "@/entities/proveedor/schema";
+import { useProveedores } from "@/features/proveedores/model/hooks";
+import { Combobox, type OpcionCombobox } from "@/shared/ui/combobox";
 
 /** Elige el proveedor de la compra. El backend exige `proveedor_codigo`, así que no hay opción
- * vacía válida: mientras no se elija uno, la compra no se puede registrar. */
+ * vacía válida: mientras no se elija uno, la compra no se puede registrar.
+ *
+ * Espejo de `SelectorCliente`, y por el mismo motivo: era un `<select>` con la primera página del
+ * padrón, así que no se le podía comprar a un proveedor que no estuviera en ella.
+ */
 export function SelectorProveedor({
   value,
   onChange,
@@ -12,30 +17,43 @@ export function SelectorProveedor({
   value: string;
   onChange: (codigo: string) => void;
 }) {
-  const { data, isLoading, isError } = useProveedores();
+  const [q, setQ] = useState("");
+  const [elegido, setElegido] = useState<OpcionCombobox | null>(null);
+
+  const texto = q.trim();
+  const { data, isFetching, isError } = useProveedores(texto, 1);
+  const opciones = texto ? (data?.items ?? []).filter((p) => p.activo).map(aOpcion) : [];
+
+  // Si el padre limpia el código (al registrar la compra, el estado se resetea), la pantalla
+  // tiene que soltar al proveedor o miente sobre la compra en curso.
+  useEffect(() => {
+    if (value === "") setElegido(null);
+  }, [value]);
 
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={selectClass}
-      disabled={isLoading || isError}
-      aria-label="Proveedor"
-    >
-      <option value="">
-        {isLoading
-          ? "Cargando proveedores…"
-          : isError
-            ? "No pude cargar proveedores"
-            : "Elegí un proveedor…"}
-      </option>
-      {data?.items
-        .filter((p) => p.activo)
-        .map((p) => (
-          <option key={p.codigo} value={p.codigo}>
-            {p.razon_social} · {p.codigo}
-          </option>
-        ))}
-    </select>
+    <Combobox
+      label="Proveedor"
+      placeholder="Buscá el proveedor por razón social, código o CUIT…"
+      q={q}
+      onBuscar={setQ}
+      opciones={opciones}
+      elegido={elegido}
+      onElegir={(o) => {
+        setElegido(o);
+        onChange(o.clave);
+        setQ("");
+      }}
+      onLimpiar={() => {
+        setElegido(null);
+        onChange("");
+        setQ("");
+      }}
+      buscando={isFetching}
+      fallo={isError}
+    />
   );
+}
+
+function aOpcion(p: Proveedor): OpcionCombobox {
+  return { clave: p.codigo, etiqueta: p.razon_social, detalle: p.cuit };
 }
