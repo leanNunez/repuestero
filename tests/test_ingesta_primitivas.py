@@ -317,16 +317,20 @@ def test_obtener_o_crear_proveedor_no_duplica(sesion, org):
 
 
 def test_obtener_o_crear_proveedor_completa_cuit_faltante(sesion, org):
-    """Completar un dato que faltaba es agregar información, no reemplazarla."""
+    """Completar un dato que faltaba es agregar información, no reemplazarla.
+
+    El CUIT tiene que ser uno REAL: desde que el alta valida módulo 11, uno inventado se
+    descarta en silencio y este test pasaría a probar lo contrario de lo que dice su nombre.
+    """
     p = prov_service.obtener_o_crear_proveedor(
         sesion, org.id, codigo="DIST-2", razon_social="Norte SRL"
     )
     assert p.cuit is None
 
     p2 = prov_service.obtener_o_crear_proveedor(
-        sesion, org.id, codigo="DIST-2", razon_social="Norte SRL", cuit="30-11111111-1"
+        sesion, org.id, codigo="DIST-2", razon_social="Norte SRL", cuit="30-71233445-9"
     )
-    assert p2.cuit == "30-11111111-1"
+    assert p2.cuit == "30-71233445-9"
 
 
 def test_upsert_vinculo_actualiza_costo_y_conserva_codigo_proveedor(sesion, org):

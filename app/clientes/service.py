@@ -1,4 +1,3 @@
-import re
 from decimal import Decimal
 from uuid import UUID
 
@@ -7,10 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.clientes.models import Cliente
 from app.core.cond_fiscal import COND_FISCAL_POR_DEFECTO, CONDICIONES_FISCALES
+from app.core.cuit import cuit_valido
 from app.core.numeracion import asignar_numero
 
-_CUIT_RE = re.compile(r"^\d{2}-\d{8}-\d$")
-_PESOS_CUIT = (5, 4, 3, 2, 7, 6, 5, 4, 3, 2)
+__all__ = ["cuit_valido"]  # se re-exporta: era de este módulo antes de mudarse a `core`
 
 #: Prefijo de los códigos que genera el sistema. Los importados de Paradox entran con su código
 #: legacy tal cual (`app/importador/loader.py`), del estilo `C001`, y comparten el mismo
@@ -20,25 +19,6 @@ PREFIJO_CODIGO = "CLI-"
 #: Ancho del contador. Con relleno de ceros el orden alfabético coincide con el cronológico, que es
 #: como se lee la columna en el listado (`codigo` es `String(20)`, no un entero).
 _ANCHO_CODIGO = 6
-
-
-def cuit_valido(cuit: str) -> bool:
-    """Valida formato y dígito verificador (módulo 11).
-
-    El legacy guardaba el CUIT como texto libre y nunca lo validaba. Resultado: campos
-    basura que después rompen la factura electrónica, cuando ya es tarde y el cliente
-    está esperando en el mostrador. Se valida en la puerta de entrada, no en la salida.
-    """
-    if not _CUIT_RE.match(cuit):
-        return False
-
-    digitos = [int(d) for d in cuit.replace("-", "")]
-    suma = sum(d * p for d, p in zip(digitos[:10], _PESOS_CUIT, strict=True))
-    resto = suma % 11
-    verificador = 0 if resto == 0 else 11 - resto
-    verificador = 9 if verificador == 10 else verificador
-
-    return verificador == digitos[10]
 
 
 def crear_cliente(
