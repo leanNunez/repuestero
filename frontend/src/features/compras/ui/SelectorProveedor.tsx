@@ -29,8 +29,8 @@ export function SelectorProveedor({
             ? "No pude cargar proveedores"
             : "Elegí un proveedor…"}
       </option>
-      {data
-        ?.filter((p) => p.activo)
+      {data?.items
+        .filter((p) => p.activo)
         .map((p) => (
           <option key={p.codigo} value={p.codigo}>
             {p.razon_social} · {p.codigo}

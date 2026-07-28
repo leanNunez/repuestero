@@ -13,4 +13,11 @@ export const proveedorSchema = z.object({
 
 export const proveedorListaSchema = z.array(proveedorSchema);
 
+/** Espeja `ProveedorPagina`. El `total` es el del resultado FILTRADO, no el del padrón entero. */
+export const proveedorPaginaSchema = z.object({
+  items: proveedorListaSchema,
+  total: z.number(),
+});
+
 export type Proveedor = z.infer<typeof proveedorSchema>;
+export type ProveedorPagina = z.infer<typeof proveedorPaginaSchema>;

@@ -39,3 +39,24 @@ export function hoyISO(): string {
 
   return `${d.getFullYear()}-${dosDigitos(d.getMonth() + 1)}-${dosDigitos(d.getDate())}`;
 }
+
+/** Conectores que no aportan como inicial. Sin esto "Juntas y Retenes del Norte SRL" da "JY", que
+ *  no identifica a nadie. En nombres de personas casi no aparecen; en razones sociales, todo el
+ *  tiempo — y es justo la tabla de proveedores la que está llena de ellas. */
+const CONECTORES = new Set(["y", "e", "de", "del", "la", "las", "los", "el"]);
+
+/** Iniciales para el avatar de una fila: "Taller Mecánico El Rulo" → "TM",
+ *  "Juntas y Retenes del Norte SRL" → "JR".
+ *
+ * Compartida por las tablas de clientes y proveedores. Un nombre sin palabras devuelve "?" en vez
+ * de un avatar vacío, que se lee como un dato que se perdió. */
+export function iniciales(nombre: string): string {
+  const palabras = nombre.trim().split(/\s+/).filter(Boolean);
+  // Si sacar los conectores no deja nada (un nombre que es solo "La"), se usan las palabras tal
+  // cual: es preferible una inicial pobre a un "?" sobre un nombre que existe.
+  const utiles = palabras.filter((p) => !CONECTORES.has(p.toLowerCase()));
+  const fuente = utiles.length > 0 ? utiles : palabras;
+
+  const ini = (fuente[0]?.[0] ?? "") + (fuente[1]?.[0] ?? "");
+  return ini.toUpperCase() || "?";
+}

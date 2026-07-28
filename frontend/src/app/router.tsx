@@ -11,6 +11,7 @@ import { CajaPage } from "@/pages/caja/CajaPage";
 import { ArticuloPage } from "@/pages/catalogo/ArticuloPage";
 import { CatalogoPage } from "@/pages/catalogo/CatalogoPage";
 import { ClientesPage } from "@/pages/clientes/ClientesPage";
+import { ProveedoresPage } from "@/pages/proveedores/ProveedoresPage";
 import { CompatibilidadPage } from "@/pages/compatibilidad/CompatibilidadPage";
 import { ComprasPage } from "@/pages/compras/ComprasPage";
 import { CuentaCorrientePage } from "@/pages/cuenta-corriente/CuentaCorrientePage";
@@ -76,6 +77,19 @@ const clientesRoute = createRoute({
   },
 });
 
+const proveedoresRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/proveedores",
+  component: ProveedoresPage,
+  validateSearch: (search: Record<string, unknown>): { q: string; page: number } => {
+    const page = Number(search.page);
+    return {
+      q: typeof search.q === "string" ? search.q : "",
+      page: Number.isInteger(page) && page >= 1 ? page : 1,
+    };
+  },
+});
+
 const ingestaVisualRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/ingesta-visual",
@@ -126,6 +140,7 @@ const routeTree = rootRoute.addChildren([
   articuloRoute,
   compatibilidadRoute,
   clientesRoute,
+  proveedoresRoute,
   ingestaVisualRoute,
   ventasRoute,
   comprasRoute,

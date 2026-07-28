@@ -6,30 +6,19 @@
  * habilite explica más rápido que un 422.
  */
 
+import { cuitAceptable, cuitValido } from "@/shared/lib/cuit";
+import { queryPagina } from "@/shared/lib/paginacion";
+
+// Se re-exportan: eran de este módulo antes de mudarse a `shared/lib`, y los importa el formulario.
+export { cuitAceptable, cuitValido };
+
 /** Filas por página del padrón. Único lugar de verdad: la página y el offset se derivan de acá. */
 export const PAGE_SIZE = 25;
 
-/** Query string de una página del padrón. Vive acá, y no dentro del hook, porque es aritmética
- *  —el offset se deriva de la página— y la aritmética se testea sin montar nada.
- *
- *  La página 1 es offset 0: el usuario cuenta desde 1, el backend desde 0. Errar ese ±1 saltea
- *  o repite una página entera y no lo nota nadie hasta que falta un cliente. */
+/** Query string de una página del padrón de clientes. */
 export function queryPadron(q: string, page: number): string {
-  const params = new URLSearchParams({
-    limite: String(PAGE_SIZE),
-    offset: String((Math.max(page, 1) - 1) * PAGE_SIZE),
-  });
-
-  // Un `buscar=` vacío haría que el backend filtre por el patrón `%%`. Anda de casualidad; es más
-  // honesto no mandar el parámetro cuando no hay búsqueda.
-  const query = q.trim();
-  if (query) params.set("buscar", query);
-
-  return params.toString();
+  return queryPagina(q, page, PAGE_SIZE);
 }
-
-const CUIT_RE = /^\d{2}-\d{8}-\d$/;
-const PESOS_CUIT = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2] as const;
 
 /** Espeja `app/core/cond_fiscal.py`. El orden es el del formulario: primero lo más frecuente en el
  *  mostrador. `EXENTO` va último porque casi no aparece. */
@@ -41,24 +30,6 @@ export const CONDICIONES_FISCALES = [
 ] as const;
 
 export type CondFiscal = (typeof CONDICIONES_FISCALES)[number]["id"];
-
-/** Valida formato y dígito verificador (módulo 11). Port exacto de `clientes.service.cuit_valido`.
- *
- * Si algún día cambia el algoritmo, cambia en los dos lados o el front empieza a bloquear CUITs
- * que el backend acepta — que es peor que no validar: el dato válido no entra y nadie sabe por qué.
- */
-export function cuitValido(cuit: string): boolean {
-  if (!CUIT_RE.test(cuit)) return false;
-
-  const digitos = [...cuit.replace(/-/g, "")].map(Number);
-  const suma = PESOS_CUIT.reduce((acc, peso, i) => acc + digitos[i] * peso, 0);
-  const resto = suma % 11;
-
-  let verificador = resto === 0 ? 0 : 11 - resto;
-  if (verificador === 10) verificador = 9;
-
-  return verificador === digitos[10];
-}
 
 export interface FormularioCliente {
   denominacion: string;
@@ -79,12 +50,6 @@ export const VACIO: FormularioCliente = {
   email: "",
   direccion: "",
 };
-
-/** El CUIT es OPCIONAL: un consumidor final que compra una vez no tiene por qué darlo. Pero si lo
- *  escribió, tiene que estar bien — un CUIT a medias es peor que ninguno, porque parece un dato. */
-export function cuitAceptable(cuit: string): boolean {
-  return cuit.trim() === "" || cuitValido(cuit);
-}
 
 export function puedeGuardar(f: FormularioCliente): boolean {
   return f.denominacion.trim() !== "" && cuitAceptable(f.cuit);
