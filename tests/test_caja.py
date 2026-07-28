@@ -27,6 +27,7 @@ from app.caja import service
 from app.core import db as core_db
 from app.core.config import get_settings
 from app.core.db import ORG_GUC, set_guc
+from app.core.fechas import hoy
 from app.core.models import Miembro, Organizacion
 from app.main import app
 from tests.conftest import APP_URL, OWNER_URL
@@ -423,7 +424,9 @@ def test_endpoint_rechaza_monto_cero(cliente):
 
 def test_endpoint_rechaza_una_fecha_futura(cliente):
     """La ventana de fechas es política de la API, compartida con los dos ledgers de cta cte."""
-    manana = (date.today() + timedelta(days=1)).isoformat()
+    # `hoy()`, no `date.today()`: si el proceso quedara DETRÁS de la zona del negocio, el "mañana"
+    # del proceso sería el "hoy" del validador y este test pasaría a verde sin probar nada.
+    manana = (hoy() + timedelta(days=1)).isoformat()
     r = cliente.post(
         "/caja/movimientos",
         json={"concepto": "gasto", "forma": "efectivo", "monto": "10", "fecha": manana},
