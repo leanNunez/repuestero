@@ -29,6 +29,7 @@ from app.caja.models import Cheque
 from app.core import db as core_db
 from app.core.config import get_settings
 from app.core.db import ORG_GUC, set_guc
+from app.core.fechas import hoy
 from app.core.models import Miembro, Organizacion
 from app.main import app
 from tests.conftest import APP_URL, OWNER_URL
@@ -528,18 +529,17 @@ def test_endpoint_conciliar_exige_fecha(cliente, cheque_http):
 
     assert cliente.post(f"/caja/cheques/{cheque_http}/conciliar", json={}).status_code == 422
 
-    r = cliente.post(
-        f"/caja/cheques/{cheque_http}/conciliar", json={"fecha": date.today().isoformat()}
-    )
+    # `hoy()`, no `date.today()`: el validador compara contra la fecha DEL NEGOCIO, y en CI el
+    # proceso corre en UTC. Después de las 21:00 argentinas las dos difieren en un día y el test
+    # mandaría mañana sin darse cuenta.
+    r = cliente.post(f"/caja/cheques/{cheque_http}/conciliar", json={"fecha": hoy().isoformat()})
     assert r.status_code == 200
     assert r.json()["conciliado"] is True
 
 
 def test_endpoint_conciliar_un_cheque_en_cartera_es_422(cliente, cheque_http):
     """La reja del estado también por HTTP, con un mensaje que explica el porqué."""
-    r = cliente.post(
-        f"/caja/cheques/{cheque_http}/conciliar", json={"fecha": date.today().isoformat()}
-    )
+    r = cliente.post(f"/caja/cheques/{cheque_http}/conciliar", json={"fecha": hoy().isoformat()})
 
     assert r.status_code == 422
     assert "banco" in r.json()["detail"]
