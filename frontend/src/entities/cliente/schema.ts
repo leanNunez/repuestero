@@ -16,7 +16,15 @@ export const clienteSchema = z.object({
 
 export const clienteListaSchema = z.array(clienteSchema);
 
+/** Espeja `ClientePagina`. El `total` es el del resultado FILTRADO, no el del padrón entero: es lo
+ *  que deja saber cuántas páginas hay de lo que se está mirando. */
+export const clientePaginaSchema = z.object({
+  items: clienteListaSchema,
+  total: z.number(),
+});
+
 export type Cliente = z.infer<typeof clienteSchema>;
+export type ClientePagina = z.infer<typeof clientePaginaSchema>;
 
 /** Payload del alta. Espeja `ClienteCrear` del backend.
  *

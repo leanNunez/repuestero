@@ -25,8 +25,8 @@ export function SelectorCliente({
       <option value="">
         {isLoading ? "Cargando clientes…" : isError ? "No pude cargar clientes" : "Elegí un cliente…"}
       </option>
-      {data
-        ?.filter((c) => c.activo)
+      {data?.items
+        .filter((c) => c.activo)
         .map((c) => (
           <option key={c.codigo} value={c.codigo}>
             {c.denominacion} · {c.codigo}

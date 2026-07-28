@@ -1,6 +1,44 @@
 import { describe, expect, it } from "vitest";
 
-import { aPayload, cuitAceptable, cuitValido, puedeGuardar, VACIO } from "./estado";
+import {
+  aPayload,
+  cuitAceptable,
+  cuitValido,
+  PAGE_SIZE,
+  puedeGuardar,
+  queryPadron,
+  VACIO,
+} from "./estado";
+
+describe("queryPadron", () => {
+  it("la página 1 arranca en offset 0", () => {
+    // El usuario cuenta desde 1 y el backend desde 0. Errar ese ±1 saltea una página entera.
+    expect(queryPadron("", 1)).toBe(`limite=${PAGE_SIZE}&offset=0`);
+  });
+
+  it("la página 3 saltea dos páginas completas", () => {
+    expect(queryPadron("", 3)).toBe(`limite=${PAGE_SIZE}&offset=${PAGE_SIZE * 2}`);
+  });
+
+  it("sin búsqueda NO manda el parámetro", () => {
+    // Un `buscar=` vacío hace que el backend filtre por `%%`. Anda de casualidad, no por diseño.
+    expect(queryPadron("   ", 1)).not.toContain("buscar");
+  });
+
+  it("manda la búsqueda sin espacios de sobra", () => {
+    expect(queryPadron("  gomería  ", 1)).toContain("buscar=gomer%C3%ADa");
+  });
+
+  it("escapa lo que rompería la URL", () => {
+    // Un CUIT con guiones no molesta, pero una denominación con & partiría el query string en dos.
+    expect(queryPadron("Ruedas & Cía", 1)).toContain("buscar=Ruedas+%26+C%C3%ADa");
+  });
+
+  it("una página inventada no manda un offset negativo", () => {
+    // La URL la escribe cualquiera: `?page=0` no puede convertirse en `offset=-25` y un 422.
+    expect(queryPadron("", 0)).toContain("offset=0");
+  });
+});
 
 describe("cuitValido", () => {
   it.each([

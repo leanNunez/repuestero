@@ -1,17 +1,28 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
-  clienteListaSchema,
+  clientePaginaSchema,
   clienteSchema,
   type Cliente,
   type ClienteCrear,
 } from "@/entities/cliente/schema";
+import { queryPadron } from "@/features/clientes/model/estado";
 import { apiGet, apiPost } from "@/shared/api/client";
 
-export function useClientes() {
+/** Una página del padrón, con búsqueda opcional por denominación, código o CUIT.
+ *
+ * La búsqueda va SERVER-SIDE, no filtrando en memoria lo que ya vino: filtrar la página actual
+ * sobre 900 clientes buscaría dentro de 25 y diría "no existe" de alguien que sí está.
+ *
+ * `keepPreviousData` mantiene la tabla en pantalla mientras carga la página siguiente. Sin eso
+ * cada click de paginado la vacía y la vuelve a llenar, que se lee como si algo se hubiera roto. */
+export function useClientes(q = "", page = 1) {
+  const query = q.trim();
+
   return useQuery({
-    queryKey: ["clientes"],
-    queryFn: () => apiGet("/clientes", clienteListaSchema),
+    queryKey: ["clientes", "listado", query, page],
+    queryFn: () => apiGet(`/clientes?${queryPadron(query, page)}`, clientePaginaSchema),
+    placeholderData: keepPreviousData,
   });
 }
 

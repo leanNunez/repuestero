@@ -6,6 +6,28 @@
  * habilite explica más rápido que un 422.
  */
 
+/** Filas por página del padrón. Único lugar de verdad: la página y el offset se derivan de acá. */
+export const PAGE_SIZE = 25;
+
+/** Query string de una página del padrón. Vive acá, y no dentro del hook, porque es aritmética
+ *  —el offset se deriva de la página— y la aritmética se testea sin montar nada.
+ *
+ *  La página 1 es offset 0: el usuario cuenta desde 1, el backend desde 0. Errar ese ±1 saltea
+ *  o repite una página entera y no lo nota nadie hasta que falta un cliente. */
+export function queryPadron(q: string, page: number): string {
+  const params = new URLSearchParams({
+    limite: String(PAGE_SIZE),
+    offset: String((Math.max(page, 1) - 1) * PAGE_SIZE),
+  });
+
+  // Un `buscar=` vacío haría que el backend filtre por el patrón `%%`. Anda de casualidad; es más
+  // honesto no mandar el parámetro cuando no hay búsqueda.
+  const query = q.trim();
+  if (query) params.set("buscar", query);
+
+  return params.toString();
+}
+
 const CUIT_RE = /^\d{2}-\d{8}-\d$/;
 const PESOS_CUIT = [5, 4, 3, 2, 7, 6, 5, 4, 3, 2] as const;
 
