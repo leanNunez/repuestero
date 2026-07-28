@@ -4,7 +4,8 @@ import { useEffect } from "react";
 
 import { ProveedorTable } from "@/entities/proveedor/ProveedorTable";
 import { PAGE_SIZE } from "@/features/proveedores/model/estado";
-import { useProveedores } from "@/features/proveedores/model/hooks";
+import { useCrearProveedor, useProveedores } from "@/features/proveedores/model/hooks";
+import { FormularioProveedor } from "@/features/proveedores/ui/FormularioProveedor";
 import { Pagination } from "@/shared/ui/pagination";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { EmptyState, ErrorState } from "@/shared/ui/states";
@@ -16,6 +17,7 @@ export function ProveedoresPage() {
   const navigate = route.useNavigate();
 
   const { data, isLoading, isError, refetch } = useProveedores(q, page);
+  const crear = useCrearProveedor();
 
   const items = data?.items ?? [];
   const total = data?.total ?? 0;
@@ -36,6 +38,15 @@ export function ProveedoresPage() {
         Padrón de proveedores. Los que llegan por un remito escaneado entran con el código del
         papel; los que se dan de alta acá los numera el sistema.
       </p>
+
+      <FormularioProveedor
+        cargando={crear.isPending}
+        error={crear.error?.message ?? null}
+        ultimoCodigo={crear.data?.codigo ?? null}
+        // Después del alta, el padrón salta a buscar el proveedor recién creado. Sin esto te dice
+        // "PRV-000008" y te deja mirando la página 1 del abecedario, donde casi nunca está.
+        onCrear={(v) => crear.mutate(v, { onSuccess: (p) => setSearch({ q: p.codigo, page: 1 }) })}
+      />
 
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
