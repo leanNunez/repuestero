@@ -80,8 +80,13 @@ export function ClientesPage() {
         />
       ) : (
         <>
+          {/* Con una búsqueda activa el sustantivo cambia: "80 clientes" sobre un padrón de 900
+              se lee como el tamaño del padrón, no como el tamaño del resultado. Mismo criterio
+              que el catálogo. */}
           <p className="text-xs text-muted-foreground">
-            {total} {total === 1 ? "cliente" : "clientes"}
+            {q
+              ? `${total} ${total === 1 ? "resultado" : "resultados"}`
+              : `${total} ${total === 1 ? "cliente" : "clientes"}`}
           </p>
           <ClienteTable clientes={items} />
           <Pagination
