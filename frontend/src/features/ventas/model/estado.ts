@@ -95,6 +95,22 @@ export function puedeEmitir(estado: Estado): boolean {
   );
 }
 
+/** Mueve el índice activo de una lista navegable con flechas. `-1` = nada activo todavía.
+ *
+ * Vive acá y no dentro del componente porque es aritmética con bordes: la lista vacía, el salto
+ * desde "nada elegido", y la vuelta de punta a punta. Tres casos que en un `onKeyDown` no se
+ * prueban nunca y que se rompen justo cuando alguien navega sin mouse.
+ *
+ * Da la vuelta a propósito: en el mostrador se busca con una mano y se teclea con la otra, y
+ * frenar en la última opción obliga a contar cuántas veces apretar para volver arriba.
+ */
+export function moverIndice(actual: number, delta: number, total: number): number {
+  if (total <= 0) return -1;
+  // Desde "nada activo", bajar lleva a la primera y subir a la última.
+  if (actual < 0) return delta > 0 ? 0 : total - 1;
+  return (actual + delta + total) % total;
+}
+
 export interface Totales {
   neto: number;
   iva: number;
