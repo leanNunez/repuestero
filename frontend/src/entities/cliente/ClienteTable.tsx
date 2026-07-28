@@ -1,4 +1,4 @@
-import { formatMoney } from "@/shared/lib/format";
+import { formatMoney, iniciales } from "@/shared/lib/format";
 import { Badge } from "@/shared/ui/badge";
 
 import type { Cliente } from "./schema";
@@ -7,13 +7,6 @@ import type { Cliente } from "./schema";
 function condLegible(cond: string): string {
   const t = cond.replace(/_/g, " ").toLowerCase();
   return t.charAt(0).toUpperCase() + t.slice(1);
-}
-
-/** Iniciales para el avatar: "Taller Mecánico El Rulo" → "TM". */
-function iniciales(nombre: string): string {
-  const palabras = nombre.trim().split(/\s+/).filter(Boolean);
-  const ini = (palabras[0]?.[0] ?? "") + (palabras[1]?.[0] ?? "");
-  return ini.toUpperCase() || "?";
 }
 
 export function ClienteTable({ clientes }: { clientes: Cliente[] }) {

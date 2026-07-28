@@ -2,6 +2,7 @@ import {
   Banknote,
   Camera,
   Car,
+  Factory,
   FileText,
   LayoutDashboard,
   Package,
@@ -34,6 +35,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { to: "/catalogo", label: "Catálogo", icon: Package, fase: 1 },
       { to: "/compatibilidad", label: "Compatibilidad", icon: Car, fase: 1 },
       { to: "/clientes", label: "Clientes", icon: Users, fase: 1 },
+      { to: "/proveedores", label: "Proveedores", icon: Factory, fase: 1 },
     ],
   },
   {

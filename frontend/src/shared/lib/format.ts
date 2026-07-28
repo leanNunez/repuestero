@@ -39,3 +39,13 @@ export function hoyISO(): string {
 
   return `${d.getFullYear()}-${dosDigitos(d.getMonth() + 1)}-${dosDigitos(d.getDate())}`;
 }
+
+/** Iniciales para el avatar de una fila: "Taller Mecánico El Rulo" → "TM".
+ *
+ * Compartida por las tablas de clientes y proveedores. Un nombre sin palabras devuelve "?" en vez
+ * de un avatar vacío, que se lee como un dato que se perdió. */
+export function iniciales(nombre: string): string {
+  const palabras = nombre.trim().split(/\s+/).filter(Boolean);
+  const ini = (palabras[0]?.[0] ?? "") + (palabras[1]?.[0] ?? "");
+  return ini.toUpperCase() || "?";
+}
