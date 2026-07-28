@@ -17,6 +17,7 @@ contra una fecha escrita a mano.
 """
 
 from datetime import date, timedelta
+from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -115,3 +116,47 @@ def test_hoy_no_es_date_today_del_server_sino_el_del_negocio():
     todo el día, así que el assert útil es sobre el tipo de reloj: `hoy()` no puede alejarse más de
     un día de la fecha UTC, y tiene que ser el mismo día que ve la base (ver el test de arriba)."""
     assert abs((hoy() - date.today()).days) <= 1
+
+
+#: Este archivo es el único que puede usar el reloj del proceso: su trabajo es justamente comparar
+#: los dos relojes. En cualquier otro test es un bug esperando a las 21:00.
+_ARCHIVO_EXENTO = "test_zona_horaria.py"
+
+#: Partido en dos para que este archivo pueda nombrar el patrón sin cazarse a sí mismo.
+_PATRON = "date." + "today()"
+
+
+def _usa_el_reloj_del_proceso(archivo: Path) -> bool:
+    """Busca la llamada en CÓDIGO, no en comentarios.
+
+    Un candado que se dispara porque alguien lo explicó en un comentario es un candado que la gente
+    aprende a silenciar. Se ignora todo lo que va después de un `#`.
+    """
+    for linea in archivo.read_text(encoding="utf-8").splitlines():
+        if _PATRON in linea.split("#")[0]:
+            return True
+    return False
+
+
+def test_ningun_test_arma_fechas_con_el_reloj_del_proceso():
+    """EL CANDADO. Este bug ya apareció dos veces: en `test_cta_cte.py` (PR #42) y en los tests de
+    la cartera de cheques.
+
+    Un test que manda `date.today()` a la API se compara contra un validador que usa la fecha del
+    NEGOCIO. Local pasa —las dos zonas coinciden casi todo el día— y CI, que corre en UTC, se pone
+    rojo a partir de las 21:00 argentinas. Es la peor forma de fallar: el test parece flaky y no lo
+    es, y el que lo mira a las 10 de la mañana no puede reproducirlo.
+
+    La regla: en los tests, la fecha de hoy sale de `app.core.fechas.hoy()`.
+    """
+    raiz = Path(__file__).parent
+    culpables = [
+        f.name
+        for f in sorted(raiz.glob("test_*.py"))
+        if f.name != _ARCHIVO_EXENTO and _usa_el_reloj_del_proceso(f)
+    ]
+
+    assert culpables == [], (
+        f"Estos tests arman fechas con el reloj del proceso: {culpables}. "
+        "Usá `from app.core.fechas import hoy` — el mismo reloj que el validador."
+    )
