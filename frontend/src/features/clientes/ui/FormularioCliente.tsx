@@ -165,7 +165,9 @@ export function FormularioCliente({ cargando, error, ultimoCodigo, onCrear }: Pr
             />
           </div>
 
-          <div className="space-y-1 sm:col-span-2 lg:col-span-3">
+          {/* Ocupa las columnas que le quedan al email para que la grilla cierre: si va sola en su
+              fila, el formulario se lee como si le faltara algo. */}
+          <div className="space-y-1 lg:col-span-2">
             <label htmlFor="cli-direccion" className="text-xs text-muted-foreground">
               Dirección (opcional)
             </label>
