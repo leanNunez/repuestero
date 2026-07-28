@@ -164,6 +164,23 @@ def test_un_cliente_nace_como_consumidor_final_y_activo(sesion, org):
     assert cliente.limite_cta_cte == Decimal("0")
 
 
+def test_el_alta_devuelve_la_plata_con_la_escala_de_la_base(sesion, org):
+    """Encontrado probando el circuito real, no en la suite.
+
+    El objeto recién creado conserva el `Decimal` de Python hasta que se lo relee. Sin el refresh,
+    `POST /clientes` devolvía "0" y el `GET` del mismo cliente "0.00" — el mismo campo del mismo
+    registro con dos representaciones según por dónde se lo pida.
+    """
+    cliente = service.alta_cliente(sesion, org.id, denominacion="Escala")
+    assert cliente.limite_cta_cte == Decimal("0.00")
+    assert str(cliente.limite_cta_cte) == "0.00"
+
+    con_limite = service.alta_cliente(
+        sesion, org.id, denominacion="Con límite", limite_cta_cte=Decimal("150000")
+    )
+    assert str(con_limite.limite_cta_cte) == "150000.00"
+
+
 def test_la_org_vecina_no_ve_al_cliente(sesion, org):
     service.alta_cliente(sesion, org.id, denominacion="No Se Ve SA")
     sesion.flush()

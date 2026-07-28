@@ -114,7 +114,7 @@ def alta_cliente(
     Paradox, que hay que respetar tal cual. Las dos puertas conviven a propósito: una para lo que
     viene de afuera con identidad propia, otra para lo que nace acá.
     """
-    return crear_cliente(
+    cliente = crear_cliente(
         session,
         org_id,
         codigo=generar_codigo(session, org_id),
@@ -126,6 +126,14 @@ def alta_cliente(
         email=email,
         direccion=direccion,
     )
+
+    # Sin esto, el objeto queda con el Decimal que le pasamos —`Decimal("0")`— y no con el que la
+    # base normalizó a `numeric(_, 2)`. El POST devolvería "0" y el GET del mismo cliente "0.00":
+    # el mismo campo del mismo registro con dos representaciones según por dónde se lo pida.
+    # Va acá y no en `crear_cliente` a propósito: el importador carga miles de filas y no puede
+    # pagar un SELECT por cada una.
+    session.refresh(cliente)
+    return cliente
 
 
 def obtener_cliente(session: Session, org_id: UUID, codigo: str) -> Cliente | None:
