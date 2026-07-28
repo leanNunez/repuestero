@@ -187,7 +187,80 @@ def test_la_org_vecina_no_ve_al_cliente(sesion, org):
 
     set_guc(sesion, ORG_GUC, str(org.vecina))
 
-    assert service.listar_clientes(sesion, org.vecina) == []
+    assert service.listar_clientes(sesion, org.vecina) == ([], 0)
+
+
+# =========================================================================== el padrón paginado
+
+
+def test_el_total_es_el_del_resultado_filtrado_y_no_el_del_padron(sesion, org):
+    """Si el total ignorara el filtro, el front pintaría páginas vacías que no existen."""
+    for nombre in ("Gomería Sur", "Gomería Norte", "Repuestos Ávila"):
+        service.alta_cliente(sesion, org.id, denominacion=nombre)
+
+    items, total = service.listar_clientes(sesion, org.id, buscar="Gomería")
+
+    assert total == 2
+    assert [c.denominacion for c in items] == ["Gomería Norte", "Gomería Sur"]
+
+
+def test_un_cliente_del_fondo_del_abecedario_se_encuentra_buscandolo(sesion, org):
+    """El bug que motivó todo esto: con el padrón cortado en los primeros 50 por orden alfabético,
+    un cliente recién dado de alta existía en la base y no había forma de llegar a él."""
+    for i in range(60):
+        service.alta_cliente(sesion, org.id, denominacion=f"Cliente {i:03d}")
+    service.alta_cliente(sesion, org.id, denominacion="Zurdo Motores")
+
+    primera_pagina, _ = service.listar_clientes(sesion, org.id, limite=50)
+    assert "Zurdo Motores" not in [c.denominacion for c in primera_pagina]
+
+    encontrado, total = service.listar_clientes(sesion, org.id, buscar="zurdo")
+    assert total == 1
+    assert encontrado[0].denominacion == "Zurdo Motores"
+
+
+def test_se_busca_por_cuit_porque_es_el_dato_que_llega_escrito(sesion, org):
+    service.alta_cliente(sesion, org.id, denominacion="Transporte SRL", cuit=CUIT_OK)
+    service.alta_cliente(sesion, org.id, denominacion="Otro Sin CUIT")
+
+    items, total = service.listar_clientes(sesion, org.id, buscar="71233445")
+
+    assert total == 1
+    assert items[0].denominacion == "Transporte SRL"
+
+
+def test_se_busca_por_codigo(sesion, org):
+    codigo = service.alta_cliente(sesion, org.id, denominacion="Taller Central").codigo
+
+    items, total = service.listar_clientes(sesion, org.id, buscar=codigo)
+
+    assert total == 1
+    assert items[0].codigo == codigo
+
+
+def test_la_paginacion_no_repite_ni_saltea_con_homonimos(sesion, org):
+    """Dos sucursales de la misma empresa se llaman igual. Sin `codigo` de desempate el orden no
+    es estable entre queries y una fila puede salir en las dos páginas —o en ninguna."""
+    for _ in range(4):
+        service.alta_cliente(sesion, org.id, denominacion="Distribuidora Sur")
+
+    primera, total = service.listar_clientes(sesion, org.id, limite=2, offset=0)
+    segunda, _ = service.listar_clientes(sesion, org.id, limite=2, offset=2)
+
+    assert total == 4
+    codigos = [c.codigo for c in primera + segunda]
+    assert len(set(codigos)) == 4
+
+
+def test_el_offset_mas_alla_del_total_devuelve_pagina_vacia_pero_el_total_sigue(sesion, org):
+    """La página se vacía; el total NO. Es lo que le permite al front darse cuenta de que se pasó
+    de página y volver a la primera, en vez de mostrar 'sin clientes' sobre un padrón lleno."""
+    service.alta_cliente(sesion, org.id, denominacion="Único")
+
+    items, total = service.listar_clientes(sesion, org.id, limite=50, offset=500)
+
+    assert items == []
+    assert total == 1
 
 
 # =========================================================================== HTTP (contrato)
@@ -237,7 +310,35 @@ def test_el_cliente_dado_de_alta_aparece_en_el_listado(cliente_http):
 
     listado = cliente_http.get("/clientes?limite=200").json()
 
-    assert codigo in [c["codigo"] for c in listado]
+    assert codigo in [c["codigo"] for c in listado["items"]]
+
+
+def test_endpoint_devuelve_items_y_total(cliente_http):
+    """El contrato de la página. Sin `total`, el front no sabe cuántas páginas hay."""
+    cliente_http.post("/clientes", json={"denominacion": "Contrato SA"})
+
+    body = cliente_http.get("/clientes?limite=1").json()
+
+    assert isinstance(body["items"], list)
+    assert len(body["items"]) <= 1
+    # El total cuenta el padrón entero, no la página: es mayor o igual que lo que vino.
+    assert body["total"] >= len(body["items"])
+
+
+def test_endpoint_encuentra_por_busqueda_al_recien_dado_de_alta(cliente_http):
+    """El circuito que estaba roto, de punta a punta por HTTP: doy de alta y lo encuentro."""
+    codigo = cliente_http.post(
+        "/clientes", json={"denominacion": "Zapatería Insólita del Sur"}
+    ).json()["codigo"]
+
+    body = cliente_http.get("/clientes?buscar=Insólita").json()
+
+    assert body["total"] == 1
+    assert body["items"][0]["codigo"] == codigo
+
+
+def test_endpoint_rechaza_un_offset_negativo(cliente_http):
+    assert cliente_http.get("/clientes?offset=-1").status_code == 422
 
 
 def test_endpoint_rechaza_el_codigo_en_el_body(cliente_http):

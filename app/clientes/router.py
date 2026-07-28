@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.exc import IntegrityError
 
 from app.clientes import service
-from app.clientes.schemas import ClienteCrear, ClienteLeer
+from app.clientes.schemas import ClienteCrear, ClienteLeer, ClientePagina
 from app.core.rls import TenantContext, get_tenant
 
 logger = logging.getLogger(__name__)
@@ -19,14 +19,25 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/clientes", tags=["clientes"])
 
 
-@router.get("", response_model=list[ClienteLeer])
+@router.get("", response_model=ClientePagina)
 def listar(
+    buscar: str | None = Query(default=None, max_length=80),
     limite: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     tenant: TenantContext = Depends(get_tenant),
-) -> list[ClienteLeer]:
-    """Listado de los clientes activos de la org."""
-    clientes = service.listar_clientes(tenant.session, tenant.org_id, limite=limite)
-    return [ClienteLeer.model_validate(c) for c in clientes]
+) -> ClientePagina:
+    """Página del padrón de clientes activos de la org, con búsqueda opcional.
+
+    Devuelve `{items, total}` y no un array: sin el total no hay paginación posible del otro lado.
+    """
+    clientes, total = service.listar_clientes(
+        tenant.session,
+        tenant.org_id,
+        buscar=buscar,
+        limite=limite,
+        offset=offset,
+    )
+    return ClientePagina(items=[ClienteLeer.model_validate(c) for c in clientes], total=total)
 
 
 @router.post("", response_model=ClienteLeer, status_code=status.HTTP_201_CREATED)
