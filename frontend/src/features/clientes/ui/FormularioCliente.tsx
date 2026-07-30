@@ -4,6 +4,9 @@ import type { ClienteCrear } from "@/entities/cliente/schema";
 import { Button } from "@/shared/ui/button";
 import { CampoMoneda } from "@/shared/ui/campo-moneda";
 import { Card } from "@/shared/ui/card";
+import { Field, FieldError, FieldLabel } from "@/shared/ui/field";
+import { Input } from "@/shared/ui/input";
+import { NativeSelect } from "@/shared/ui/native-select";
 
 import {
   aPayload,
@@ -14,9 +17,6 @@ import {
   type CondFiscal,
   type FormularioCliente as Datos,
 } from "../model/estado";
-
-const campoClass =
-  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 interface Props {
   cargando: boolean;
@@ -69,43 +69,35 @@ export function FormularioCliente({ cargando, error, ultimoCodigo, onCrear }: Pr
     <Card className="space-y-3 p-3">
       <form onSubmit={enviar} className="space-y-3">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="space-y-1 sm:col-span-2">
-            <label htmlFor="cli-denominacion" className="text-xs text-muted-foreground">
-              Nombre o razón social
-            </label>
-            <input
+          <Field className="gap-1.5 sm:col-span-2">
+            <FieldLabel htmlFor="cli-denominacion">Nombre o razón social</FieldLabel>
+            <Input
               id="cli-denominacion"
               value={datos.denominacion}
               onChange={(e) => campo("denominacion", e.target.value)}
               maxLength={140}
               placeholder="Taller Mecánico El Rulo"
-              className={campoClass}
             />
-          </div>
+          </Field>
 
-          <div className="space-y-1">
-            <label htmlFor="cli-cond-fiscal" className="text-xs text-muted-foreground">
-              Condición fiscal
-            </label>
-            <select
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor="cli-cond-fiscal">Condición fiscal</FieldLabel>
+            <NativeSelect
               id="cli-cond-fiscal"
               value={datos.cond_fiscal}
               onChange={(e) => campo("cond_fiscal", e.target.value as CondFiscal)}
-              className={campoClass}
             >
               {CONDICIONES_FISCALES.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.label}
                 </option>
               ))}
-            </select>
-          </div>
+            </NativeSelect>
+          </Field>
 
-          <div className="space-y-1">
-            <label htmlFor="cli-cuit" className="text-xs text-muted-foreground">
-              CUIT (opcional)
-            </label>
-            <input
+          <Field className="gap-1.5" data-invalid={cuitMal || undefined}>
+            <FieldLabel htmlFor="cli-cuit">CUIT (opcional)</FieldLabel>
+            <Input
               id="cli-cuit"
               value={datos.cuit}
               onChange={(e) => campo("cuit", e.target.value)}
@@ -113,80 +105,63 @@ export function FormularioCliente({ cargando, error, ultimoCodigo, onCrear }: Pr
               placeholder="30-71233445-9"
               aria-invalid={cuitMal}
               aria-describedby={cuitMal ? "cli-cuit-error" : undefined}
-              className={campoClass}
             />
             {cuitMal && (
-              <p id="cli-cuit-error" role="alert" className="text-xs text-destructive">
+              <FieldError id="cli-cuit-error" className="text-xs">
                 Ese CUIT no es válido. Revisá el número — no coincide el dígito verificador.
-              </p>
+              </FieldError>
             )}
-          </div>
+          </Field>
 
-          <div className="space-y-1">
-            <label htmlFor="cli-limite" className="text-xs text-muted-foreground">
-              Límite de cuenta corriente
-            </label>
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor="cli-limite">Límite de cuenta corriente</FieldLabel>
             <CampoMoneda
               id="cli-limite"
               value={datos.limite_cta_cte}
               onChange={(v) => campo("limite_cta_cte", v)}
               placeholder="0,00"
               disabled={cargando}
-              className={campoClass}
             />
-          </div>
+          </Field>
 
-          <div className="space-y-1">
-            <label htmlFor="cli-telefono" className="text-xs text-muted-foreground">
-              Teléfono (opcional)
-            </label>
-            <input
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor="cli-telefono">Teléfono (opcional)</FieldLabel>
+            <Input
               id="cli-telefono"
               value={datos.telefono}
               onChange={(e) => campo("telefono", e.target.value)}
               maxLength={40}
               placeholder="0341-155667788"
-              className={campoClass}
             />
-          </div>
+          </Field>
 
-          <div className="space-y-1">
-            <label htmlFor="cli-email" className="text-xs text-muted-foreground">
-              Email (opcional)
-            </label>
-            <input
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor="cli-email">Email (opcional)</FieldLabel>
+            <Input
               id="cli-email"
               type="email"
               value={datos.email}
               onChange={(e) => campo("email", e.target.value)}
               maxLength={120}
               placeholder="taller@gmail.com"
-              className={campoClass}
             />
-          </div>
+          </Field>
 
           {/* Ocupa las columnas que le quedan al email para que la grilla cierre: si va sola en su
               fila, el formulario se lee como si le faltara algo. */}
-          <div className="space-y-1 lg:col-span-2">
-            <label htmlFor="cli-direccion" className="text-xs text-muted-foreground">
-              Dirección (opcional)
-            </label>
-            <input
+          <Field className="gap-1.5 lg:col-span-2">
+            <FieldLabel htmlFor="cli-direccion">Dirección (opcional)</FieldLabel>
+            <Input
               id="cli-direccion"
               value={datos.direccion}
               onChange={(e) => campo("direccion", e.target.value)}
               maxLength={160}
               placeholder="Av. San Martín 2340, Rosario"
-              className={campoClass}
             />
-          </div>
+          </Field>
         </div>
 
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
+        {error && <FieldError>{error}</FieldError>}
 
         <div className="flex gap-2">
           <Button type="submit" size="sm" disabled={!habilitado}>
