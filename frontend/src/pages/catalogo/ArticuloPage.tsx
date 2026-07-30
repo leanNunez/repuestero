@@ -40,7 +40,7 @@ export function ArticuloPage() {
       ) : (
         <Card className="space-y-4 p-6">
           <div>
-            <h2 className="text-lg font-semibold">{data.detalle}</h2>
+            <h1 className="text-lg font-semibold">{data.detalle}</h1>
             <p className="text-sm text-muted-foreground">{data.codigo}</p>
           </div>
           <dl className="grid grid-cols-2 gap-4 text-sm">

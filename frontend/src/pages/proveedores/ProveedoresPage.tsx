@@ -6,6 +6,7 @@ import { ProveedorTable } from "@/entities/proveedor/ProveedorTable";
 import { PAGE_SIZE } from "@/features/proveedores/model/estado";
 import { useCrearProveedor, useProveedores } from "@/features/proveedores/model/hooks";
 import { FormularioProveedor } from "@/features/proveedores/ui/FormularioProveedor";
+import { PageHeader } from "@/shared/ui/page-header";
 import { Pagination } from "@/shared/ui/pagination";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { EmptyState, ErrorState } from "@/shared/ui/states";
@@ -34,10 +35,10 @@ export function ProveedoresPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-5">
-      <p className="text-sm text-muted-foreground">
-        Padrón de proveedores. Los que llegan por un remito escaneado entran con el código del
-        papel; los que se dan de alta acá los numera el sistema.
-      </p>
+      <PageHeader
+        title="Proveedores"
+        description="Padrón de proveedores. Los que llegan por un remito escaneado entran con el código del papel; los que se dan de alta acá los numera el sistema."
+      />
 
       <FormularioProveedor
         cargando={crear.isPending}

@@ -30,6 +30,7 @@ import { FormularioMovimiento } from "@/features/caja/ui/FormularioMovimiento";
 import { MovimientosTable } from "@/features/caja/ui/MovimientosTable";
 import { SaldoCards } from "@/features/caja/ui/SaldoCards";
 import { Solapas } from "@/features/caja/ui/Solapas";
+import { PageHeader } from "@/shared/ui/page-header";
 import { Pagination } from "@/shared/ui/pagination";
 
 const route = getRouteApi("/caja");
@@ -62,6 +63,7 @@ export function CajaPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-5">
+      <PageHeader title="Caja" />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Solapas activa={s.tab} onCambiar={(tab) => ir(cambiarSolapa(s, tab))} />
 

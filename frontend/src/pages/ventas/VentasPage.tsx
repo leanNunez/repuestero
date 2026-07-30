@@ -57,7 +57,7 @@ export function VentasPage() {
           <CheckCircle2 className="h-8 w-8" />
         </div>
         <div>
-          <h2 className="text-lg font-semibold">Venta emitida</h2>
+          <h1 className="text-lg font-semibold">Venta emitida</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Comprobante {comprobanteLabel(r.tipo, r.pto_venta, r.numero)} · Total {pesos(r.total)}
           </p>
