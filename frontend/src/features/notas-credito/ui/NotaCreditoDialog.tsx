@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Loader2, Undo2, X } from "lucide-react";
+import { AlertTriangle, Loader2, Undo2, X } from "lucide-react";
 import { useEffect, useReducer, useRef } from "react";
 
 import { pesos } from "@/entities/remito/formato";
@@ -18,6 +18,7 @@ import {
 import { Button } from "@/shared/ui/button";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { EmptyState, ErrorState } from "@/shared/ui/states";
+import { SuccessPanel } from "@/shared/ui/success-panel";
 
 const inputClass =
   "h-9 w-24 rounded-md border border-input bg-background px-3 text-sm tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -98,10 +99,7 @@ function Contenido({ venta, onClose }: { venta: VentaLeer; onClose: () => void }
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4">
           {emitir.data ? (
-            <div className="flex flex-col items-center gap-4 py-6 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-                <CheckCircle2 className="h-7 w-7" />
-              </div>
+            <SuccessPanel className="py-6">
               <div>
                 <h3 className="font-semibold">Nota de crédito emitida</h3>
                 <p className="mt-1 text-sm text-muted-foreground">
@@ -112,7 +110,7 @@ function Contenido({ venta, onClose }: { venta: VentaLeer; onClose: () => void }
               <Button variant="outline" onClick={onClose}>
                 Listo
               </Button>
-            </div>
+            </SuccessPanel>
           ) : acreditables.isLoading ? (
             <div className="space-y-2">
               {Array.from({ length: 3 }).map((_, i) => (

@@ -3,6 +3,7 @@ import { AlertTriangle, Loader2, PackageCheck } from "lucide-react";
 import type { ConfirmarResponse } from "@/entities/remito/schema";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { SuccessPanel } from "@/shared/ui/success-panel";
 
 import { flagsDeAtencion, MAX_CODIGO_PROVEEDOR, type Estado } from "../model/estado";
 
@@ -136,13 +137,9 @@ export function ResultadoCarga({
   onOtro: () => void;
 }) {
   return (
-    <div className="mx-auto flex max-w-lg flex-col items-center gap-4 py-10 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-        <PackageCheck className="h-8 w-8" />
-      </div>
-
+    <SuccessPanel className="mx-auto max-w-lg py-10" icon={<PackageCheck className="h-8 w-8" />}>
       <div>
-        <h2 className="text-lg font-semibold">Remito cargado</h2>
+        <h1 className="text-lg font-semibold">Remito cargado</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           {resultado.articulos_creados.length} artículo(s) nuevos ·{" "}
           {resultado.articulos_actualizados.length} actualizados ·{" "}
@@ -165,6 +162,6 @@ export function ResultadoCarga({
       <Button variant="outline" onClick={onOtro}>
         Cargar otro remito
       </Button>
-    </div>
+    </SuccessPanel>
   );
 }

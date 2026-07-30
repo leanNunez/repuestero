@@ -1,4 +1,3 @@
-import { CheckCircle2 } from "lucide-react";
 import { useReducer } from "react";
 
 import type { ArticuloItem } from "@/entities/articulo/schema";
@@ -12,6 +11,7 @@ import { SelectorProveedor } from "@/features/compras/ui/SelectorProveedor";
 import { BuscadorArticulo } from "@/features/ventas/ui/BuscadorArticulo";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { SuccessPanel } from "@/shared/ui/success-panel";
 
 const inputClass =
   "h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
@@ -38,25 +38,24 @@ export function ComprasPage() {
   if (estado.paso === "listo" && emitir.data) {
     const r = emitir.data;
     return (
-      <div className="mx-auto flex max-w-lg flex-col items-center gap-4 p-4 py-10 text-center sm:p-6">
-        <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400">
-          <CheckCircle2 className="h-8 w-8" />
-        </div>
-        <div>
-          <h1 className="text-lg font-semibold">Compra registrada</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Comprobante {r.numero_comprobante} · Total {pesos(r.total)}
-          </p>
-        </div>
-        <Button
-          variant="outline"
-          onClick={() => {
-            emitir.reset();
-            dispatch({ type: "reset" });
-          }}
-        >
-          Nueva compra
-        </Button>
+      <div className="mx-auto max-w-lg p-4 py-10 sm:p-6">
+        <SuccessPanel>
+          <div>
+            <h1 className="text-lg font-semibold">Compra registrada</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Comprobante {r.numero_comprobante} · Total {pesos(r.total)}
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => {
+              emitir.reset();
+              dispatch({ type: "reset" });
+            }}
+          >
+            Nueva compra
+          </Button>
+        </SuccessPanel>
       </div>
     );
   }
