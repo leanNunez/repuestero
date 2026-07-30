@@ -3,5 +3,10 @@
   "references": [
     { "path": "./tsconfig.app.json" },
     { "path": "./tsconfig.node.json" }
-  ]
+  ],
+  // El CLI de shadcn resuelve el alias @/ leyendo ESTE tsconfig (no el .app):
+  // sin paths acá, `shadcn add` crea un directorio literal "@/".
+  "compilerOptions": {
+    "paths": { "@/*": ["./src/*"] }
+  }
 }
