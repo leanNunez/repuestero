@@ -9,9 +9,11 @@ const badgeVariants = cva(
     variants: {
       variant: {
         default: "bg-muted text-muted-foreground",
-        warning: "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300",
+        // Tinte del propio token (15% claro / 10% oscuro): AA verificado contra
+        // los semánticos de index.css — se acabaron los amber/emerald crudos.
+        warning: "bg-warning/15 text-warning dark:bg-warning/10",
         danger: "bg-destructive/10 text-destructive",
-        success: "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300",
+        success: "bg-success/15 text-success dark:bg-success/10",
       },
     },
     defaultVariants: { variant: "default" },
