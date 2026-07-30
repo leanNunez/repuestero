@@ -1,6 +1,7 @@
 import { NumericFormat } from "react-number-format";
 
 import { cn } from "@/shared/lib/cn";
+import { Input } from "@/shared/ui/input";
 
 interface Props {
   /** Valor CANÓNICO: número con punto decimal y sin separadores de miles, o "" si está vacío.
@@ -30,6 +31,8 @@ export function CampoMoneda({ value, onChange, className, ...rest }: Props) {
       allowNegative={false}
       inputMode="decimal"
       onValueChange={(v) => onChange(v.value)}
+      // El look viene del Input compartido: los llamadores ya no pasan clases de estilo.
+      customInput={Input}
       className={cn("tabular-nums", className)}
       {...rest}
     />
