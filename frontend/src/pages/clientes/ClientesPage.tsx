@@ -8,8 +8,7 @@ import { useClientes, useCrearCliente } from "@/features/clientes/model/hooks";
 import { FormularioCliente } from "@/features/clientes/ui/FormularioCliente";
 import { PageHeader } from "@/shared/ui/page-header";
 import { Pagination } from "@/shared/ui/pagination";
-import { Skeleton } from "@/shared/ui/skeleton";
-import { EmptyState, ErrorState } from "@/shared/ui/states";
+import { QueryState } from "@/shared/ui/query-state";
 
 const route = getRouteApi("/clientes");
 
@@ -17,11 +16,11 @@ export function ClientesPage() {
   const { q, page } = route.useSearch();
   const navigate = route.useNavigate();
 
-  const { data, isLoading, isError, refetch } = useClientes(q, page);
+  const query = useClientes(q, page);
   const crear = useCrearCliente();
 
-  const items = data?.items ?? [];
-  const total = data?.total ?? 0;
+  const items = query.data?.items ?? [];
+  const total = query.data?.total ?? 0;
 
   const setSearch = (patch: Partial<{ q: string; page: number }>) =>
     navigate({ search: (prev) => ({ ...prev, ...patch }), replace: true });
@@ -63,42 +62,36 @@ export function ClientesPage() {
         />
       </div>
 
-      {isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-11 w-full" />
-          ))}
-        </div>
-      ) : isError ? (
-        <ErrorState onRetry={() => void refetch()} />
-      ) : items.length === 0 ? (
-        <EmptyState
-          title={q ? "Sin resultados" : "Sin clientes"}
-          hint={
-            q
-              ? "No hay clientes que coincidan con la búsqueda."
-              : "Todavía no hay clientes cargados."
-          }
-        />
-      ) : (
-        <>
-          {/* Con una búsqueda activa el sustantivo cambia: "80 clientes" sobre un padrón de 900
-              se lee como el tamaño del padrón, no como el tamaño del resultado. Mismo criterio
-              que el catálogo. */}
-          <p className="text-xs text-muted-foreground">
-            {q
-              ? `${total} ${total === 1 ? "resultado" : "resultados"}`
-              : `${total} ${total === 1 ? "cliente" : "clientes"}`}
-          </p>
-          <ClienteTable clientes={items} />
-          <Pagination
-            page={page}
-            pageSize={PAGE_SIZE}
-            total={total}
-            onPageChange={(p) => setSearch({ page: p })}
-          />
-        </>
-      )}
+      <QueryState
+        query={query}
+        isEmpty={(d) => d.items.length === 0}
+        empty={{
+          title: q ? "Sin resultados" : "Sin clientes",
+          hint: q
+            ? "No hay clientes que coincidan con la búsqueda."
+            : "Todavía no hay clientes cargados.",
+        }}
+      >
+        {(d) => (
+          <>
+            {/* Con una búsqueda activa el sustantivo cambia: "80 clientes" sobre un padrón de 900
+                se lee como el tamaño del padrón, no como el tamaño del resultado. Mismo criterio
+                que el catálogo. */}
+            <p className="text-xs text-muted-foreground">
+              {q
+                ? `${d.total} ${d.total === 1 ? "resultado" : "resultados"}`
+                : `${d.total} ${d.total === 1 ? "cliente" : "clientes"}`}
+            </p>
+            <ClienteTable clientes={d.items} />
+            <Pagination
+              page={page}
+              pageSize={PAGE_SIZE}
+              total={d.total}
+              onPageChange={(p) => setSearch({ page: p })}
+            />
+          </>
+        )}
+      </QueryState>
     </div>
   );
 }
