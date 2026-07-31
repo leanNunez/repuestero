@@ -57,7 +57,7 @@ export function CapturaRemito({ onImagen, cargando, error }: Props) {
       </div>
 
       <div>
-        <h2 className="text-lg font-semibold">Sacale una foto al remito</h2>
+        <h1 className="text-lg font-semibold">Sacale una foto al remito</h1>
         <p className="mt-1 text-sm text-muted-foreground">
           Repu lee los renglones y te muestra qué va a cargar. Vos revisás antes de que se
           escriba nada.

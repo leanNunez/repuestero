@@ -3,12 +3,12 @@ import { AlertTriangle, Loader2, PackageCheck } from "lucide-react";
 import type { ConfirmarResponse } from "@/entities/remito/schema";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { Field, FieldDescription, FieldLabel } from "@/shared/ui/field";
+import { Input } from "@/shared/ui/input";
 import { SuccessPanel } from "@/shared/ui/success-panel";
+import { WarningList } from "@/shared/ui/warning-list";
 
 import { flagsDeAtencion, MAX_CODIGO_PROVEEDOR, type Estado } from "../model/estado";
-
-const inputClass =
-  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 interface Props {
   estado: Estado;
@@ -34,53 +34,52 @@ export function ResumenConfirmar({
   return (
     <Card className="space-y-4 p-4">
       <div className="grid gap-3 sm:grid-cols-3">
-        <div className="space-y-1">
-          <label htmlFor="deposito" className="text-xs font-medium">
+        <Field className="gap-1.5">
+          <FieldLabel htmlFor="deposito" className="text-xs">
             Depósito <span className="text-destructive">*</span>
-          </label>
-          <input
+          </FieldLabel>
+          <Input
             id="deposito"
             value={estado.deposito}
             onChange={(e) => onCampo("deposito", e.target.value)}
             placeholder="CEN"
-            className={inputClass}
           />
-          <p className="text-[11px] text-muted-foreground">A dónde entra la mercadería.</p>
-        </div>
+          <FieldDescription className="text-[11px]">
+            A dónde entra la mercadería.
+          </FieldDescription>
+        </Field>
 
-        <div className="space-y-1">
-          <label htmlFor="proveedor" className="text-xs font-medium">
+        <Field className="gap-1.5">
+          <FieldLabel htmlFor="proveedor" className="text-xs">
             Código de proveedor
-          </label>
-          <input
+          </FieldLabel>
+          <Input
             id="proveedor"
             value={estado.proveedorCodigo}
             onChange={(e) => onCampo("proveedorCodigo", e.target.value)}
             placeholder="DIST-SUR"
             maxLength={MAX_CODIGO_PROVEEDOR}
-            className={inputClass}
           />
-          <p className="text-[11px] text-muted-foreground">
+          <FieldDescription className="text-[11px]">
             Código corto interno (opcional).{" "}
             {estado.propuesta?.proveedor_nombre
               ? `El proveedor «${estado.propuesta.proveedor_nombre}» se guarda solo.`
               : ""}
-          </p>
-        </div>
+          </FieldDescription>
+        </Field>
 
-        <div className="space-y-1">
-          <label htmlFor="numero" className="text-xs font-medium">
+        <Field className="gap-1.5">
+          <FieldLabel htmlFor="numero" className="text-xs">
             N° de remito
-          </label>
-          <input
+          </FieldLabel>
+          <Input
             id="numero"
             value={estado.numeroRemito}
             onChange={(e) => onCampo("numeroRemito", e.target.value)}
             placeholder="R-0001"
-            className={inputClass}
           />
-          <p className="text-[11px] text-muted-foreground">Evita cargarlo dos veces.</p>
-        </div>
+          <FieldDescription className="text-[11px]">Evita cargarlo dos veces.</FieldDescription>
+        </Field>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-3">
@@ -148,16 +147,7 @@ export function ResultadoCarga({
         </p>
       </div>
 
-      {resultado.advertencias.length > 0 && (
-        <ul className="w-full space-y-1.5 rounded-lg bg-amber-50 p-3 text-left text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-          {resultado.advertencias.map((a) => (
-            <li key={a} className="flex gap-2">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              {a}
-            </li>
-          ))}
-        </ul>
-      )}
+      <WarningList avisos={resultado.advertencias} className="w-full" />
 
       <Button variant="outline" onClick={onOtro}>
         Cargar otro remito
