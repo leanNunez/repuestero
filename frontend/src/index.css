@@ -16,12 +16,19 @@
   --border: #e4e4e7;
   --input: #e4e4e7;
   --ring: #2f6fe0;
-  --destructive: #dc2626;
+  /* Semánticos oscurecidos para AA real: el texto del color sobre su propio
+     tinte al 15% y el blanco sobre el sólido superan 4.5:1 (los valores
+     anteriores dc2626/059669/d97706 quedaban entre 3:1 y 4.5:1). */
+  --destructive: #b91c1c;
   --destructive-foreground: #ffffff;
-  --success: #059669;
+  --success: #047857;
   --success-foreground: #ffffff;
-  --warning: #d97706;
+  --warning: #b45309;
   --warning-foreground: #ffffff;
+  --secondary: #f4f4f5;
+  --secondary-foreground: #18181b;
+  --popover: #ffffff;
+  --popover-foreground: #0a0a0a;
   --accent: #e9f0fc;
   --accent-foreground: #1d4fb5;
   /* Sidebar celeste (referencia visual). Marca; igual en claro y oscuro.
@@ -51,6 +58,10 @@
   --success-foreground: #0a0a0b;
   --warning: #fbbf24;
   --warning-foreground: #0a0a0b;
+  --secondary: #1f1f23;
+  --secondary-foreground: #fafafa;
+  --popover: #131316;
+  --popover-foreground: #fafafa;
   --accent: #152741;
   --accent-foreground: #a9c6f7;
   /* En oscuro el celeste encandila: el sidebar pasa a gris oscuro (texto blanco se mantiene). */
@@ -77,6 +88,10 @@
   --color-warning-foreground: var(--warning-foreground);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --radius-lg: var(--radius);
