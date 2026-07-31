@@ -1,13 +1,11 @@
 import { Trash2 } from "lucide-react";
 
-import { pesos } from "@/entities/remito/formato";
 import { Button } from "@/shared/ui/button";
 import { CampoMoneda } from "@/shared/ui/campo-moneda";
+import { Input } from "@/shared/ui/input";
+import { Money } from "@/shared/ui/money";
 
 import type { RenglonCompra } from "../model/estado";
-
-const inputClass =
-  "h-9 w-full rounded-md border border-input bg-background px-2 text-sm tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 interface Props {
   renglon: RenglonCompra;
@@ -25,12 +23,12 @@ export function RenglonCompraRow({ renglon, onCampo, onQuitar }: Props) {
         <p className="text-xs text-muted-foreground">{renglon.articulo_codigo}</p>
       </div>
 
-      <input
+      <Input
         aria-label="Cantidad"
         inputMode="decimal"
         value={renglon.cantidad}
         onChange={(e) => onCampo("cantidad", e.target.value)}
-        className={inputClass}
+        className="px-2 text-right font-mono tabular-nums"
       />
 
       <CampoMoneda
@@ -38,11 +36,11 @@ export function RenglonCompraRow({ renglon, onCampo, onQuitar }: Props) {
         value={renglon.costo_unitario}
         onChange={(v) => onCampo("costo_unitario", v)}
         placeholder="0,00"
-        className={inputClass}
+        className="px-2 text-right font-mono"
       />
 
-      <span className="text-right text-sm font-medium tabular-nums">
-        {Number.isFinite(subtotal) && subtotal > 0 ? pesos(String(subtotal)) : "—"}
+      <span className="text-right text-sm font-medium">
+        <Money value={Number.isFinite(subtotal) && subtotal > 0 ? subtotal : null} centavos />
       </span>
 
       <Button variant="ghost" size="icon" aria-label="Quitar renglón" onClick={onQuitar}>

@@ -4,9 +4,7 @@ import { useState } from "react";
 import type { ArticuloItem } from "@/entities/articulo/schema";
 import { useCatalogo } from "@/features/catalogo-search/model/hooks";
 import { Card } from "@/shared/ui/card";
-
-const inputClass =
-  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
+import { Input } from "@/shared/ui/input";
 
 /** Busca un artículo (búsqueda híbrida del catálogo) y lo agrega como renglón al hacer click.
  * Al agregar, limpia el texto para encadenar cargas rápidas en el mostrador. */
@@ -18,11 +16,10 @@ export function BuscadorArticulo({ onAgregar }: { onAgregar: (a: ArticuloItem) =
 
   return (
     <div className="space-y-2">
-      <input
+      <Input
         value={q}
         onChange={(e) => setQ(e.target.value)}
         placeholder="Buscá un artículo por nombre o código…"
-        className={inputClass}
         aria-label="Buscar artículo"
       />
       {texto && (
