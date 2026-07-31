@@ -11,10 +11,9 @@ import { SelectorProveedor } from "@/features/compras/ui/SelectorProveedor";
 import { BuscadorArticulo } from "@/features/ventas/ui/BuscadorArticulo";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { Field, FieldLabel } from "@/shared/ui/field";
+import { Input } from "@/shared/ui/input";
 import { SuccessPanel } from "@/shared/ui/success-panel";
-
-const inputClass =
-  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 export function ComprasPage() {
   const [estado, dispatch] = useReducer(reducer, ESTADO_INICIAL);
@@ -75,28 +74,27 @@ export function ComprasPage() {
         <div className="space-y-4">
           <Card className="space-y-3 p-4">
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="space-y-1">
-                <label className="text-xs font-medium">
+              <Field className="gap-1.5">
+                <FieldLabel className="text-xs">
                   Proveedor <span className="text-destructive">*</span>
-                </label>
+                </FieldLabel>
                 <SelectorProveedor
                   value={estado.proveedorCodigo}
                   onChange={(codigo) => dispatch({ type: "proveedor", codigo })}
                 />
-              </div>
-              <div className="space-y-1">
-                <label htmlFor="numero" className="text-xs font-medium">
+              </Field>
+              <Field className="gap-1.5">
+                <FieldLabel htmlFor="numero" className="text-xs">
                   N° de comprobante <span className="text-destructive">*</span>
-                </label>
-                <input
+                </FieldLabel>
+                <Input
                   id="numero"
                   value={estado.numeroComprobante}
                   onChange={(e) => dispatch({ type: "numero", valor: e.target.value })}
                   placeholder="0001-00001234"
-                  className={inputClass}
                   aria-label="Número de comprobante del proveedor"
                 />
-              </div>
+              </Field>
             </div>
             <BuscadorArticulo onAgregar={onAgregar} />
           </Card>

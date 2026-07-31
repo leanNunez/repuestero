@@ -1,14 +1,13 @@
 import { AlertTriangle, Loader2, Receipt } from "lucide-react";
 
-import { pesos } from "@/entities/remito/formato";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { Field, FieldDescription, FieldLabel } from "@/shared/ui/field";
+import { Input } from "@/shared/ui/input";
+import { Money } from "@/shared/ui/money";
+import { NativeSelect } from "@/shared/ui/native-select";
 
 import type { Estado, Totales } from "../model/estado";
-
-const inputClass =
-  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
-const selectClass = inputClass;
 
 interface Props {
   estado: Estado;
@@ -43,46 +42,48 @@ export function ResumenVenta({
   return (
     <Card className="space-y-4 p-4">
       <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-1">
-          <label htmlFor="condicion" className="text-xs font-medium">
+        <Field className="gap-1.5">
+          <FieldLabel htmlFor="condicion" className="text-xs">
             Condición
-          </label>
-          <select
+          </FieldLabel>
+          <NativeSelect
             id="condicion"
             value={estado.condicion}
             onChange={(e) => onCondicion(e.target.value as "contado" | "cta_cte")}
-            className={selectClass}
           >
             <option value="contado">Contado</option>
             <option value="cta_cte">Cuenta corriente</option>
-          </select>
-          <p className="text-[11px] text-muted-foreground">
+          </NativeSelect>
+          <FieldDescription className="text-[11px]">
             A crédito imputa el total a la cuenta corriente del cliente.
-          </p>
-        </div>
+          </FieldDescription>
+        </Field>
 
-        <div className="space-y-1">
-          <label htmlFor="deposito" className="text-xs font-medium">
+        <Field className="gap-1.5">
+          <FieldLabel htmlFor="deposito" className="text-xs">
             Depósito <span className="text-destructive">*</span>
-          </label>
-          <input
+          </FieldLabel>
+          <Input
             id="deposito"
             value={estado.deposito}
             onChange={(e) => onDeposito(e.target.value)}
             placeholder="CEN"
-            className={inputClass}
           />
-          <p className="text-[11px] text-muted-foreground">De dónde sale la mercadería.</p>
-        </div>
+          <FieldDescription className="text-[11px]">
+            De dónde sale la mercadería.
+          </FieldDescription>
+        </Field>
       </div>
 
       <div className="flex flex-wrap items-end justify-between gap-3 border-t pt-3">
         <div className="space-y-0.5 text-sm">
           <p className="text-muted-foreground">
-            Neto <span className="font-medium text-foreground">{pesos(String(tot.neto))}</span> · IVA{" "}
-            <span className="font-medium text-foreground">{pesos(String(tot.iva))}</span>
+            Neto <Money value={tot.neto} centavos className="font-medium text-foreground" /> · IVA{" "}
+            <Money value={tot.iva} centavos className="font-medium text-foreground" />
           </p>
-          <p className="text-lg font-semibold tabular-nums">Total {pesos(String(tot.total))}</p>
+          <p className="text-lg font-semibold">
+            Total <Money value={tot.total} centavos />
+          </p>
         </div>
 
         <Button onClick={onEmitir} disabled={!puede || cargando}>

@@ -13,6 +13,7 @@ import { ResumenVenta } from "@/features/ventas/ui/ResumenVenta";
 import { SelectorCliente } from "@/features/ventas/ui/SelectorCliente";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { Field, FieldLabel } from "@/shared/ui/field";
 import { SuccessPanel } from "@/shared/ui/success-panel";
 
 function comprobanteLabel(tipo: string, ptoVenta: number, numero: number): string {
@@ -88,15 +89,15 @@ export function VentasPage() {
       <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
         <div className="space-y-4">
           <Card className="space-y-3 p-4">
-            <div className="space-y-1">
-              <label className="text-xs font-medium">
+            <Field className="gap-1.5">
+              <FieldLabel className="text-xs">
                 Cliente <span className="text-destructive">*</span>
-              </label>
+              </FieldLabel>
               <SelectorCliente
                 value={estado.clienteCodigo}
                 onChange={(codigo) => dispatch({ type: "cliente", codigo })}
               />
-            </div>
+            </Field>
             <BuscadorArticulo onAgregar={onAgregar} />
           </Card>
 
