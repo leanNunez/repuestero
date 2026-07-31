@@ -14,9 +14,10 @@ export function EmptyState({ title, hint }: { title: string; hint?: ReactNode })
 export function ErrorState({ onRetry }: { onRetry?: () => void }) {
   return (
     <div className="flex flex-col items-center justify-center gap-3 py-16 text-center">
-      <p className="text-sm font-medium">No pude cargar los datos.</p>
+      {/* Copy para la persona del mostrador, no para quien programó: nada de "backend" ni "token". */}
+      <p className="text-sm font-medium">No pudimos cargar los datos.</p>
       <p className="max-w-sm text-sm text-muted-foreground">
-        Revisá que el backend esté corriendo y el token sea válido.
+        Reintentá en unos segundos. Si sigue pasando, avisale a quien administra el sistema.
       </p>
       {onRetry && (
         <Button variant="outline" size="sm" onClick={onRetry}>
