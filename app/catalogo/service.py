@@ -95,6 +95,132 @@ def crear_articulo(session: Session, org_id: UUID, datos: ArticuloCrear) -> Arti
     return articulo
 
 
+_TEXTO_OBLIGATORIO = ("codigo", "detalle")
+_TEXTO_OPCIONAL = ("marca", "rubro", "codigo_barra")
+
+
+def _normalizar(datos: ArticuloCrear) -> ArticuloCrear:
+    """Recorta los espacios de los campos de texto; los opcionales que queden vacíos van a None.
+
+    El strip NO es higiene, arregla tres defectos concretos:
+    - `_valores_distintos` hace DISTINCT sobre la columna cruda: "Filtros " y "Filtros" son dos
+      entradas del dropdown, indistinguibles a ojo, para siempre.
+    - `listar_articulos` filtra rubro y marca con exact-match: un espacio invisible parte el
+      catálogo en dos mitades que no se ven entre sí.
+    - En `codigo` es peor: "MAH-OC90 " PASA `uq_articulos_org_codigo` al lado de "MAH-OC90". El
+      constraint que designamos árbitro de la unicidad deja entrar el duplicado.
+
+    El case NO se toca, a propósito. Perder "MANN-FILTER" vs "Mann-Filter" es irreversible y es
+    la tipografía de la marca; y como todo el catálogo importado conserva el case que traía
+    Paradox, normalizar solo lo nuevo haría convivir "FILTROS" con "Filtros" —causaríamos
+    nosotros el problema que dice prevenir—. Contra los duplicados por case juega la UI, que
+    sugiere los valores que ya existen.
+
+    Vive acá y NO en un `field_validator` de `ArticuloCrear` porque ese schema lo comparten el
+    importador y la ingesta de remitos, y ahí hay un camino de falla concreto: `obtener_articulo`
+    compara el código crudo del OCR contra el almacenado; si el schema lo strippeara, dejarían de
+    coincidir, la ingesta intentaría crear uno que ya existe y el remito entero moriría con un
+    409 contra el unique.
+    """
+    limpio = datos.model_dump()
+    for campo in _TEXTO_OBLIGATORIO:
+        limpio[campo] = limpio[campo].strip()
+    for campo in _TEXTO_OPCIONAL:
+        valor = limpio[campo]
+        if valor is not None:
+            # Un string vacío no es "sin marca": es basura que rompe el `is_not(None)` con el
+            # que `_valores_distintos` arma los dropdowns. La columna es nullable; usémosla.
+            limpio[campo] = valor.strip() or None
+    return ArticuloCrear(**limpio)
+
+
+def _validar(datos: ArticuloCrear, precio: Decimal | None, lista_id: int | None) -> None:
+    """Reja de negocio del alta. Corre DESPUÉS de `_normalizar`, y esto no es un detalle.
+
+    "   " tiene largo 3: un `min_length=1` de Pydantic corre antes del strip y lo deja pasar.
+    La validación de no-vacío tiene que ser post-strip, o sea acá. Por eso `ArticuloCrear`
+    tampoco lleva `min_length`.
+    """
+    if not datos.codigo:
+        raise ValueError("El código del artículo no puede estar vacío.")
+    if not datos.detalle:
+        raise ValueError("El detalle del artículo no puede estar vacío.")
+    if datos.costo < 0:
+        raise ValueError("El costo no puede ser negativo.")
+    if datos.costo_dolar is not None and datos.costo_dolar < 0:
+        raise ValueError("El costo en dólares no puede ser negativo.")
+    if not Decimal("0") <= datos.alicuota_iva <= Decimal("100"):
+        raise ValueError("La alícuota de IVA tiene que estar entre 0 y 100.")
+    if datos.punto_pedido < 0:
+        raise ValueError("El punto de pedido no puede ser negativo.")
+    if precio is not None:
+        if precio <= 0:
+            raise ValueError("El precio de venta tiene que ser mayor que cero.")
+        if lista_id is None:
+            raise ValueError("Elegí en qué lista de precios va el precio de venta.")
+
+
+def alta_articulo(
+    session: Session,
+    org_id: UUID,
+    *,
+    datos: ArticuloCrear,
+    precio: Decimal | None = None,
+    lista_id: int | None = None,
+) -> tuple[Articulo, list[str]]:
+    """Alta desde la app: normaliza, valida, crea, fija el precio si vino, y RE-EMBEBE.
+
+    `crear_articulo` se queda intacta y las dos puertas conviven a propósito, igual que
+    `crear_cliente`/`alta_cliente`. No es simetría estética: sus dos llamadores no pueden pagar
+    lo que esta hace. El importador carga miles de filas (un `refresh()` por fila es un SELECT
+    por fila) y la ingesta de remitos acumula los artículos nuevos para embeberlos de UNA sola
+    vez al final —si el embedding bajara a `crear_articulo`, un remito de 20 renglones pasaría
+    de una llamada al modelo a veinte—.
+
+    Devuelve `(articulo, advertencias)` y no un schema: este módulo nunca importa schemas de
+    salida. Las advertencias son strings ya redactados, como los de la ingesta.
+    """
+    datos = _normalizar(datos)
+    _validar(datos, precio, lista_id)
+
+    lista = None
+    if precio is not None:
+        # RLS hace indistinguible "no existe" de "es de otra org", y está bien que así sea.
+        lista = obtener_lista_precio_por_id(session, org_id, lista_id)
+        if lista is None:
+            raise ValueError("No existe esa lista de precios en tu organización.")
+
+    articulo = crear_articulo(session, org_id, datos)  # acá pega uq_articulos_org_codigo
+    if lista is not None:
+        # `upsert_precio` y no `fijar_precio`: aquella es insert-only y toma objetos ORM. Sobre
+        # un artículo recién creado las dos andan, pero elegir la insert-only ataría el alta a
+        # una precondición que no hace falta declarar.
+        # El `margen` queda en None a propósito: derivarlo de precio/costo haría que
+        # `recalcular_precios_por_costo` repriceara este artículo solo en el próximo remito,
+        # sin que nadie lo haya pedido. Con margen NULL el precio no se toca —es lo que ya pasa
+        # con todo lo que crea la ingesta— y esa es la falla segura.
+        upsert_precio(session, org_id, articulo_id=articulo.id, lista_id=lista.id, precio=precio)
+
+    # Sin esto el objeto conserva los Decimal de Python en vez de los que la base normalizó, y
+    # el POST devolvería "0" donde el GET del mismo artículo devuelve "0.0000". `Articulo` es
+    # peor caso que `Cliente`: cuatro columnas Decimal con tres escalas distintas.
+    # Va ANTES de embeber a propósito: acá `embedding` todavía es NULL, así que el SELECT del
+    # refresh no arrastra de vuelta el vector de 384 floats en cada alta.
+    session.refresh(articulo)
+
+    # El paso que NO se puede olvidar. El brazo vectorial de la búsqueda filtra
+    # `embedding is not null`: sin esto el artículo queda invisible a la búsqueda semántica
+    # hasta que corra un batch, y quien lo carga y lo busca a los diez segundos no lo encuentra.
+    asegurar_embeddings(session, org_id, articulos=[articulo])
+
+    advertencias: list[str] = []
+    if lista is None:
+        advertencias.append(
+            "El artículo se creó SIN precio de venta: no se puede facturar hasta fijarle uno."
+        )
+    return articulo, advertencias
+
+
 def actualizar_articulo(
     session: Session, org_id: UUID, *, articulo: Articulo, datos: ArticuloActualizar
 ) -> Articulo:
