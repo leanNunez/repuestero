@@ -17,6 +17,8 @@ interface Props {
   todos: boolean;
   onSeleccionar: (id: number) => void;
   onRetry: () => void;
+  /** Para que la columna de altura fija le dé el alto sobrante y scrollee solo la lista. */
+  className?: string;
 }
 
 export function ListadoCuentas({
@@ -27,6 +29,7 @@ export function ListadoCuentas({
   todos,
   onSeleccionar,
   onRetry,
+  className,
 }: Props) {
   if (isLoading) {
     return (
@@ -52,7 +55,7 @@ export function ListadoCuentas({
   }
 
   return (
-    <Card className="divide-y overflow-hidden p-0">
+    <Card className={cn("divide-y overflow-auto p-0", className)}>
       <ul>
         {cuentas.map((c) => {
           const signo = signoSaldo(c.saldo);

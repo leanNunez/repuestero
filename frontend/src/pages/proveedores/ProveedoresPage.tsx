@@ -6,6 +6,7 @@ import { PAGE_SIZE } from "@/features/proveedores/model/estado";
 import { useCrearProveedor, useProveedores } from "@/features/proveedores/model/hooks";
 import { FormularioProveedor } from "@/features/proveedores/ui/FormularioProveedor";
 import { PageHeader } from "@/shared/ui/page-header";
+import { PageBody, PageLayout } from "@/shared/ui/page-layout";
 import { Pagination } from "@/shared/ui/pagination";
 import { QueryState } from "@/shared/ui/query-state";
 import { SearchInput } from "@/shared/ui/search-input";
@@ -33,7 +34,7 @@ export function ProveedoresPage() {
   }, [total, items.length, page]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-5">
+    <PageLayout>
       <PageHeader
         title="Proveedores"
         description="Padrón de proveedores. Los que llegan por un remito escaneado entran con el código del papel; los que se dan de alta acá los numera el sistema."
@@ -55,35 +56,37 @@ export function ProveedoresPage() {
         aria-label="Buscar proveedores"
       />
 
-      <QueryState
-        query={query}
-        isEmpty={(d) => d.items.length === 0}
-        empty={{
-          title: q ? "Sin resultados" : "Sin proveedores",
-          hint: q
-            ? "No hay proveedores que coincidan con la búsqueda."
-            : "Todavía no hay proveedores cargados.",
-        }}
-      >
-        {(d) => (
-          <>
-            {/* Con una búsqueda activa el sustantivo cambia: "80 proveedores" sobre un padrón de 900
-                se lee como el tamaño del padrón, no como el del resultado. */}
-            <p className="text-xs text-muted-foreground">
-              {q
-                ? `${d.total} ${d.total === 1 ? "resultado" : "resultados"}`
-                : `${d.total} ${d.total === 1 ? "proveedor" : "proveedores"}`}
-            </p>
-            <ProveedorTable proveedores={d.items} />
-            <Pagination
-              page={page}
-              pageSize={PAGE_SIZE}
-              total={d.total}
-              onPageChange={(p) => setSearch({ page: p })}
-            />
-          </>
-        )}
-      </QueryState>
-    </div>
+      <PageBody>
+        <QueryState
+          query={query}
+          isEmpty={(d) => d.items.length === 0}
+          empty={{
+            title: q ? "Sin resultados" : "Sin proveedores",
+            hint: q
+              ? "No hay proveedores que coincidan con la búsqueda."
+              : "Todavía no hay proveedores cargados.",
+          }}
+        >
+          {(d) => (
+            <>
+              {/* Con una búsqueda activa el sustantivo cambia: "80 proveedores" sobre un padrón de 900
+                  se lee como el tamaño del padrón, no como el del resultado. */}
+              <p className="text-xs text-muted-foreground">
+                {q
+                  ? `${d.total} ${d.total === 1 ? "resultado" : "resultados"}`
+                  : `${d.total} ${d.total === 1 ? "proveedor" : "proveedores"}`}
+              </p>
+              <ProveedorTable proveedores={d.items} containerClassName="sm:min-h-0 sm:flex-1" />
+              <Pagination
+                page={page}
+                pageSize={PAGE_SIZE}
+                total={d.total}
+                onPageChange={(p) => setSearch({ page: p })}
+              />
+            </>
+          )}
+        </QueryState>
+      </PageBody>
+    </PageLayout>
   );
 }

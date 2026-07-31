@@ -12,7 +12,9 @@ function Table({
       data-slot="table-container"
       // Enmarcada por defecto: es la tabla "suelta" de los listados. Dentro de un Card
       // se anula con containerClassName="rounded-none border-0 bg-transparent".
-      className={cn("relative w-full overflow-x-auto rounded-lg border bg-card", containerClassName)}
+      // `overflow-auto` (no solo -x): cuando el contenedor tiene altura limitada scrollea
+      // en vertical y el thead sticky se queda. Sin altura limitada, crece igual que antes.
+      className={cn("relative w-full overflow-auto rounded-lg border bg-card", containerClassName)}
     >
       <table
         data-slot="table"

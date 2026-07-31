@@ -26,6 +26,8 @@ interface Props {
   onRevertir: (m: Movimiento) => void;
   /** Anular el DOCUMENTO de esta fila (el recibo o la orden de pago), no el movimiento. */
   onAnular: (m: Movimiento) => void;
+  /** Para que la página de altura fija le dé el alto sobrante y scrollee solo el cuerpo. */
+  containerClassName?: string;
 }
 
 /** Referencia legible del movimiento: "Comprobante #123", "Recibo #47".
@@ -53,6 +55,7 @@ export function ExtractoTable({
   onRetry,
   onRevertir,
   onAnular,
+  containerClassName,
 }: Props) {
   if (isLoading) return <TableSkeleton rows={8} className="h-10 w-full" />;
   if (isError) return <ErrorState onRetry={onRetry} />;
@@ -66,7 +69,7 @@ export function ExtractoTable({
   }
 
   return (
-    <Table>
+    <Table containerClassName={containerClassName}>
       <TableCaption className="sr-only">
         Movimientos de la cuenta corriente, del más reciente al más antiguo
       </TableCaption>

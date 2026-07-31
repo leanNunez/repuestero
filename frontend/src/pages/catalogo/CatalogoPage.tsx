@@ -10,6 +10,7 @@ import {
 } from "@/features/catalogo-search/model/hooks";
 import { NativeSelect } from "@/shared/ui/native-select";
 import { PageHeader } from "@/shared/ui/page-header";
+import { PageBody, PageLayout } from "@/shared/ui/page-layout";
 import { Pagination } from "@/shared/ui/pagination";
 import { SearchInput } from "@/shared/ui/search-input";
 import { Skeleton } from "@/shared/ui/skeleton";
@@ -45,7 +46,7 @@ export function CatalogoPage() {
   }, [buscando, total, items.length, page]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-5">
+    <PageLayout>
       <PageHeader title="Catálogo" />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <SearchInput
@@ -85,41 +86,43 @@ export function CatalogoPage() {
         </div>
       </div>
 
-      {isLoading ? (
-        <div className="space-y-2">
-          {Array.from({ length: 8 }).map((_, i) => (
-            <Skeleton key={i} className="h-11 w-full" />
-          ))}
-        </div>
-      ) : isError ? (
-        <ErrorState onRetry={() => void refetch()} />
-      ) : visibles.length === 0 ? (
-        <EmptyState
-          title="Sin resultados"
-          hint={
-            q || rubro || marca
-              ? "No hay artículos que coincidan con la búsqueda o los filtros."
-              : "No hay artículos cargados."
-          }
-        />
-      ) : (
-        <>
-          <p className="text-xs text-muted-foreground">
-            {buscando
-              ? `${visibles.length} ${visibles.length === 1 ? "resultado" : "resultados"}`
-              : `${total} ${total === 1 ? "artículo" : "artículos"}`}
-          </p>
-          <ArticuloTable articulos={visibles} />
-          {!buscando && (
-            <Pagination
-              page={page}
-              pageSize={PAGE_SIZE}
-              total={total}
-              onPageChange={(p) => setSearch({ page: p })}
-            />
-          )}
-        </>
-      )}
-    </div>
+      <PageBody>
+        {isLoading ? (
+          <div className="space-y-2">
+            {Array.from({ length: 8 }).map((_, i) => (
+              <Skeleton key={i} className="h-11 w-full" />
+            ))}
+          </div>
+        ) : isError ? (
+          <ErrorState onRetry={() => void refetch()} />
+        ) : visibles.length === 0 ? (
+          <EmptyState
+            title="Sin resultados"
+            hint={
+              q || rubro || marca
+                ? "No hay artículos que coincidan con la búsqueda o los filtros."
+                : "No hay artículos cargados."
+            }
+          />
+        ) : (
+          <>
+            <p className="text-xs text-muted-foreground">
+              {buscando
+                ? `${visibles.length} ${visibles.length === 1 ? "resultado" : "resultados"}`
+                : `${total} ${total === 1 ? "artículo" : "artículos"}`}
+            </p>
+            <ArticuloTable articulos={visibles} containerClassName="sm:min-h-0 sm:flex-1" />
+            {!buscando && (
+              <Pagination
+                page={page}
+                pageSize={PAGE_SIZE}
+                total={total}
+                onPageChange={(p) => setSearch({ page: p })}
+              />
+            )}
+          </>
+        )}
+      </PageBody>
+    </PageLayout>
   );
 }

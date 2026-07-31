@@ -12,9 +12,16 @@ import type { Proveedor } from "./schema";
 
 /** Sin columna de límite de cuenta corriente, a diferencia de la tabla de clientes: a un proveedor
  *  no se le fija un límite de crédito — la deuda va para el otro lado. */
-export function ProveedorTable({ proveedores }: { proveedores: Proveedor[] }) {
+export function ProveedorTable({
+  proveedores,
+  containerClassName,
+}: {
+  proveedores: Proveedor[];
+  /** Para que la página de altura fija le dé el alto sobrante y scrollee solo el cuerpo. */
+  containerClassName?: string;
+}) {
   return (
-    <Table>
+    <Table containerClassName={containerClassName}>
       <TableHeader>
         <TableRow>
           <TableHead>Código</TableHead>

@@ -1,5 +1,6 @@
 import { pesos } from "@/entities/remito/formato";
 import type { CompraLeer } from "@/entities/compra/schema";
+import { cn } from "@/shared/lib/cn";
 import { Card } from "@/shared/ui/card";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { EmptyState, ErrorState } from "@/shared/ui/states";
@@ -9,9 +10,17 @@ interface Props {
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
+  /** Para que la columna de altura fija le dé el alto sobrante y scrollee solo la lista. */
+  className?: string;
 }
 
-export function ListadoCompras({ compras, isLoading, isError, onRetry }: Props) {
+export function ListadoCompras({
+  compras,
+  isLoading,
+  isError,
+  onRetry,
+  className,
+}: Props) {
   if (isLoading) {
     return (
       <div className="space-y-2">
@@ -29,7 +38,7 @@ export function ListadoCompras({ compras, isLoading, isError, onRetry }: Props) 
   }
 
   return (
-    <Card className="divide-y overflow-hidden p-0">
+    <Card className={cn("divide-y overflow-hidden p-0", className)}>
       {compras.map((c) => (
         <div key={c.id} className="flex items-center justify-between gap-3 p-3 text-sm">
           <div className="min-w-0">

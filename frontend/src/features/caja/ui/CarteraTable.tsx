@@ -87,6 +87,8 @@ interface Props {
   onConciliar: (cheque: Cheque) => void;
   /** Id del cheque con una operación en vuelo, para deshabilitar solo esa fila. */
   ocupado: number | null;
+  /** Para que la página de altura fija le dé el alto sobrante y scrollee solo el cuerpo. */
+  containerClassName?: string;
 }
 
 export function CarteraTable({
@@ -97,6 +99,7 @@ export function CarteraTable({
   onTransicion,
   onConciliar,
   ocupado,
+  containerClassName,
 }: Props) {
   if (isLoading) return <TableSkeleton className="h-12 w-full" />;
   if (isError) return <ErrorState onRetry={onRetry} />;
@@ -110,7 +113,7 @@ export function CarteraTable({
   }
 
   return (
-    <Table>
+    <Table containerClassName={containerClassName}>
       <TableCaption className="sr-only">
         Cheques de la cartera, ordenados por fecha de cobro
       </TableCaption>
