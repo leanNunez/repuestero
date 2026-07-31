@@ -3,11 +3,11 @@ import { useState } from "react";
 import { Button } from "@/shared/ui/button";
 import { CampoMoneda } from "@/shared/ui/campo-moneda";
 import { Card } from "@/shared/ui/card";
+import { Field, FieldError, FieldLabel } from "@/shared/ui/field";
+import { Input } from "@/shared/ui/input";
+import { NativeSelect } from "@/shared/ui/native-select";
 
 import { CONCEPTOS_MANUALES, FORMAS, etiquetaForma } from "../model/estado";
-
-const campoClass =
-  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 interface Props {
   cargando: boolean;
@@ -82,89 +82,66 @@ export function FormularioMovimiento({ cargando, error, advertencias, onRegistra
     <Card className="space-y-3 p-3">
       <form onSubmit={enviar} className="space-y-3">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="space-y-1">
-            <label htmlFor="caja-concepto" className="text-xs text-muted-foreground">
-              Concepto
-            </label>
-            <select
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor="caja-concepto">Concepto</FieldLabel>
+            <NativeSelect
               id="caja-concepto"
               value={concepto}
               onChange={(e) => setConcepto(e.target.value)}
-              className={campoClass}
             >
               {CONCEPTOS_MANUALES.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.label}
                 </option>
               ))}
-            </select>
-          </div>
+            </NativeSelect>
+          </Field>
 
-          <div className="space-y-1">
-            <label htmlFor="caja-forma" className="text-xs text-muted-foreground">
-              Forma
-            </label>
-            <select
-              id="caja-forma"
-              value={forma}
-              onChange={(e) => setForma(e.target.value)}
-              className={campoClass}
-            >
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor="caja-forma">Forma</FieldLabel>
+            <NativeSelect id="caja-forma" value={forma} onChange={(e) => setForma(e.target.value)}>
               {FORMAS.map((f) => (
                 <option key={f} value={f}>
                   {etiquetaForma(f)}
                 </option>
               ))}
-            </select>
-          </div>
+            </NativeSelect>
+          </Field>
 
-          <div className="space-y-1">
-            <label htmlFor="caja-monto" className="text-xs text-muted-foreground">
-              Monto
-            </label>
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor="caja-monto">Monto</FieldLabel>
             <CampoMoneda
               id="caja-monto"
               value={monto}
               onChange={setMonto}
               placeholder="0,00"
               disabled={cargando}
-              className={campoClass}
             />
-          </div>
+          </Field>
 
-          <div className="space-y-1">
-            <label htmlFor="caja-fecha" className="text-xs text-muted-foreground">
-              Fecha
-            </label>
-            <input
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor="caja-fecha">Fecha</FieldLabel>
+            <Input
               id="caja-fecha"
               type="date"
               value={fecha}
               onChange={(e) => setFecha(e.target.value)}
-              className={campoClass}
             />
-          </div>
+          </Field>
         </div>
 
-        <div className="space-y-1">
-          <label htmlFor="caja-detalle" className="text-xs text-muted-foreground">
-            Detalle (opcional)
-          </label>
-          <input
+        <Field className="gap-1.5">
+          <FieldLabel htmlFor="caja-detalle">Detalle (opcional)</FieldLabel>
+          <Input
             id="caja-detalle"
             value={detalle}
             onChange={(e) => setDetalle(e.target.value)}
             maxLength={200}
             placeholder="Flete Andreani, librería…"
-            className={campoClass}
           />
-        </div>
+        </Field>
 
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
+        {error && <FieldError>{error}</FieldError>}
 
         <div className="flex gap-2">
           <Button type="submit" size="sm" disabled={!montoValido || cargando}>

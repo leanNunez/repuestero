@@ -3,6 +3,8 @@ import { useState } from "react";
 import type { ProveedorCrear } from "@/entities/proveedor/schema";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { Field, FieldError, FieldLabel } from "@/shared/ui/field";
+import { Input } from "@/shared/ui/input";
 
 import {
   aPayload,
@@ -11,9 +13,6 @@ import {
   VACIO,
   type FormularioProveedor as Datos,
 } from "../model/estado";
-
-const campoClass =
-  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 interface Props {
   cargando: boolean;
@@ -65,25 +64,20 @@ export function FormularioProveedor({ cargando, error, ultimoCodigo, onCrear }: 
     <Card className="space-y-3 p-3">
       <form onSubmit={enviar} className="space-y-3">
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          <div className="space-y-1 lg:col-span-2">
-            <label htmlFor="prv-razon-social" className="text-xs text-muted-foreground">
-              Razón social
-            </label>
-            <input
+          <Field className="gap-1.5 lg:col-span-2">
+            <FieldLabel htmlFor="prv-razon-social">Razón social</FieldLabel>
+            <Input
               id="prv-razon-social"
               value={datos.razon_social}
               onChange={(e) => campo("razon_social", e.target.value)}
               maxLength={120}
               placeholder="Distribuidora Central SA"
-              className={campoClass}
             />
-          </div>
+          </Field>
 
-          <div className="space-y-1">
-            <label htmlFor="prv-cuit" className="text-xs text-muted-foreground">
-              CUIT (opcional)
-            </label>
-            <input
+          <Field className="gap-1.5" data-invalid={cuitMal || undefined}>
+            <FieldLabel htmlFor="prv-cuit">CUIT (opcional)</FieldLabel>
+            <Input
               id="prv-cuit"
               value={datos.cuit}
               onChange={(e) => campo("cuit", e.target.value)}
@@ -91,50 +85,39 @@ export function FormularioProveedor({ cargando, error, ultimoCodigo, onCrear }: 
               placeholder="30-71233445-9"
               aria-invalid={cuitMal}
               aria-describedby={cuitMal ? "prv-cuit-error" : undefined}
-              className={campoClass}
             />
             {cuitMal && (
-              <p id="prv-cuit-error" role="alert" className="text-xs text-destructive">
+              <FieldError id="prv-cuit-error" className="text-xs">
                 Ese CUIT no es válido. Revisá el número — no coincide el dígito verificador.
-              </p>
+              </FieldError>
             )}
-          </div>
+          </Field>
 
-          <div className="space-y-1">
-            <label htmlFor="prv-telefono" className="text-xs text-muted-foreground">
-              Teléfono (opcional)
-            </label>
-            <input
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor="prv-telefono">Teléfono (opcional)</FieldLabel>
+            <Input
               id="prv-telefono"
               value={datos.telefono}
               onChange={(e) => campo("telefono", e.target.value)}
               maxLength={40}
               placeholder="0341-4567890"
-              className={campoClass}
             />
-          </div>
+          </Field>
 
-          <div className="space-y-1 lg:col-span-2">
-            <label htmlFor="prv-email" className="text-xs text-muted-foreground">
-              Email (opcional)
-            </label>
-            <input
+          <Field className="gap-1.5 lg:col-span-2">
+            <FieldLabel htmlFor="prv-email">Email (opcional)</FieldLabel>
+            <Input
               id="prv-email"
               type="email"
               value={datos.email}
               onChange={(e) => campo("email", e.target.value)}
               maxLength={120}
               placeholder="ventas@distribuidora.com"
-              className={campoClass}
             />
-          </div>
+          </Field>
         </div>
 
-        {error && (
-          <p role="alert" className="text-sm text-destructive">
-            {error}
-          </p>
-        )}
+        {error && <FieldError>{error}</FieldError>}
 
         <div className="flex gap-2">
           <Button type="submit" size="sm" disabled={!habilitado}>
