@@ -4,6 +4,7 @@ import type { Cheque } from "@/entities/caja/schema";
 import { pesos } from "@/entities/remito/formato";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { Input } from "@/shared/ui/input";
 
 interface Props {
   /** `null` = cerrado. */
@@ -55,13 +56,13 @@ export function FormularioConciliar({ cheque, cargando, error, onCerrar, onConci
           <label htmlFor="conciliar-fecha" className="text-xs text-muted-foreground">
             Fecha de conciliación
           </label>
-          <input
+          <Input
             id="conciliar-fecha"
             type="date"
             value={fecha}
             onChange={(e) => setFecha(e.target.value)}
             required
-            className="h-9 w-full max-w-xs rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            className="max-w-xs tabular-nums"
           />
         </div>
 

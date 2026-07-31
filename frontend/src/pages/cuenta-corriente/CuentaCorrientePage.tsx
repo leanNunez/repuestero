@@ -1,5 +1,4 @@
 import { getRouteApi } from "@tanstack/react-router";
-import { Search } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import type { Movimiento } from "@/entities/cuenta-corriente/schema";
@@ -31,12 +30,10 @@ import { Solapas } from "@/features/cuenta-corriente/ui/Solapas";
 import { Card } from "@/shared/ui/card";
 import { PageHeader } from "@/shared/ui/page-header";
 import { Pagination } from "@/shared/ui/pagination";
+import { SearchInput } from "@/shared/ui/search-input";
 import { EmptyState } from "@/shared/ui/states";
 
 const route = getRouteApi("/cuenta-corriente");
-
-const inputClass =
-  "h-9 w-full rounded-md border border-input bg-background pl-10 pr-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 export function CuentaCorrientePage() {
   const s = route.useSearch();
@@ -100,16 +97,12 @@ export function CuentaCorrientePage() {
       <div className="grid gap-4 lg:grid-cols-[22rem_1fr]">
         {/* ---------------------------------------------------------------- listado de cuentas */}
         <section aria-label="Cuentas" className="space-y-3">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <input
-              value={s.q}
-              onChange={(e) => ir(buscar(s, e.target.value))}
-              placeholder={esCliente ? "Buscar cliente…" : "Buscar proveedor…"}
-              aria-label={esCliente ? "Buscar cliente" : "Buscar proveedor"}
-              className={inputClass}
-            />
-          </div>
+          <SearchInput
+            value={s.q}
+            onChange={(e) => ir(buscar(s, e.target.value))}
+            placeholder={esCliente ? "Buscar cliente…" : "Buscar proveedor…"}
+            aria-label={esCliente ? "Buscar cliente" : "Buscar proveedor"}
+          />
 
           <label className="flex items-center gap-2 text-sm text-muted-foreground">
             <input

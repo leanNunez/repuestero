@@ -1,5 +1,4 @@
 import { getRouteApi } from "@tanstack/react-router";
-import { Search } from "lucide-react";
 import { useEffect } from "react";
 
 import { ClienteTable } from "@/entities/cliente/ClienteTable";
@@ -9,6 +8,7 @@ import { FormularioCliente } from "@/features/clientes/ui/FormularioCliente";
 import { PageHeader } from "@/shared/ui/page-header";
 import { Pagination } from "@/shared/ui/pagination";
 import { QueryState } from "@/shared/ui/query-state";
+import { SearchInput } from "@/shared/ui/search-input";
 
 const route = getRouteApi("/clientes");
 
@@ -51,16 +51,12 @@ export function ClientesPage() {
         }
       />
 
-      <div className="relative">
-        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
-          value={q}
-          onChange={(e) => setSearch({ q: e.target.value, page: 1 })}
-          placeholder="Buscar por denominación, código o CUIT…"
-          className="h-9 w-full rounded-md border border-input bg-background pl-10 pr-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background"
-          aria-label="Buscar clientes"
-        />
-      </div>
+      <SearchInput
+        value={q}
+        onChange={(e) => setSearch({ q: e.target.value, page: 1 })}
+        placeholder="Buscar por denominación, código o CUIT…"
+        aria-label="Buscar clientes"
+      />
 
       <QueryState
         query={query}

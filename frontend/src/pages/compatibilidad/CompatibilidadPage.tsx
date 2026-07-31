@@ -8,12 +8,10 @@ import {
 } from "@/features/compatibilidad/model/hooks";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { Input } from "@/shared/ui/input";
 import { PageHeader } from "@/shared/ui/page-header";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { EmptyState, ErrorState } from "@/shared/ui/states";
-
-const inputClass =
-  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 function Campo({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -57,28 +55,26 @@ export function CompatibilidadPage() {
           className="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_7rem_auto] sm:items-end"
         >
           <Campo label="Marca *">
-            <input
+            <Input
               value={marca}
               onChange={(e) => setMarca(e.target.value)}
               placeholder="Volkswagen"
-              className={inputClass}
             />
           </Campo>
           <Campo label="Modelo *">
-            <input
+            <Input
               value={modelo}
               onChange={(e) => setModelo(e.target.value)}
               placeholder="Gol Trend"
-              className={inputClass}
             />
           </Campo>
           <Campo label="Año">
-            <input
+            <Input
               value={anio}
               onChange={(e) => setAnio(e.target.value)}
               placeholder="2015"
               inputMode="numeric"
-              className={inputClass}
+              className="tabular-nums"
             />
           </Campo>
           <Button type="submit" disabled={!puedeBuscar}>

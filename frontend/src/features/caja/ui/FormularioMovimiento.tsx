@@ -6,6 +6,7 @@ import { Card } from "@/shared/ui/card";
 import { Field, FieldError, FieldLabel } from "@/shared/ui/field";
 import { Input } from "@/shared/ui/input";
 import { NativeSelect } from "@/shared/ui/native-select";
+import { WarningList } from "@/shared/ui/warning-list";
 
 import { CONCEPTOS_MANUALES, FORMAS, etiquetaForma } from "../model/estado";
 
@@ -73,7 +74,7 @@ export function FormularioMovimiento({ cargando, error, advertencias, onRegistra
         <Button variant="outline" size="sm" onClick={() => setAbierto(true)}>
           Cargar movimiento a mano
         </Button>
-        {advertencias.length > 0 && <Advertencias avisos={advertencias} />}
+        <WarningList avisos={advertencias} />
       </div>
     );
   }
@@ -153,19 +154,9 @@ export function FormularioMovimiento({ cargando, error, advertencias, onRegistra
         </div>
       </form>
 
-      {advertencias.length > 0 && <Advertencias avisos={advertencias} />}
+      {/* El movimiento se guardó: esto NO es un error. Se muestra en tono de aviso y no bloquea
+          nada, que es exactamente la regla que aplica el backend. */}
+      <WarningList avisos={advertencias} />
     </Card>
-  );
-}
-
-/** El movimiento se guardó: esto NO es un error. Se muestra en tono de aviso y no bloquea nada,
- *  que es exactamente la regla que aplica el backend. */
-function Advertencias({ avisos }: { avisos: readonly string[] }) {
-  return (
-    <div role="status" className="rounded-md border border-warning bg-warning/10 p-2 text-sm">
-      {avisos.map((a) => (
-        <p key={a}>{a}</p>
-      ))}
-    </div>
   );
 }
