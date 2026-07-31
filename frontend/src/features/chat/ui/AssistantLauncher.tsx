@@ -47,7 +47,7 @@ export function AssistantLauncher() {
           {PREGUNTAS.map((q, idx) => (
             <span
               key={q}
-              className="absolute inset-0 flex items-center transition-all duration-500 ease-out"
+              className="absolute inset-0 flex items-center transition-[transform,opacity] duration-500 ease-out"
               style={{
                 transform: `translateY(${(idx - activa) * 100}%)`,
                 opacity: idx === activa ? 1 : 0,

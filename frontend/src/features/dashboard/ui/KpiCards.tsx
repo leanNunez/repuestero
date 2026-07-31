@@ -2,7 +2,7 @@ import { Boxes, PackageX, TrendingDown, Wallet } from "lucide-react";
 import type { ReactNode } from "react";
 
 import { cn } from "@/shared/lib/cn";
-import { formatMoney, formatNumber } from "@/shared/lib/format";
+import { formatMoney, formatMoneyCompacto, formatNumber } from "@/shared/lib/format";
 import { Card } from "@/shared/ui/card";
 
 import type { Resumen } from "../schema";
@@ -52,12 +52,14 @@ function Stat({
           {icon}
         </span>
       </div>
-      <p className="text-2xl font-semibold leading-none tabular-nums">{value}</p>
+      {/* El número es el héroe: 44px contra 14px de body = 3,1× (art-direction pide ≥3×;
+          una jerarquía tímida es exactamente lo que se lee como genérico). */}
+      <p className="font-mono text-4xl font-semibold leading-none tabular-nums">{value}</p>
       <div className="mt-auto space-y-1.5">
         {pct !== undefined && (
           <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
             <div
-              className={cn("h-full rounded-full transition-all", BAR[tone])}
+              className={cn("h-full rounded-full transition-[width]", BAR[tone])}
               style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
             />
           </div>
@@ -100,10 +102,10 @@ export function KpiCards({ resumen }: { resumen: Resumen }) {
       />
       <Stat
         label="Valor de stock"
-        value={formatMoney(resumen.valor_stock)}
+        value={formatMoneyCompacto(resumen.valor_stock)}
         icon={<Wallet className="h-5 w-5" />}
         tone="neutral"
-        caption="a precio de costo"
+        caption={`a precio de costo · ${formatMoney(resumen.valor_stock)}`}
       />
     </div>
   );
