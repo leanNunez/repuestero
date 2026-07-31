@@ -98,6 +98,22 @@ export function etiquetaForma(forma: string): string {
   return ETIQUETA_FORMA[forma] ?? forma;
 }
 
+/** Confirmación de una transición de cheque, en pasado: lo que ACABA de pasar.
+ *
+ * Va a un toast y no a un panel porque no hay ningún dato que la persona necesite retener —
+ * el cheque ya cambió de estado a la vista, en su fila. Los ERRORES de la misma operación se
+ * siguen mostrando inline: un toast se va y el problema queda. */
+const CONFIRMACION_TRANSICION: Record<string, string> = {
+  depositar: "Cheque depositado",
+  cobrar: "Cheque cobrado",
+  rechazar: "Cheque rechazado",
+  entregar: "Cheque entregado",
+};
+
+export function confirmacionTransicion(transicion: string): string {
+  return CONFIRMACION_TRANSICION[transicion] ?? "Cheque actualizado";
+}
+
 /** Un saldo negativo es FÍSICAMENTE imposible: nadie sacó plata que no estaba.
  *
  * Se calcula acá con `Number` y no con la plata-como-string porque es una COMPARACIÓN para decidir
