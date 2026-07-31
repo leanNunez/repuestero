@@ -1,4 +1,4 @@
-import { AlertTriangle, Info } from "lucide-react";
+import { Info } from "lucide-react";
 import { useReducer } from "react";
 
 import { pesos } from "@/entities/remito/formato";
@@ -15,6 +15,7 @@ import {
   ResumenConfirmar,
 } from "@/features/ingesta-visual/ui/ResumenConfirmar";
 import { Card } from "@/shared/ui/card";
+import { WarningList } from "@/shared/ui/warning-list";
 
 export function IngestaVisualPage() {
   const [estado, dispatch] = useReducer(reducer, ESTADO_INICIAL);
@@ -99,16 +100,7 @@ export function IngestaVisualPage() {
         )}
       </div>
 
-      {p.advertencias.length > 0 && (
-        <ul className="space-y-1.5 rounded-lg bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-          {p.advertencias.map((a) => (
-            <li key={a} className="flex gap-2">
-              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-              {a}
-            </li>
-          ))}
-        </ul>
-      )}
+      <WarningList avisos={p.advertencias} />
 
       <Card className="overflow-hidden p-0">
         {estado.renglones.map((r, i) => (
