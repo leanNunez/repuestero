@@ -94,19 +94,19 @@ export function DashboardPage() {
       <DashboardHeader />
       <AssistantLauncher />
 
-      {resumen.isLoading ? (
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} className="h-[116px] w-full" />
-          ))}
-        </div>
-      ) : resumen.isError || !resumen.data ? (
-        <Card className="p-4">
-          <ErrorState onRetry={() => void resumen.refetch()} />
-        </Card>
-      ) : (
-        <KpiCards resumen={resumen.data} />
-      )}
+      {/* La franja sangra fuera del padding de la página: llega borde a borde, que es lo
+          que la hace leer como una banda de datos y no como una fila más de contenido. */}
+      <div className="-mx-4 md:-mx-5">
+        {resumen.isLoading ? (
+          <Skeleton className="h-[132px] w-full rounded-none" />
+        ) : resumen.isError || !resumen.data ? (
+          <div className="border-y border-border bg-card">
+            <ErrorState onRetry={() => void resumen.refetch()} />
+          </div>
+        ) : (
+          <KpiCards resumen={resumen.data} />
+        )}
+      </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 gap-4 lg:grid-cols-2">
         <Panel
