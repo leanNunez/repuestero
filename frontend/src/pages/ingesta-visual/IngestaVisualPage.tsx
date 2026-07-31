@@ -63,7 +63,7 @@ export function IngestaVisualPage() {
       <div className="mx-auto max-w-lg p-4 text-center sm:p-6">
         <Card className="space-y-3 p-6">
           <Info className="mx-auto h-8 w-8 text-muted-foreground" />
-          <h2 className="text-lg font-semibold">Este remito ya se cargó</h2>
+          <h1 className="text-lg font-semibold">Este remito ya se cargó</h1>
           <p className="text-sm text-muted-foreground">
             {p.numero_remito && `Es el remito ${p.numero_remito}. `}
             Se cargó el {p.procesado_en ? new Date(p.procesado_en).toLocaleString("es-AR") : "—"}.

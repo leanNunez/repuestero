@@ -9,6 +9,7 @@ import {
   useMarcas,
   useRubros,
 } from "@/features/catalogo-search/model/hooks";
+import { PageHeader } from "@/shared/ui/page-header";
 import { Pagination } from "@/shared/ui/pagination";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { EmptyState, ErrorState } from "@/shared/ui/states";
@@ -47,6 +48,7 @@ export function CatalogoPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-5">
+      <PageHeader title="Catálogo" />
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />

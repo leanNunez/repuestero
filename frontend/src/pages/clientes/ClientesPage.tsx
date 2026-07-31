@@ -6,6 +6,7 @@ import { ClienteTable } from "@/entities/cliente/ClienteTable";
 import { PAGE_SIZE } from "@/features/clientes/model/estado";
 import { useClientes, useCrearCliente } from "@/features/clientes/model/hooks";
 import { FormularioCliente } from "@/features/clientes/ui/FormularioCliente";
+import { PageHeader } from "@/shared/ui/page-header";
 import { Pagination } from "@/shared/ui/pagination";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { EmptyState, ErrorState } from "@/shared/ui/states";
@@ -34,9 +35,10 @@ export function ClientesPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-5">
-      <p className="text-sm text-muted-foreground">
-        Padrón de clientes. El código lo asigna el sistema al dar de alta.
-      </p>
+      <PageHeader
+        title="Clientes"
+        description="Padrón de clientes. El código lo asigna el sistema al dar de alta."
+      />
 
       <FormularioCliente
         cargando={crear.isPending}

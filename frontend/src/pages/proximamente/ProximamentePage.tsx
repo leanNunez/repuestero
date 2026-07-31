@@ -19,7 +19,7 @@ export function ProximamentePage() {
       </div>
       <div className="space-y-2">
         <div className="flex items-center justify-center gap-2">
-          <h2 className="text-lg font-semibold">{modulo}</h2>
+          <h1 className="text-lg font-semibold">{modulo}</h1>
           <Badge variant="warning">Fase 2</Badge>
         </div>
         <p className="max-w-md text-sm text-muted-foreground">

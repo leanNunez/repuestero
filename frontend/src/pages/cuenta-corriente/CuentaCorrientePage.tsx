@@ -29,6 +29,7 @@ import { FormularioImputacion } from "@/features/cuenta-corriente/ui/FormularioI
 import { ListadoCuentas } from "@/features/cuenta-corriente/ui/ListadoCuentas";
 import { Solapas } from "@/features/cuenta-corriente/ui/Solapas";
 import { Card } from "@/shared/ui/card";
+import { PageHeader } from "@/shared/ui/page-header";
 import { Pagination } from "@/shared/ui/pagination";
 import { EmptyState } from "@/shared/ui/states";
 
@@ -82,6 +83,7 @@ export function CuentaCorrientePage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-5">
+      <PageHeader title="Cuenta corriente" />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Solapas activa={s.tab} onCambiar={(tab) => ir(cambiarSolapa(s, tab))} />
 

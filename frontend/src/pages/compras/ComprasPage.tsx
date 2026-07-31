@@ -43,7 +43,7 @@ export function ComprasPage() {
           <CheckCircle2 className="h-8 w-8" />
         </div>
         <div>
-          <h2 className="text-lg font-semibold">Compra registrada</h2>
+          <h1 className="text-lg font-semibold">Compra registrada</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             Comprobante {r.numero_comprobante} · Total {pesos(r.total)}
           </p>

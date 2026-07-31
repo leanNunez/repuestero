@@ -8,6 +8,7 @@ import {
 } from "@/features/compatibilidad/model/hooks";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
+import { PageHeader } from "@/shared/ui/page-header";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { EmptyState, ErrorState } from "@/shared/ui/states";
 
@@ -45,13 +46,10 @@ export function CompatibilidadPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-5">
-      <div className="space-y-1">
-        <h2 className="text-sm font-semibold">¿Qué repuestos le sirven a un vehículo?</h2>
-        <p className="text-sm text-muted-foreground">
-          Ej.: “el filtro de aceite para un Volkswagen Gol Trend 2015”. Marca y modelo son
-          obligatorios.
-        </p>
-      </div>
+      <PageHeader
+        title="Compatibilidad"
+        description="¿Qué repuestos le sirven a un vehículo? Ej.: “el filtro de aceite para un Volkswagen Gol Trend 2015”. Marca y modelo son obligatorios."
+      />
 
       <Card className="p-4">
         <form

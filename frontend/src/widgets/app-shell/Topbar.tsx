@@ -40,7 +40,8 @@ export function Topbar() {
         >
           <Menu className="h-4 w-4" />
         </Button>
-        <h1 className="truncate text-sm font-semibold">{titulo(pathname)}</h1>
+        {/* Texto plano a propósito: el h1 del documento es de cada página (PageHeader). */}
+        <p className="truncate text-sm font-semibold">{titulo(pathname)}</p>
       </div>
       <div className="flex items-center gap-1.5">
         <Button
