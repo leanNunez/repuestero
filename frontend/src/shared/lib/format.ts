@@ -22,6 +22,22 @@ export function formatMoneyCentavos(v: number | string): string {
   return moneyCentavos.format(typeof v === "string" ? Number(v) : v);
 }
 
+const moneyCompacto = new Intl.NumberFormat("es-AR", {
+  style: "currency",
+  currency: "ARS",
+  notation: "compact",
+  maximumFractionDigits: 0,
+});
+
+/** Para los números grandes de la franja: a partir del millón abrevia (`$ 2753 M`).
+ *  Nadie lee diez dígitos de un vistazo, y a 44px un número así desborda su celda y
+ *  mete scroll horizontal en toda la página. Debajo del millón va completo, porque ahí
+ *  los dígitos SÍ se leen; el valor exacto siempre queda en el pie de la celda. */
+export function formatMoneyCompacto(v: number | string): string {
+  const n = typeof v === "string" ? Number(v) : v;
+  return Math.abs(n) >= 1_000_000 ? moneyCompacto.format(n) : money.format(n);
+}
+
 export function formatNumber(v: number | string): string {
   return number.format(typeof v === "string" ? Number(v) : v);
 }
