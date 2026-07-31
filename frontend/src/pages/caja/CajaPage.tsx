@@ -7,6 +7,7 @@ import {
   ESTADOS_CHEQUE,
   FORMAS,
   cambiarSolapa,
+  confirmacionTransicion,
   etiquetaEstado,
   etiquetaForma,
   filtrarEstado,
@@ -32,6 +33,7 @@ import { SaldoCards } from "@/features/caja/ui/SaldoCards";
 import { Solapas } from "@/features/caja/ui/Solapas";
 import { PageHeader } from "@/shared/ui/page-header";
 import { Pagination } from "@/shared/ui/pagination";
+import { toast } from "sonner";
 
 const route = getRouteApi("/caja");
 
@@ -164,7 +166,12 @@ export function CajaPage() {
               if (!aConciliar) return;
               conciliar.mutate(
                 { id: aConciliar.id, fecha },
-                { onSuccess: () => setAConciliar(null) },
+                {
+                  onSuccess: () => {
+                    setAConciliar(null);
+                    toast.success("Cheque conciliado");
+                  },
+                },
               );
             }}
           />
@@ -183,7 +190,10 @@ export function CajaPage() {
             ocupado={transicionar.isPending ? (transicionar.variables?.id ?? null) : null}
             onTransicion={(cheque: Cheque, t: Transicion) => {
               transicionar.reset();
-              transicionar.mutate({ id: cheque.id, transicion: t });
+              transicionar.mutate(
+                { id: cheque.id, transicion: t },
+                { onSuccess: () => toast.success(confirmacionTransicion(t)) },
+              );
             }}
             onConciliar={(cheque: Cheque) => {
               conciliar.reset();
