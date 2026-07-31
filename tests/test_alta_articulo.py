@@ -12,19 +12,25 @@ siguientes. Es deliberado: mockear `embed_passages` haría pasar el test que afi
 producción, que es exactamente el bug que este alta existe para no cometer.
 """
 
+from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
 
+import jwt
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.catalogo import service
 from app.catalogo.models import ListaPrecio
 from app.catalogo.schemas import ArticuloCrear
+from app.core import db as core_db
+from app.core.config import get_settings
 from app.core.db import ORG_GUC, set_guc
-from app.core.models import Organizacion
+from app.core.models import Miembro, Organizacion
+from app.main import app
 from tests.conftest import APP_URL, OWNER_URL
 
 
@@ -244,3 +250,127 @@ def test_la_org_vecina_no_ve_el_articulo(sesion, org):
 
     set_guc(sesion, ORG_GUC, str(org.vecina))
     assert service.obtener_articulo(sesion, org.vecina, articulo.codigo) is None
+
+
+# =========================================================================== HTTP (contrato)
+@pytest.fixture(scope="module")
+def org_http(migrated_db):
+    """Org con miembro (sin esto `get_tenant` da 403), su lista y una lista de la vecina."""
+    org_id, vecina_id, user_id = uuid4(), uuid4(), uuid4()
+    eng = create_engine(OWNER_URL)
+    with Session(eng) as s:
+        s.add(Organizacion(id=org_id, nombre="Org Alta HTTP"))
+        s.add(Organizacion(id=vecina_id, nombre="Org Vecina Alta HTTP"))
+        s.flush()
+        propia = ListaPrecio(org_id=org_id, codigo="MOST", nombre="Mostrador")
+        ajena = ListaPrecio(org_id=vecina_id, codigo="MOST", nombre="Mostrador vecino")
+        s.add(propia)
+        s.add(ajena)
+        s.add(Miembro(org_id=org_id, user_id=user_id, rol="admin"))
+        s.flush()
+        ids = SimpleNamespace(id=org_id, user=user_id, lista=propia.id, lista_ajena=ajena.id)
+        s.commit()
+    eng.dispose()
+    return ids
+
+
+@pytest.fixture
+def cliente(org_http, monkeypatch):
+    """TestClient con el JWT del usuario sembrado y la sesión apuntando a la DB de test."""
+    monkeypatch.setattr(core_db, "SessionLocal", lambda: Session(create_engine(APP_URL)))
+    s = get_settings()
+    token = jwt.encode(
+        {
+            "sub": str(org_http.user),
+            "aud": s.supabase_jwt_audience,
+            "exp": datetime.now(UTC) + timedelta(hours=1),
+        },
+        s.supabase_jwt_secret,
+        algorithm="HS256",
+    )
+    with TestClient(app) as c:
+        c.headers.update({"Authorization": f"Bearer {token}"})
+        yield c
+
+
+def _payload(**overrides) -> dict:
+    """Estos tests COMMITEAN (lo hace `get_tenant`), así que cada uno usa un código único: sin
+    eso el segundo que corriera chocaría contra el unique del primero."""
+    base = {"codigo": f"HTTP-{uuid4().hex[:8]}", "detalle": "FILTRO DE ACEITE HTTP"}
+    return {**base, **overrides}
+
+
+def test_alta_devuelve_201_con_el_articulo_y_las_advertencias(cliente):
+    r = cliente.post("/catalogo/articulos", json=_payload())
+    assert r.status_code == 201
+    body = r.json()
+    assert set(body) == {"articulo", "advertencias"}
+    assert body["articulo"]["detalle"] == "FILTRO DE ACEITE HTTP"
+    assert body["articulo"]["activo"] is True
+
+
+def test_el_codigo_repetido_da_409(cliente):
+    payload = _payload()
+    assert cliente.post("/catalogo/articulos", json=payload).status_code == 201
+    r = cliente.post("/catalogo/articulos", json=payload)
+    assert r.status_code == 409
+    assert "ya existe" in r.json()["detail"].lower()
+
+
+def test_codigo_vacio_da_422(cliente):
+    r = cliente.post("/catalogo/articulos", json=_payload(codigo="   "))
+    assert r.status_code == 422
+
+
+def test_precio_sin_lista_da_422(cliente):
+    r = cliente.post("/catalogo/articulos", json=_payload(precio="15400"))
+    assert r.status_code == 422
+    assert "lista de precios" in r.json()["detail"]
+
+
+def test_la_lista_de_otra_org_da_422(cliente, org_http):
+    r = cliente.post(
+        "/catalogo/articulos",
+        json=_payload(precio="15400", lista_id=org_http.lista_ajena),
+    )
+    assert r.status_code == 422
+    assert "No existe esa lista" in r.json()["detail"]
+
+
+def test_sin_precio_avisa_en_la_respuesta(cliente):
+    body = cliente.post("/catalogo/articulos", json=_payload()).json()
+    assert len(body["advertencias"]) == 1
+    assert "SIN precio de venta" in body["advertencias"][0]
+
+
+def test_con_precio_no_hay_advertencias(cliente, org_http):
+    body = cliente.post(
+        "/catalogo/articulos",
+        json=_payload(precio="15400", lista_id=org_http.lista),
+    ).json()
+    assert body["advertencias"] == []
+
+
+def test_la_plata_viaja_como_string_nunca_como_float(cliente):
+    body = cliente.post("/catalogo/articulos", json=_payload(costo="1234.50")).json()
+    assert isinstance(body["articulo"]["costo"], str)
+    assert body["articulo"]["costo"] == "1234.5000"  # la escala de numeric(14,4)
+
+
+def test_el_articulo_recien_creado_se_encuentra_en_el_listado_y_en_la_busqueda(cliente):
+    """El circuito completo por HTTP: doy de alta y lo encuentro por los dos caminos.
+
+    OJO con lo que este test NO prueba: verificado por mutación, sigue pasando con
+    `asegurar_embeddings` comentada. La búsqueda híbrida tiene un brazo léxico sobre la columna
+    `busqueda`, que Postgres genera sola en el INSERT, así que el artículo aparece igual aunque
+    el vector nunca se haya calculado. El guardián del embedding es
+    `test_el_articulo_nace_buscable_por_significado`, que mira la columna directamente.
+    """
+    payload = _payload(codigo=f"ZZ-{uuid4().hex[:8]}", detalle="AMORTIGUADOR TRASERO SACHS")
+    assert cliente.post("/catalogo/articulos", json=payload).status_code == 201
+
+    listado = cliente.get(f"/catalogo/articulos?buscar={payload['codigo']}").json()
+    assert [a["codigo"] for a in listado["items"]] == [payload["codigo"]]
+
+    encontrados = cliente.get("/catalogo/buscar?q=amortiguador+sachs").json()
+    assert payload["codigo"] in [a["codigo"] for a in encontrados]

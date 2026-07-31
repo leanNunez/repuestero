@@ -15,6 +15,21 @@ class ArticuloCrear(BaseModel):
     rubro: str | None = None
 
 
+class ArticuloAltaRequest(ArticuloCrear):
+    """Lo que manda el alta de la app: un artículo + la intención de fijarle un precio.
+
+    El precio NO es un campo del artículo (vive en `articulo_precios`, por lista), pero se
+    acepta acá para que cargar un producto vendible sea una sola operación atómica en vez de
+    dos llamadas que pueden quedar a medias.
+
+    `precio` sin `lista_id` es 422, no un default silencioso: no hay lista por defecto a nivel
+    sistema, y elegir una en silencio sería inventar el precio de venta de un artículo.
+    """
+
+    precio: Decimal | None = Field(default=None, gt=0)
+    lista_id: int | None = None
+
+
 class ArticuloActualizar(BaseModel):
     """Update parcial: solo se pisan los campos que vengan seteados.
 
@@ -58,6 +73,19 @@ class ArticuloPagina(BaseModel):
 
     items: list[ArticuloLeer]
     total: int
+
+
+class ArticuloAltaResponse(BaseModel):
+    """El artículo creado + los avisos no bloqueantes del alta.
+
+    Anidado y no plano: `advertencias` NO se agrega a `ArticuloLeer` porque ese schema alimenta
+    tres endpoints de lectura y es la base de `ResultadoBusqueda`. El campo se colaría como
+    `"advertencias": []` en cada fila de cada página del listado y de cada búsqueda — ruido en
+    el cable, y mentira en el contrato: una fila de listado no tiene advertencias.
+    """
+
+    articulo: ArticuloLeer
+    advertencias: list[str] = Field(default_factory=list)
 
 
 class ListaPrecioCrear(BaseModel):
