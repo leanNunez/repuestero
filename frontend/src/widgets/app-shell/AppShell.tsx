@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 
 import { useDrawerStore } from "@/features/ui-shell/drawerStore";
 import { cn } from "@/shared/lib/cn";
+import { Toaster } from "@/shared/ui/sonner";
 import { AssistantDrawer } from "@/widgets/assistant-drawer/AssistantDrawer";
 
 import { Sidebar } from "./Sidebar";
@@ -62,6 +63,10 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
 
       <AssistantDrawer />
+
+      {/* Solo confirmaciones efímeras (docs/art-direction.md). Los errores van inline:
+          un toast se va y el problema queda. */}
+      <Toaster position="bottom-right" />
     </div>
   );
 }
