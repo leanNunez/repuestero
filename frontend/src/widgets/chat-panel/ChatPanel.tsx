@@ -20,9 +20,11 @@ export function ChatPanel({ onClose }: { onClose: () => void }) {
   const estado = repuStateFromChat(messages, status);
 
   return (
-    <div className="flex h-full flex-col bg-teal-50/40 dark:bg-teal-950/10">
-      <header className="flex items-center gap-3 border-b border-border bg-teal-500/10 px-4 py-2.5">
-        <span className="flex h-10 w-10 shrink-0 items-end justify-center overflow-hidden rounded-full bg-teal-500/20 ring-1 ring-teal-500/30">
+    // El asistente usa el celeste de marca, que es el que ya lleva la propia mascota
+    // (#2f6fe0 en el SVG). Antes era teal y no coincidía con Repu.
+    <div className="flex h-full flex-col bg-primary/[0.04]">
+      <header className="flex items-center gap-3 border-b border-border bg-primary/10 px-4 py-2.5">
+        <span className="flex h-10 w-10 shrink-0 items-end justify-center overflow-hidden rounded-full bg-primary/20 ring-1 ring-primary/30">
           <RepuMascot state={estado} className="h-9 w-8 translate-y-0.5" />
         </span>
         <div className="min-w-0 flex-1">

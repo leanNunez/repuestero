@@ -35,21 +35,29 @@ const dashboardRoute = createRoute({
   component: DashboardPage,
 });
 
+/** Búsqueda paginada: el par `{q, page}` que comparten catálogo, clientes y proveedores.
+ *  Una `page` no entera o menor a 1 vuelve a 1 — la URL la escribe cualquiera. */
+function busquedaPaginada(search: Record<string, unknown>): { q: string; page: number } {
+  const page = Number(search.page);
+  return {
+    q: typeof search.q === "string" ? search.q : "",
+    page: Number.isInteger(page) && page >= 1 ? page : 1,
+  };
+}
+
+const texto = (v: unknown): string => (typeof v === "string" ? v : "");
+
 const catalogoRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/catalogo",
   component: CatalogoPage,
   validateSearch: (
     search: Record<string, unknown>,
-  ): { q: string; page: number; rubro: string; marca: string } => {
-    const page = Number(search.page);
-    return {
-      q: typeof search.q === "string" ? search.q : "",
-      page: Number.isInteger(page) && page >= 1 ? page : 1,
-      rubro: typeof search.rubro === "string" ? search.rubro : "",
-      marca: typeof search.marca === "string" ? search.marca : "",
-    };
-  },
+  ): { q: string; page: number; rubro: string; marca: string } => ({
+    ...busquedaPaginada(search),
+    rubro: texto(search.rubro),
+    marca: texto(search.marca),
+  }),
 });
 
 const articuloRoute = createRoute({
@@ -68,26 +76,14 @@ const clientesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/clientes",
   component: ClientesPage,
-  validateSearch: (search: Record<string, unknown>): { q: string; page: number } => {
-    const page = Number(search.page);
-    return {
-      q: typeof search.q === "string" ? search.q : "",
-      page: Number.isInteger(page) && page >= 1 ? page : 1,
-    };
-  },
+  validateSearch: busquedaPaginada,
 });
 
 const proveedoresRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/proveedores",
   component: ProveedoresPage,
-  validateSearch: (search: Record<string, unknown>): { q: string; page: number } => {
-    const page = Number(search.page);
-    return {
-      q: typeof search.q === "string" ? search.q : "",
-      page: Number.isInteger(page) && page >= 1 ? page : 1,
-    };
-  },
+  validateSearch: busquedaPaginada,
 });
 
 const ingestaVisualRoute = createRoute({

@@ -2,12 +2,11 @@ import type { Session } from "@supabase/supabase-js";
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 
 import { Button } from "@/shared/ui/button";
+import { Field, FieldLabel } from "@/shared/ui/field";
+import { Input } from "@/shared/ui/input";
 
 import { supabase, supabaseConfigurado } from "./supabase";
 import { useTokenStore } from "./tokenStore";
-
-const inputClass =
-  "h-10 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 /** Gate de auth con Supabase. Sin sesión → login; con sesión → mete el `access_token` en el
  * `tokenStore` (que usa el api client) y renderiza la app. Reemplaza al viejo DevTokenGate.
@@ -75,26 +74,32 @@ function Login() {
         <p className="text-sm text-muted-foreground">Entrá para gestionar tu casa de repuestos.</p>
       </div>
       <form onSubmit={submit} className="space-y-3">
-        <input
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          placeholder="Email"
-          autoComplete="email"
-          required
-          aria-label="Email"
-          className={inputClass}
-        />
-        <input
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          placeholder="Contraseña"
-          autoComplete="current-password"
-          required
-          aria-label="Contraseña"
-          className={inputClass}
-        />
+        {/* Labels visibles, no solo placeholder: el placeholder desaparece al tipear y quien
+            vuelve al campo a corregir se queda sin saber qué iba ahí. */}
+        <Field className="gap-1.5">
+          <FieldLabel htmlFor="auth-email">Email</FieldLabel>
+          <Input
+            id="auth-email"
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            autoComplete="email"
+            required
+            className="h-10"
+          />
+        </Field>
+        <Field className="gap-1.5">
+          <FieldLabel htmlFor="auth-password">Contraseña</FieldLabel>
+          <Input
+            id="auth-password"
+            type="password"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            autoComplete="current-password"
+            required
+            className="h-10"
+          />
+        </Field>
         <Button type="submit" disabled={cargando} className="w-full">
           {cargando ? "Entrando…" : "Entrar"}
         </Button>

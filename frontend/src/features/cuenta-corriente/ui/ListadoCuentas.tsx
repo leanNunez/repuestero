@@ -1,8 +1,8 @@
 import type { Cuenta } from "@/entities/cuenta-corriente/schema";
-import { pesos } from "@/entities/remito/formato";
 import { cn } from "@/shared/lib/cn";
 import { Badge } from "@/shared/ui/badge";
 import { Card } from "@/shared/ui/card";
+import { Money } from "@/shared/ui/money";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { EmptyState, ErrorState } from "@/shared/ui/states";
 
@@ -76,14 +76,11 @@ export function ListadoCuentas({
                 </div>
 
                 <div className="flex shrink-0 flex-col items-end gap-1">
-                  <span
-                    className={cn(
-                      "font-medium tabular-nums",
-                      signo === "a-favor" && "text-emerald-600 dark:text-emerald-400",
-                    )}
-                  >
-                    {pesos(c.saldo)}
-                  </span>
+                  <Money
+                    value={c.saldo}
+                    centavos
+                    className={cn("font-medium", signo === "a-favor" && "text-success")}
+                  />
                   {/* El color no puede ser el único indicador: un saldo a favor lo dice con
                       texto, no solo pintado de verde. */}
                   {signo === "a-favor" && <span className="text-xs text-muted-foreground">a favor</span>}

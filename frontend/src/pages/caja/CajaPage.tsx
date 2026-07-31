@@ -31,14 +31,12 @@ import { FormularioMovimiento } from "@/features/caja/ui/FormularioMovimiento";
 import { MovimientosTable } from "@/features/caja/ui/MovimientosTable";
 import { SaldoCards } from "@/features/caja/ui/SaldoCards";
 import { Solapas } from "@/features/caja/ui/Solapas";
+import { NativeSelect } from "@/shared/ui/native-select";
 import { PageHeader } from "@/shared/ui/page-header";
 import { Pagination } from "@/shared/ui/pagination";
 import { toast } from "sonner";
 
 const route = getRouteApi("/caja");
-
-const filtroClass =
-  "h-9 rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background";
 
 export function CajaPage() {
   const s = route.useSearch();
@@ -99,11 +97,11 @@ export function CajaPage() {
             <label htmlFor="filtro-forma" className="text-xs text-muted-foreground">
               Forma
             </label>
-            <select
+            <NativeSelect
               id="filtro-forma"
               value={s.forma ?? ""}
               onChange={(e) => ir(filtrarForma(s, e.target.value || null))}
-              className={filtroClass}
+              containerClassName="w-auto"
             >
               <option value="">Todas</option>
               {FORMAS.map((f) => (
@@ -111,7 +109,7 @@ export function CajaPage() {
                   {etiquetaForma(f)}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           <MovimientosTable
@@ -139,11 +137,11 @@ export function CajaPage() {
             <label htmlFor="filtro-estado" className="text-xs text-muted-foreground">
               Estado
             </label>
-            <select
+            <NativeSelect
               id="filtro-estado"
               value={s.estado ?? ""}
               onChange={(e) => ir(filtrarEstado(s, e.target.value || null))}
-              className={filtroClass}
+              containerClassName="w-auto"
             >
               <option value="">Todos</option>
               {ESTADOS_CHEQUE.map((e) => (
@@ -151,7 +149,7 @@ export function CajaPage() {
                   {etiquetaEstado(e)}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </div>
 
           <FormularioConciliar

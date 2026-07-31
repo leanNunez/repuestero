@@ -5,6 +5,8 @@ import { fechaCorta, hoyISO } from "@/shared/lib/format";
 import { Button } from "@/shared/ui/button";
 import { CampoMoneda } from "@/shared/ui/campo-moneda";
 import { Card } from "@/shared/ui/card";
+import { Input } from "@/shared/ui/input";
+import { NativeSelect } from "@/shared/ui/native-select";
 
 import {
   agregarForma,
@@ -21,8 +23,6 @@ import {
   type Solapa,
 } from "../model/estado";
 
-const inputClass =
-  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-50";
 
 interface Props {
   tab: Solapa;
@@ -87,7 +87,7 @@ export function FormularioImputacion({ tab, cuenta, cargando, error, onImputar }
               placeholder="0,00"
               disabled={cargando}
               aria-describedby="monto-hint"
-              className={inputClass}
+              className="text-right"
             />
             <p id="monto-hint" className="mt-1 text-xs text-muted-foreground">
               Los miles se separan solos; usá coma para los centavos.
@@ -101,14 +101,14 @@ export function FormularioImputacion({ tab, cuenta, cargando, error, onImputar }
             {/* `max` = hoy: no se puede fechar en el futuro, y eso es evidente en el input. El
                 mínimo de 90 días NO se replica acá — es política del backend, que devuelve un 422
                 con el mensaje puesto. Duplicar esa regla sería repetir la trampa de `reversible`. */}
-            <input
+            <Input
               id="fecha-imputacion"
               type="date"
               value={fecha}
               max={hoy}
               onChange={(e) => setFecha(e.target.value)}
               disabled={cargando}
-              className={inputClass}
+              className="tabular-nums"
             />
           </div>
 
@@ -135,19 +135,18 @@ export function FormularioImputacion({ tab, cuenta, cargando, error, onImputar }
                   >
                     {i === 0 ? (esClientes ? "Con qué te pagó" : "Con qué le pagaste") : "Y además"}
                   </label>
-                  <select
+                  <NativeSelect
                     id={`forma-pago-${i}`}
                     value={renglon.forma}
                     onChange={(e) => setFormas(cambiarForma(formas, i, e.target.value as Forma))}
                     disabled={cargando}
-                    className={inputClass}
                   >
                     {FORMAS.map((f) => (
                       <option key={f} value={f}>
                         {etiquetaForma(f)}
                       </option>
                     ))}
-                  </select>
+                  </NativeSelect>
                 </div>
 
                 {/* Con una sola forma el importe no se muestra: es el monto de arriba. */}
@@ -166,7 +165,7 @@ export function FormularioImputacion({ tab, cuenta, cargando, error, onImputar }
                         onChange={(v) => setFormas(cambiarMontoForma(formas, i, v))}
                         placeholder="0,00"
                         disabled={cargando}
-                        className={inputClass}
+                        className="text-right"
                       />
                     </div>
                     <Button
