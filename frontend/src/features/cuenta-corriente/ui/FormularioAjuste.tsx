@@ -5,6 +5,8 @@ import { hoyISO } from "@/shared/lib/format";
 import { Button } from "@/shared/ui/button";
 import { CampoMoneda } from "@/shared/ui/campo-moneda";
 import { Card } from "@/shared/ui/card";
+import { Input } from "@/shared/ui/input";
+import { NativeSelect } from "@/shared/ui/native-select";
 import { Textarea } from "@/shared/ui/textarea";
 
 import {
@@ -16,8 +18,6 @@ import {
   type ModoAjuste,
 } from "../model/estado";
 
-const inputClass =
-  "h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground tabular-nums focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:opacity-50";
 
 type Columna = "debe" | "haber";
 
@@ -100,7 +100,7 @@ export function FormularioAjuste({
   }
 
   return (
-    <Card className="border-amber-300/60 p-3 dark:border-amber-800/60">
+    <Card className="border-warning/40 p-3">
       <form onSubmit={onSubmit} className="space-y-3">
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0">
@@ -137,16 +137,15 @@ export function FormularioAjuste({
               >
                 Columna
               </label>
-              <select
+              <NativeSelect
                 id="ajuste-columna"
                 value={columna}
                 onChange={(e) => setColumna(e.target.value as Columna)}
                 disabled={cargando}
-                className={inputClass}
               >
                 <option value="debe">Debe (sube la deuda)</option>
                 <option value="haber">Haber (baja la deuda)</option>
-              </select>
+              </NativeSelect>
             </div>
 
             <div className="flex-1">
@@ -159,7 +158,7 @@ export function FormularioAjuste({
                 onChange={setImporte}
                 placeholder="0,00"
                 disabled={cargando}
-                className={inputClass}
+                className="text-right"
               />
             </div>
 
@@ -167,14 +166,14 @@ export function FormularioAjuste({
               <label htmlFor="ajuste-fecha" className="mb-1 block text-xs text-muted-foreground">
                 Fecha
               </label>
-              <input
+              <Input
                 id="ajuste-fecha"
                 type="date"
                 value={fecha}
                 max={hoy}
                 onChange={(e) => setFecha(e.target.value)}
                 disabled={cargando}
-                className={inputClass}
+                className="tabular-nums"
               />
             </div>
           </div>
