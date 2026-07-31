@@ -10,19 +10,20 @@
   --card-foreground: #0a0a0a;
   --muted: #f4f4f5;
   --muted-foreground: #64646d;
-  --primary: #4f46e5;
+  /* UN solo azul: el celeste marca (docs/art-direction.md). 4.70:1 con blanco → AA. */
+  --primary: #2f6fe0;
   --primary-foreground: #ffffff;
   --border: #e4e4e7;
   --input: #e4e4e7;
-  --ring: #4f46e5;
+  --ring: #2f6fe0;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
   --success: #059669;
   --success-foreground: #ffffff;
   --warning: #d97706;
   --warning-foreground: #ffffff;
-  --accent: #eef2ff;
-  --accent-foreground: #4338ca;
+  --accent: #e9f0fc;
+  --accent-foreground: #1d4fb5;
   /* Sidebar celeste (referencia visual). Marca; igual en claro y oscuro.
      #2f6fe0 da 4.70:1 con texto blanco → contraste AA. */
   --sidebar: #2f6fe0;
@@ -37,19 +38,21 @@
   --card-foreground: #fafafa;
   --muted: #1f1f23;
   --muted-foreground: #a1a1aa;
-  --primary: #6366f1;
+  /* El celeste marca funciona también en oscuro: 4.70:1 con blanco (independiente
+     del fondo) y 4.0:1 contra --background → visible como superficie. */
+  --primary: #2f6fe0;
   --primary-foreground: #ffffff;
   --border: #27272a;
   --input: #27272a;
-  --ring: #818cf8;
+  --ring: #82aaf2;
   --destructive: #ef4444;
   --destructive-foreground: #ffffff;
   --success: #34d399;
   --success-foreground: #0a0a0b;
   --warning: #fbbf24;
   --warning-foreground: #0a0a0b;
-  --accent: #1e1b4b;
-  --accent-foreground: #c7d2fe;
+  --accent: #152741;
+  --accent-foreground: #a9c6f7;
   /* En oscuro el celeste encandila: el sidebar pasa a gris oscuro (texto blanco se mantiene). */
   --sidebar: #18181b;
 }
@@ -79,7 +82,35 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
-  --font-mono: ui-monospace, "Cascadia Code", Consolas, monospace;
+
+  /* Tipografía de marca (docs/art-direction.md). La Mono lleva los importes:
+     cifras tabulares por definición — la "columna de plata". */
+  --font-sans: "Chivo Variable", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Chivo Mono Variable", ui-monospace, "Cascadia Code", Consolas, monospace;
+
+  /* Escala ratio 1.25 desde body 14px: 12/14/18/22/28/35/44.
+     El leading se aprieta a medida que el tamaño crece (un ratio único falla
+     en alguna punta). */
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.45;
+  --text-sm: 0.875rem;
+  --text-sm--line-height: 1.5;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5;
+  --text-lg: 1.125rem;
+  --text-lg--line-height: 1.4;
+  --text-xl: 1.375rem;
+  --text-xl--line-height: 1.25;
+  --text-2xl: 1.75rem;
+  --text-2xl--line-height: 1.2;
+  --text-3xl: 2.1875rem;
+  --text-3xl--line-height: 1.15;
+  --text-4xl: 2.75rem;
+  --text-4xl--line-height: 1.05;
+
+  /* Motion: una sola dupla para toda la app. Nada más se anima. */
+  --default-transition-duration: 150ms;
+  --default-transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
 }
 
 @layer base {
@@ -90,7 +121,7 @@
     margin: 0;
     background-color: var(--color-background);
     color: var(--color-foreground);
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
   }
 }
