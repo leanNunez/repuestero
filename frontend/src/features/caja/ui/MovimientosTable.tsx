@@ -21,6 +21,8 @@ interface Props {
   isLoading: boolean;
   isError: boolean;
   onRetry: () => void;
+  /** Para que la página de altura fija le dé el alto sobrante y scrollee solo el cuerpo. */
+  containerClassName?: string;
 }
 
 /** De dónde salió el movimiento: "Recibo #12", "Cheque #3", o "A mano".
@@ -35,7 +37,13 @@ function origen(m: MovimientoCaja): string {
   return `${nombre.charAt(0).toUpperCase()}${nombre.slice(1)} #${m.ref_id}`;
 }
 
-export function MovimientosTable({ movimientos, isLoading, isError, onRetry }: Props) {
+export function MovimientosTable({
+  movimientos,
+  isLoading,
+  isError,
+  onRetry,
+  containerClassName,
+}: Props) {
   if (isLoading) return <TableSkeleton rows={8} className="h-10 w-full" />;
   if (isError) return <ErrorState onRetry={onRetry} />;
   if (!movimientos || movimientos.length === 0) {
@@ -48,7 +56,7 @@ export function MovimientosTable({ movimientos, isLoading, isError, onRetry }: P
   }
 
   return (
-    <Table>
+    <Table containerClassName={containerClassName}>
       <TableCaption className="sr-only">
         Movimientos de caja, del más reciente al más antiguo
       </TableCaption>

@@ -18,9 +18,16 @@ function condLegible(cond: string): string {
   return t.charAt(0).toUpperCase() + t.slice(1);
 }
 
-export function ClienteTable({ clientes }: { clientes: Cliente[] }) {
+export function ClienteTable({
+  clientes,
+  containerClassName,
+}: {
+  clientes: Cliente[];
+  /** Para que la página de altura fija le dé el alto sobrante y scrollee solo el cuerpo. */
+  containerClassName?: string;
+}) {
   return (
-    <Table>
+    <Table containerClassName={containerClassName}>
       <TableHeader>
         <TableRow>
           <TableHead>Código</TableHead>

@@ -14,9 +14,16 @@ import {
 
 import type { ArticuloItem } from "./schema";
 
-export function ArticuloTable({ articulos }: { articulos: ArticuloItem[] }) {
+export function ArticuloTable({
+  articulos,
+  containerClassName,
+}: {
+  articulos: ArticuloItem[];
+  /** Para que la página de altura fija le dé el alto sobrante y scrollee solo el cuerpo. */
+  containerClassName?: string;
+}) {
   return (
-    <Table>
+    <Table containerClassName={containerClassName}>
       <TableHeader>
         <TableRow>
           <TableHead>Código</TableHead>

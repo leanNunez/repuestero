@@ -2,6 +2,7 @@ import { Undo2 } from "lucide-react";
 
 import { pesos } from "@/entities/remito/formato";
 import type { VentaLeer } from "@/entities/venta/schema";
+import { cn } from "@/shared/lib/cn";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { Skeleton } from "@/shared/ui/skeleton";
@@ -18,9 +19,18 @@ interface Props {
   isError: boolean;
   onRetry: () => void;
   onNotaCredito: (venta: VentaLeer) => void;
+  /** Para que la columna de altura fija le dé el alto sobrante y scrollee solo la lista. */
+  className?: string;
 }
 
-export function ListadoVentas({ ventas, isLoading, isError, onRetry, onNotaCredito }: Props) {
+export function ListadoVentas({
+  ventas,
+  isLoading,
+  isError,
+  onRetry,
+  onNotaCredito,
+  className,
+}: Props) {
   if (isLoading) {
     return (
       <div className="space-y-2">
@@ -36,7 +46,7 @@ export function ListadoVentas({ ventas, isLoading, isError, onRetry, onNotaCredi
   }
 
   return (
-    <Card className="divide-y overflow-hidden p-0">
+    <Card className={cn("divide-y overflow-hidden p-0", className)}>
       {ventas.map((v) => (
         <div key={v.id} className="flex items-center justify-between gap-3 p-3 text-sm">
           <div className="min-w-0">
