@@ -3,6 +3,8 @@ import { useRef, useState } from "react";
 
 import { moverIndice } from "@/shared/lib/lista";
 
+import { Input } from "./input";
+
 /** Una opción del combobox, ya normalizada. La entidad concreta (cliente, proveedor) se mapea a
  *  esto en su selector: acá adentro no se sabe qué se está eligiendo, y está bien que no se sepa. */
 export interface OpcionCombobox {
@@ -13,9 +15,6 @@ export interface OpcionCombobox {
   /** Dato secundario a la derecha (el CUIT). Opcional. */
   detalle?: string | null;
 }
-
-const inputClass =
-  "h-9 w-full rounded-md border border-input bg-background pl-10 pr-3 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 interface Props {
   /** Para el `aria-label` del input y el del listado. "Cliente", "Proveedor". */
@@ -112,7 +111,7 @@ export function Combobox({
     <div className="space-y-2">
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-        <input
+        <Input
           ref={inputRef}
           value={q}
           onChange={(e) => {
@@ -121,7 +120,7 @@ export function Combobox({
           }}
           onKeyDown={onKeyDown}
           placeholder={placeholder}
-          className={inputClass}
+          className="pl-10"
           aria-label={label}
           role="combobox"
           aria-expanded={abierto}

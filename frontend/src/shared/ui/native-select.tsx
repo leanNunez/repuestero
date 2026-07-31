@@ -9,17 +9,19 @@ import { cn } from "@/shared/lib/cn";
    (búsqueda, render custom) ya existe el Combobox. */
 export function NativeSelect({
   className,
+  containerClassName,
   children,
   ...props
-}: SelectHTMLAttributes<HTMLSelectElement>) {
+}: SelectHTMLAttributes<HTMLSelectElement> & { containerClassName?: string }) {
   return (
-    <div className={cn("relative", className)}>
+    <div className={cn("relative", containerClassName)}>
       <select
         className={cn(
           "h-9 w-full appearance-none rounded-md border border-input bg-transparent pl-3 pr-8 text-sm text-foreground",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
           "disabled:cursor-not-allowed disabled:opacity-50",
           "aria-invalid:border-destructive",
+          className,
         )}
         {...props}
       >
