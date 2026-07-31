@@ -31,10 +31,17 @@
   --popover-foreground: #0a0a0a;
   --accent: #e9f0fc;
   --accent-foreground: #1d4fb5;
-  /* Sidebar celeste (referencia visual). Marca; igual en claro y oscuro.
-     #2f6fe0 da 4.70:1 con texto blanco → contraste AA. */
-  --sidebar: #2f6fe0;
-  --sidebar-foreground: #ffffff;
+  /* Sidebar GRAFITO, igual en claro y oscuro (docs/art-direction.md).
+     Antes era un bloque celeste sólido: 17% de la pantalla pintada con el acento,
+     contra la regla de ≤10% — y es lo que delataba el template de admin. Ahora el
+     chrome es neutro y el ámbar entra solo en el item activo. */
+  --sidebar: #1c1c1f;
+  --sidebar-foreground: #d4d4d8;
+  /* #f59e0b sobre #1c1c1f da 9.2:1; el texto #18181b encima, 9.3:1. */
+  --sidebar-accent: #f59e0b;
+  --sidebar-accent-foreground: #18181b;
+  /* El mismo ámbar, oscurecido para ser legible sobre superficies claras: 5.3:1. */
+  --brand: #b45309;
   --radius: 0.625rem;
 }
 
@@ -64,8 +71,10 @@
   --popover-foreground: #fafafa;
   --accent: #152741;
   --accent-foreground: #a9c6f7;
-  /* En oscuro el celeste encandila: el sidebar pasa a gris oscuro (texto blanco se mantiene). */
-  --sidebar: #18181b;
+  /* El sidebar ya es grafito en claro: en oscuro solo se hunde un punto más para
+     despegarse del canvas. */
+  --sidebar: #131316;
+  --brand: #f59e0b;
 }
 
 @theme inline {
@@ -94,6 +103,9 @@
   --color-popover-foreground: var(--popover-foreground);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-brand: var(--brand);
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);

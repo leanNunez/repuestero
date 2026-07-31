@@ -29,7 +29,9 @@ export function AppShell({ children }: { children: ReactNode }) {
   const closeNav = useDrawerStore((s) => s.closeNav);
 
   return (
-    <div className="flex h-dvh bg-muted/30">
+    // Canvas HUNDIDO sólido (no muted/30, que era casi blanco): las cards se
+    // despegan del fondo de verdad y aparece jerarquía de superficies.
+    <div className="flex h-dvh bg-muted">
       {/* Backdrop del nav en mobile (en sm+ el sidebar es fijo, no hay overlay). */}
       <div
         className={cn(
@@ -48,7 +50,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         )}
       >
         <div className="flex items-center gap-2.5 px-4 py-3.5">
-          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-white/15 text-white">
+          <div className="flex h-7 w-7 items-center justify-center rounded-md bg-sidebar-accent text-sidebar-accent-foreground">
             <Wrench className="h-4 w-4" />
           </div>
           <span className="text-base font-semibold tracking-tight">Repuestero</span>
