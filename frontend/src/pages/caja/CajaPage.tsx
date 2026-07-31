@@ -33,6 +33,7 @@ import { SaldoCards } from "@/features/caja/ui/SaldoCards";
 import { Solapas } from "@/features/caja/ui/Solapas";
 import { NativeSelect } from "@/shared/ui/native-select";
 import { PageHeader } from "@/shared/ui/page-header";
+import { PageLayout } from "@/shared/ui/page-layout";
 import { Pagination } from "@/shared/ui/pagination";
 import { toast } from "sonner";
 
@@ -62,7 +63,7 @@ export function CajaPage() {
   const enCaja = s.tab === "caja";
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-5">
+    <PageLayout>
       <PageHeader title="Caja" />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Solapas activa={s.tab} onCambiar={(tab) => ir(cambiarSolapa(s, tab))} />
@@ -84,7 +85,7 @@ export function CajaPage() {
           id="panel-caja"
           role="tabpanel"
           aria-labelledby="solapa-caja"
-          className="space-y-3"
+          className="flex flex-col gap-3 sm:min-h-0 sm:flex-1"
         >
           <FormularioMovimiento
             cargando={registrar.isPending}
@@ -117,6 +118,7 @@ export function CajaPage() {
             isLoading={movimientos.isLoading}
             isError={movimientos.isError}
             onRetry={() => void movimientos.refetch()}
+            containerClassName="sm:min-h-0 sm:flex-1"
           />
 
           <Pagination
@@ -131,7 +133,7 @@ export function CajaPage() {
           id="panel-cartera"
           role="tabpanel"
           aria-labelledby="solapa-cartera"
-          className="space-y-3"
+          className="flex flex-col gap-3 sm:min-h-0 sm:flex-1"
         >
           <div className="flex items-center gap-2">
             <label htmlFor="filtro-estado" className="text-xs text-muted-foreground">
@@ -197,6 +199,7 @@ export function CajaPage() {
               conciliar.reset();
               setAConciliar(cheque);
             }}
+            containerClassName="sm:min-h-0 sm:flex-1"
           />
 
           <Pagination
@@ -207,6 +210,6 @@ export function CajaPage() {
           />
         </section>
       )}
-    </div>
+    </PageLayout>
   );
 }

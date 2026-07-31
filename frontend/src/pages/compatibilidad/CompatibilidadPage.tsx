@@ -10,6 +10,7 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { Input } from "@/shared/ui/input";
 import { PageHeader } from "@/shared/ui/page-header";
+import { PageBody, PageLayout } from "@/shared/ui/page-layout";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { EmptyState, ErrorState } from "@/shared/ui/states";
 
@@ -43,7 +44,7 @@ export function CompatibilidadPage() {
   const puedeBuscar = marca.trim().length > 0 && modelo.trim().length > 0;
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-5">
+    <PageLayout>
       <PageHeader
         title="Compatibilidad"
         description="¿Qué repuestos le sirven a un vehículo? Ej.: “el filtro de aceite para un Volkswagen Gol Trend 2015”. Marca y modelo son obligatorios."
@@ -84,7 +85,8 @@ export function CompatibilidadPage() {
         </form>
       </Card>
 
-      {consulta === null ? (
+      <PageBody>
+        {consulta === null ? (
         <div className="flex flex-col items-center justify-center gap-2 py-16 text-center">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-muted">
             <Car className="h-6 w-6 text-muted-foreground" />
@@ -94,27 +96,28 @@ export function CompatibilidadPage() {
             Cargá marca y modelo para ver los repuestos compatibles.
           </p>
         </div>
-      ) : isLoading ? (
+        ) : isLoading ? (
         <div className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
             <Skeleton key={i} className="h-11 w-full" />
           ))}
         </div>
-      ) : isError ? (
+        ) : isError ? (
         <ErrorState onRetry={() => void refetch()} />
-      ) : !data || data.length === 0 ? (
+        ) : !data || data.length === 0 ? (
         <EmptyState
           title="Sin compatibilidades"
           hint={`No encontramos repuestos cargados para ${consulta.marca} ${consulta.modelo}.`}
         />
-      ) : (
-        <>
-          <p className="text-xs text-muted-foreground">
-            {data.length} {data.length === 1 ? "repuesto compatible" : "repuestos compatibles"}
+        ) : (
+          <>
+            <p className="text-xs text-muted-foreground">
+              {data.length} {data.length === 1 ? "repuesto compatible" : "repuestos compatibles"}
           </p>
-          <ArticuloTable articulos={data} />
-        </>
-      )}
-    </div>
+            <ArticuloTable articulos={data} containerClassName="sm:min-h-0 sm:flex-1" />
+          </>
+        )}
+      </PageBody>
+    </PageLayout>
   );
 }

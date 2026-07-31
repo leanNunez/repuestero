@@ -62,7 +62,7 @@ export function ComprasPage() {
   const tot = totales(estado.renglones);
 
   return (
-    <div className="space-y-6 p-4 sm:p-6">
+    <div className="flex flex-col gap-6 p-4 sm:h-full sm:min-h-0 sm:p-6">
       <div>
         <h1 className="text-lg font-semibold">Nueva compra</h1>
         <p className="text-sm text-muted-foreground">
@@ -70,8 +70,9 @@ export function ComprasPage() {
         </p>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[1fr_20rem]">
-        <div className="space-y-4">
+      <div className="grid gap-4 sm:min-h-0 sm:flex-1 lg:grid-cols-[1fr_20rem]">
+        {/* Cada columna scrollea sola: la página nunca lo hace. */}
+        <div className="flex flex-col gap-4 sm:min-h-0 sm:overflow-auto">
           <Card className="space-y-3 p-4">
             <div className="grid gap-3 sm:grid-cols-2">
               <Field className="gap-1.5">
@@ -124,9 +125,10 @@ export function ComprasPage() {
           />
         </div>
 
-        <div className="space-y-2">
-          <h2 className="text-sm font-medium text-muted-foreground">Últimas compras</h2>
+        <div className="flex flex-col gap-2 sm:min-h-0">
+          <h2 className="shrink-0 text-sm font-medium text-muted-foreground">Últimas compras</h2>
           <ListadoCompras
+            className="sm:min-h-0 sm:flex-1 sm:overflow-auto"
             compras={compras.data?.items}
             isLoading={compras.isLoading}
             isError={compras.isError}

@@ -6,6 +6,7 @@ import { PAGE_SIZE } from "@/features/clientes/model/estado";
 import { useClientes, useCrearCliente } from "@/features/clientes/model/hooks";
 import { FormularioCliente } from "@/features/clientes/ui/FormularioCliente";
 import { PageHeader } from "@/shared/ui/page-header";
+import { PageBody, PageLayout } from "@/shared/ui/page-layout";
 import { Pagination } from "@/shared/ui/pagination";
 import { QueryState } from "@/shared/ui/query-state";
 import { SearchInput } from "@/shared/ui/search-input";
@@ -33,7 +34,7 @@ export function ClientesPage() {
   }, [total, items.length, page]);
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-5">
+    <PageLayout>
       <PageHeader
         title="Clientes"
         description="Padrón de clientes. El código lo asigna el sistema al dar de alta."
@@ -58,36 +59,40 @@ export function ClientesPage() {
         aria-label="Buscar clientes"
       />
 
-      <QueryState
-        query={query}
-        isEmpty={(d) => d.items.length === 0}
-        empty={{
-          title: q ? "Sin resultados" : "Sin clientes",
-          hint: q
-            ? "No hay clientes que coincidan con la búsqueda."
-            : "Todavía no hay clientes cargados.",
-        }}
-      >
-        {(d) => (
-          <>
-            {/* Con una búsqueda activa el sustantivo cambia: "80 clientes" sobre un padrón de 900
-                se lee como el tamaño del padrón, no como el tamaño del resultado. Mismo criterio
-                que el catálogo. */}
-            <p className="text-xs text-muted-foreground">
-              {q
-                ? `${d.total} ${d.total === 1 ? "resultado" : "resultados"}`
-                : `${d.total} ${d.total === 1 ? "cliente" : "clientes"}`}
-            </p>
-            <ClienteTable clientes={d.items} />
-            <Pagination
-              page={page}
-              pageSize={PAGE_SIZE}
-              total={d.total}
-              onPageChange={(p) => setSearch({ page: p })}
-            />
-          </>
-        )}
-      </QueryState>
-    </div>
+      <PageBody>
+        <QueryState
+          query={query}
+          isEmpty={(d) => d.items.length === 0}
+          empty={{
+            title: q ? "Sin resultados" : "Sin clientes",
+            hint: q
+              ? "No hay clientes que coincidan con la búsqueda."
+              : "Todavía no hay clientes cargados.",
+          }}
+        >
+          {(d) => (
+            <>
+              {/* Con una búsqueda activa el sustantivo cambia: "80 clientes" sobre un padrón de 900
+                  se lee como el tamaño del padrón, no como el tamaño del resultado. Mismo criterio
+                  que el catálogo. */}
+              <p className="text-xs text-muted-foreground">
+                {q
+                  ? `${d.total} ${d.total === 1 ? "resultado" : "resultados"}`
+                  : `${d.total} ${d.total === 1 ? "cliente" : "clientes"}`}
+              </p>
+              {/* La tabla se come el alto sobrante: su cuerpo scrollea y el thead sticky
+                  deja las cabeceras a la vista, con el paginador fijo abajo. */}
+              <ClienteTable clientes={d.items} containerClassName="sm:min-h-0 sm:flex-1" />
+              <Pagination
+                page={page}
+                pageSize={PAGE_SIZE}
+                total={d.total}
+                onPageChange={(p) => setSearch({ page: p })}
+              />
+            </>
+          )}
+        </QueryState>
+      </PageBody>
+    </PageLayout>
   );
 }

@@ -29,6 +29,7 @@ import { ListadoCuentas } from "@/features/cuenta-corriente/ui/ListadoCuentas";
 import { Solapas } from "@/features/cuenta-corriente/ui/Solapas";
 import { Card } from "@/shared/ui/card";
 import { PageHeader } from "@/shared/ui/page-header";
+import { PageLayout } from "@/shared/ui/page-layout";
 import { Pagination } from "@/shared/ui/pagination";
 import { SearchInput } from "@/shared/ui/search-input";
 import { EmptyState } from "@/shared/ui/states";
@@ -79,7 +80,7 @@ export function CuentaCorrientePage() {
   const esCliente = s.tab === "clientes";
 
   return (
-    <div className="mx-auto max-w-6xl space-y-4 p-4 md:p-5">
+    <PageLayout>
       <PageHeader title="Cuenta corriente" />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Solapas activa={s.tab} onCambiar={(tab) => ir(cambiarSolapa(s, tab))} />
@@ -94,9 +95,9 @@ export function CuentaCorrientePage() {
         )}
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[22rem_1fr]">
+      <div className="grid gap-4 sm:min-h-0 sm:flex-1 lg:grid-cols-[22rem_1fr]">
         {/* ---------------------------------------------------------------- listado de cuentas */}
-        <section aria-label="Cuentas" className="space-y-3">
+        <section aria-label="Cuentas" className="flex flex-col gap-3 sm:min-h-0">
           <SearchInput
             value={s.q}
             onChange={(e) => ir(buscar(s, e.target.value))}
@@ -122,6 +123,7 @@ export function CuentaCorrientePage() {
             todos={s.todos}
             onSeleccionar={(id) => ir(seleccionar(s, id))}
             onRetry={() => void cuentas.refetch()}
+            className="sm:min-h-0 sm:flex-1"
           />
 
           <Pagination
@@ -137,7 +139,9 @@ export function CuentaCorrientePage() {
           id={`panel-${s.tab}`}
           role="tabpanel"
           aria-labelledby={`solapa-${s.tab}`}
-          className="space-y-3"
+          // La columna del detalle lleva formularios de alto variable: scrollea entera,
+          // así la PÁGINA nunca scrollea y el listado de la izquierda queda quieto.
+          className="flex flex-col gap-3 sm:min-h-0 sm:overflow-auto"
         >
           {s.sel === null ? (
             <Card className="p-0">
@@ -238,6 +242,6 @@ export function CuentaCorrientePage() {
           )}
         </section>
       </div>
-    </div>
+    </PageLayout>
   );
 }
