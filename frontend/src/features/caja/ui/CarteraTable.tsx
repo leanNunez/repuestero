@@ -3,8 +3,18 @@ import { pesos } from "@/entities/remito/formato";
 import { fechaCorta } from "@/shared/lib/format";
 import { Badge } from "@/shared/ui/badge";
 import { Button } from "@/shared/ui/button";
-import { Skeleton } from "@/shared/ui/skeleton";
+import { Money } from "@/shared/ui/money";
+import { TableSkeleton } from "@/shared/ui/query-state";
 import { EmptyState, ErrorState } from "@/shared/ui/states";
+import {
+  Table,
+  TableBody,
+  TableCaption,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/shared/ui/table";
 
 import { etiquetaEstado } from "../model/estado";
 import type { Transicion } from "../model/hooks";
@@ -88,15 +98,7 @@ export function CarteraTable({
   onConciliar,
   ocupado,
 }: Props) {
-  if (isLoading) {
-    return (
-      <div className="space-y-2">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <Skeleton key={i} className="h-12 w-full" />
-        ))}
-      </div>
-    );
-  }
+  if (isLoading) return <TableSkeleton className="h-12 w-full" />;
   if (isError) return <ErrorState onRetry={onRetry} />;
   if (!cheques || cheques.length === 0) {
     return (
@@ -108,98 +110,88 @@ export function CarteraTable({
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-border bg-card">
-      <table className="w-full text-left text-sm">
-        <caption className="sr-only">
-          Cheques de la cartera, ordenados por fecha de cobro
-        </caption>
-        <thead className="border-b border-border text-xs text-muted-foreground">
-          <tr>
-            <th scope="col" className="px-4 py-2.5 font-medium">
-              Cheque
-            </th>
-            <th scope="col" className="px-4 py-2.5 font-medium">
-              Origen
-            </th>
-            <th scope="col" className="px-4 py-2.5 font-medium">
-              Se cobra
-            </th>
-            <th scope="col" className="px-4 py-2.5 text-right font-medium">
-              Importe
-            </th>
-            <th scope="col" className="px-4 py-2.5 font-medium">
-              Estado
-            </th>
-            <th scope="col" className="px-4 py-2.5 font-medium">
-              <span className="sr-only">Acciones</span>
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {cheques.map((c) => {
-            const acciones = accionesDe(c);
-            const enVuelo = ocupado === c.id;
+    <Table>
+      <TableCaption className="sr-only">
+        Cheques de la cartera, ordenados por fecha de cobro
+      </TableCaption>
+      <TableHeader>
+        <TableRow>
+          <TableHead scope="col">Cheque</TableHead>
+          <TableHead scope="col">Origen</TableHead>
+          <TableHead scope="col">Se cobra</TableHead>
+          <TableHead scope="col" className="text-right">
+            Importe
+          </TableHead>
+          <TableHead scope="col">Estado</TableHead>
+          <TableHead scope="col">
+            <span className="sr-only">Acciones</span>
+          </TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {cheques.map((c) => {
+          const acciones = accionesDe(c);
+          const enVuelo = ocupado === c.id;
 
-            return (
-              <tr key={c.id} className="border-b border-border last:border-0 hover:bg-muted/50">
-                <td className="px-4 py-2.5 align-top">
-                  {/* `banco` y `numero` nacen en NULL: un renglón de forma de pago solo trae forma
-                      y monto. Hasta que alguien los complete, el id interno es lo único que
-                      identifica al papel — y decirlo es mejor que mostrar un campo vacío. */}
-                  {c.banco ?? <span className="text-muted-foreground">Sin datos</span>}
-                  <span className="mt-0.5 block text-xs text-muted-foreground tabular-nums">
-                    {c.numero ? `N° ${c.numero}` : `#${c.id}`}
-                  </span>
-                </td>
-                <td className="px-4 py-2.5 align-top text-muted-foreground">
-                  {c.origen === "recibido" ? "Recibido" : "Emitido"}
-                </td>
-                <td className="whitespace-nowrap px-4 py-2.5 align-top tabular-nums">
-                  {c.fecha_cobro ? fechaCorta(c.fecha_cobro) : "—"}
-                </td>
-                <td className="px-4 py-2.5 text-right align-top font-medium tabular-nums">
-                  {pesos(c.importe)}
-                </td>
-                <td className="px-4 py-2.5 align-top">
-                  <Badge variant={TONO_ESTADO[c.estado] ?? "default"}>
-                    {etiquetaEstado(c.estado)}
-                  </Badge>
-                  {c.conciliado && (
-                    <span className="mt-1 block text-xs text-muted-foreground">Conciliado</span>
+          return (
+            <TableRow key={c.id}>
+              <TableCell className="align-top">
+                {/* `banco` y `numero` nacen en NULL: un renglón de forma de pago solo trae forma
+                    y monto. Hasta que alguien los complete, el id interno es lo único que
+                    identifica al papel — y decirlo es mejor que mostrar un campo vacío. */}
+                {c.banco ?? <span className="text-muted-foreground">Sin datos</span>}
+                <span className="mt-0.5 block text-xs tabular-nums text-muted-foreground">
+                  {c.numero ? `N° ${c.numero}` : `#${c.id}`}
+                </span>
+              </TableCell>
+              <TableCell className="align-top text-muted-foreground">
+                {c.origen === "recibido" ? "Recibido" : "Emitido"}
+              </TableCell>
+              <TableCell className="whitespace-nowrap align-top tabular-nums">
+                {c.fecha_cobro ? fechaCorta(c.fecha_cobro) : "—"}
+              </TableCell>
+              <TableCell className="text-right align-top font-medium">
+                <Money value={c.importe} centavos />
+              </TableCell>
+              <TableCell className="align-top">
+                <Badge variant={TONO_ESTADO[c.estado] ?? "default"}>
+                  {etiquetaEstado(c.estado)}
+                </Badge>
+                {c.conciliado && (
+                  <span className="mt-1 block text-xs text-muted-foreground">Conciliado</span>
+                )}
+              </TableCell>
+              <TableCell className="whitespace-nowrap align-top">
+                <div className="flex flex-wrap gap-1">
+                  {acciones.map((a) => (
+                    <Button
+                      key={a.id}
+                      variant="ghost"
+                      size="sm"
+                      disabled={enVuelo}
+                      onClick={() => onTransicion(c, a.id)}
+                      aria-label={`${a.label} el cheque de ${pesos(c.importe)}`}
+                    >
+                      {a.label}
+                    </Button>
+                  ))}
+                  {!c.conciliado && CONCILIABLES.has(c.estado) && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      disabled={enVuelo}
+                      onClick={() => onConciliar(c)}
+                      aria-label={`Conciliar el cheque de ${pesos(c.importe)}`}
+                    >
+                      Conciliar
+                    </Button>
                   )}
-                </td>
-                <td className="whitespace-nowrap px-4 py-2.5 align-top">
-                  <div className="flex flex-wrap gap-1">
-                    {acciones.map((a) => (
-                      <Button
-                        key={a.id}
-                        variant="ghost"
-                        size="sm"
-                        disabled={enVuelo}
-                        onClick={() => onTransicion(c, a.id)}
-                        aria-label={`${a.label} el cheque de ${pesos(c.importe)}`}
-                      >
-                        {a.label}
-                      </Button>
-                    ))}
-                    {!c.conciliado && CONCILIABLES.has(c.estado) && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        disabled={enVuelo}
-                        onClick={() => onConciliar(c)}
-                        aria-label={`Conciliar el cheque de ${pesos(c.importe)}`}
-                      >
-                        Conciliar
-                      </Button>
-                    )}
-                  </div>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+                </div>
+              </TableCell>
+            </TableRow>
+          );
+        })}
+      </TableBody>
+    </Table>
   );
 }
