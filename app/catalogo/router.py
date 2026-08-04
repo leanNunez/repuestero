@@ -1,7 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.catalogo import service
-from app.catalogo.schemas import ArticuloLeer, ArticuloPagina, ResultadoBusqueda
+from app.catalogo.schemas import (
+    ArticuloLeer,
+    ArticuloPagina,
+    ListaPrecioLeer,
+    ResultadoBusqueda,
+)
 from app.core.rls import TenantContext, get_tenant
 
 router = APIRouter(prefix="/catalogo", tags=["catalogo"])
@@ -55,6 +60,17 @@ def listar_rubros(tenant: TenantContext = Depends(get_tenant)) -> list[str]:
 def listar_marcas(tenant: TenantContext = Depends(get_tenant)) -> list[str]:
     """Marcas distintas del catálogo del tenant, para poblar el filtro del listado."""
     return service.listar_marcas(tenant.session, tenant.org_id)
+
+
+@router.get("/listas", response_model=list[ListaPrecioLeer])
+def listar_listas_precio(tenant: TenantContext = Depends(get_tenant)) -> list[ListaPrecioLeer]:
+    """Listas de precio del tenant, para poblar el selector del alta de artículos.
+
+    Puede venir vacío (ver `service.listar_listas_precio`): el front tiene que deshabilitar el
+    bloque de precio, no romperse.
+    """
+    listas = service.listar_listas_precio(tenant.session, tenant.org_id)
+    return [ListaPrecioLeer.model_validate(lista) for lista in listas]
 
 
 @router.get("/articulos/{codigo}", response_model=ArticuloLeer)

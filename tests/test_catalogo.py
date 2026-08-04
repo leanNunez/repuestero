@@ -20,7 +20,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
 from app.catalogo import service
-from app.catalogo.models import Articulo
+from app.catalogo.models import Articulo, ListaPrecio
 from app.core import db as core_db
 from app.core.config import get_settings
 from app.core.db import ORG_GUC, set_guc
@@ -41,15 +41,25 @@ ARTICULOS_A = [
 
 @pytest.fixture(scope="module")
 def catalogo(migrated_db):
-    """Siembra org A (5 artículos) y org B (uno que comparte rubro y marca con A) como owner."""
-    org_a, org_b = uuid4(), uuid4()
+    """Siembra org A (5 artículos), org B (uno que comparte rubro y marca con A) y org C, vacía.
+
+    C existe para un solo caso: una organización SIN listas de precio, que es como nace toda org
+    que no venga del importador ni de los seeds. El endpoint tiene que devolver `[]`, no romperse.
+    """
+    org_a, org_b, org_c = uuid4(), uuid4(), uuid4()
     eng = create_engine(OWNER_URL)
     with Session(eng) as s:
         s.add(Organizacion(id=org_a, nombre="Org A"))
         s.add(Organizacion(id=org_b, nombre="Org B"))
+        s.add(Organizacion(id=org_c, nombre="Org C"))
         s.flush()
         for codigo, detalle, marca, rubro in ARTICULOS_A:
             s.add(Articulo(org_id=org_a, codigo=codigo, detalle=detalle, marca=marca, rubro=rubro))
+        # Sembradas fuera de orden alfabético a propósito: si el service no ordenara por código,
+        # el test de orden pasaría igual por el orden de inserción.
+        s.add(ListaPrecio(org_id=org_a, codigo="MOST", nombre="Mostrador"))
+        s.add(ListaPrecio(org_id=org_a, codigo="MAY", nombre="Mayorista"))
+        s.add(ListaPrecio(org_id=org_b, codigo="SECRETA", nombre="Lista de la org B"))
         # Comparte rubro FILTROS y marca Mann con A: si RLS o el filtro por org fallaran, se
         # colaría en el listado y/o inflaría el `total` de A.
         s.add(
@@ -63,7 +73,7 @@ def catalogo(migrated_db):
         )
         s.commit()
     eng.dispose()
-    return SimpleNamespace(a=org_a, b=org_b)
+    return SimpleNamespace(a=org_a, b=org_b, c=org_c)
 
 
 @pytest.fixture
@@ -72,6 +82,16 @@ def sesion_a(catalogo):
     eng = create_engine(APP_URL)
     with Session(eng) as s:
         set_guc(s, ORG_GUC, str(catalogo.a))
+        yield s
+    eng.dispose()
+
+
+@pytest.fixture
+def sesion_c(catalogo):
+    """Igual que `sesion_a` pero sobre la org sin listas ni artículos."""
+    eng = create_engine(APP_URL)
+    with Session(eng) as s:
+        set_guc(s, ORG_GUC, str(catalogo.c))
         yield s
     eng.dispose()
 
@@ -148,6 +168,23 @@ def test_listar_marcas_distintas_ordenadas(sesion_a, catalogo):
     assert service.listar_marcas(sesion_a, catalogo.a) == ["Ferodo", "Fram", "Mann", "NGK"]
 
 
+# --------------------------------------------------------------------------- listas de precio
+def test_listar_listas_precio_ordenadas_por_codigo(sesion_a, catalogo):
+    listas = service.listar_listas_precio(sesion_a, catalogo.a)
+    assert [x.codigo for x in listas] == ["MAY", "MOST"]  # alfabético, no orden de inserción
+    assert [x.nombre for x in listas] == ["Mayorista", "Mostrador"]
+
+
+def test_las_listas_de_la_org_vecina_no_se_ven(sesion_a, catalogo):
+    """RLS: la lista de B no se cuela en A ni siquiera sabiendo que existe."""
+    assert "SECRETA" not in [x.codigo for x in service.listar_listas_precio(sesion_a, catalogo.a)]
+
+
+def test_una_org_sin_listas_devuelve_vacio(sesion_c, catalogo):
+    """El caso que la UI tiene que soportar: no es un error, es una org recién creada."""
+    assert service.listar_listas_precio(sesion_c, catalogo.c) == []
+
+
 # =========================================================================== HTTP (contrato)
 @pytest.fixture(scope="module")
 def org_http(migrated_db):
@@ -166,6 +203,7 @@ def org_http(migrated_db):
                 org_id=org_id, codigo="H-002", detalle="BUJIA NGK", marca="NGK", rubro="ENCENDIDO"
             )
         )
+        s.add(ListaPrecio(org_id=org_id, codigo="MOST", nombre="Mostrador"))
         s.add(Miembro(org_id=org_id, user_id=user_id, rol="admin"))  # sin esto get_tenant da 403
         s.commit()
     eng.dispose()
@@ -206,6 +244,22 @@ def test_endpoint_articulos_filtra_por_rubro(cliente):
     body = r.json()
     assert body["total"] == 1
     assert body["items"][0]["codigo"] == "H-002"
+
+
+def test_endpoint_listas_devuelve_id_codigo_y_nombre(cliente):
+    """El `id` es el dato que importa: es lo que el alta manda de vuelta como `lista_id`."""
+    r = cliente.get("/catalogo/listas")
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    assert set(body[0]) == {"id", "codigo", "nombre"}
+    assert body[0]["codigo"] == "MOST"
+    assert isinstance(body[0]["id"], int)
+
+
+def test_endpoint_listas_sin_token_da_401():
+    with TestClient(app) as c:
+        assert c.get("/catalogo/listas").status_code == 401
 
 
 def test_endpoint_rubros_y_marcas(cliente):
