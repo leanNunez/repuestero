@@ -93,6 +93,21 @@ class ListaPrecioCrear(BaseModel):
     nombre: str = Field(max_length=80)
 
 
+class ListaPrecioLeer(BaseModel):
+    """Una lista de precios del tenant, para poblar el selector del alta.
+
+    Lleva `id` porque es lo que el front devuelve al fijar un precio: `upsert_precio` y
+    `precio_de_articulo` toman `lista_id`. El `codigo` viaja para mostrarlo al lado del nombre,
+    no para identificar (`lista_codigo` es el contrato del importador, que no tiene ids).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    codigo: str
+    nombre: str
+
+
 class PrecioCrear(BaseModel):
     articulo_codigo: str
     lista_codigo: str
