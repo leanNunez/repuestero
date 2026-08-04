@@ -248,6 +248,20 @@ def crear_lista_precio(session: Session, org_id: UUID, datos: ListaPrecioCrear) 
     return lista
 
 
+def listar_listas_precio(session: Session, org_id: UUID) -> list[ListaPrecio]:
+    """Todas las listas de precio del tenant, ordenadas por código.
+
+    Puede devolver `[]`: las listas hoy solo nacen del importador y de los seeds, así que una
+    org creada desde cero no tiene ninguna. Quien consuma esto tiene que soportar el vacío —el
+    alta de artículos degrada a "sin precio de venta" en vez de bloquearse.
+    """
+    return list(
+        session.scalars(
+            select(ListaPrecio).where(ListaPrecio.org_id == org_id).order_by(ListaPrecio.codigo)
+        )
+    )
+
+
 def obtener_lista_precio(session: Session, org_id: UUID, codigo: str) -> ListaPrecio | None:
     return session.scalar(
         select(ListaPrecio).where(ListaPrecio.org_id == org_id, ListaPrecio.codigo == codigo)
