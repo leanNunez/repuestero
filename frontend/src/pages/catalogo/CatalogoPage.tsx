@@ -7,6 +7,7 @@ import { FormularioArticulo } from "@/features/catalogo-alta/ui/FormularioArticu
 import {
   PAGE_SIZE,
   useCatalogo,
+  useListasPrecio,
   useMarcas,
   useRubros,
 } from "@/features/catalogo-search/model/hooks";
@@ -28,6 +29,7 @@ export function CatalogoPage() {
   const { data, isLoading, isError, refetch } = useCatalogo(q, page, rubro, marca);
   const { data: rubros = [] } = useRubros();
   const { data: marcas = [] } = useMarcas();
+  const { data: listas = [] } = useListasPrecio();
   const crear = useCrearArticulo();
 
   // El 409 por código duplicado NO es un error del formulario: es un problema de UN campo, y va
@@ -63,6 +65,10 @@ export function CatalogoPage() {
         error={codigoRepetido ? null : (crear.error?.message ?? null)}
         errorCodigo={codigoRepetido}
         ultimoCodigo={crear.data?.articulo.codigo ?? null}
+        advertencias={crear.data?.advertencias ?? []}
+        rubros={rubros}
+        marcas={marcas}
+        listas={listas}
         // Después del alta el catálogo salta a buscar el artículo recién creado. Es el cierre del
         // circuito: sin esto queda en la página que estaba mirando, donde el nuevo casi nunca cae.
         // `mutateAsync` y no `mutate` porque el formulario se limpia recién cuando el alta salió.
