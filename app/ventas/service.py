@@ -23,6 +23,7 @@ from app.catalogo import service as catalogo
 from app.clientes import service as clientes
 from app.clientes.models import Cliente
 from app.core.formas_pago import FORMAS_PAGO
+from app.core.formato import pesos
 from app.core.numeracion import asignar_numero
 from app.inventario import service as inventario
 from app.ventas.models import (
@@ -343,9 +344,12 @@ def advertencias_de_limite(
     if saldo <= cliente.limite_cta_cte:
         return []
 
+    # `pesos()` y no `f"{...:,.2f}"`: ese formato es el de EE.UU. y el aviso se lee justo debajo
+    # del total, que el front pinta en es-AR. Visto en pantalla: "$ 9.506,97" arriba y
+    # "9,506.97" abajo se leen como dos números distintos.
     return [
-        f"{cliente.denominacion} quedó debiendo {saldo:,.2f} y su límite es "
-        f"{cliente.limite_cta_cte:,.2f}: se pasó por {saldo - cliente.limite_cta_cte:,.2f}."
+        f"{cliente.denominacion} quedó debiendo {pesos(saldo)} y su límite es "
+        f"{pesos(cliente.limite_cta_cte)}: se pasó por {pesos(saldo - cliente.limite_cta_cte)}."
     ]
 
 

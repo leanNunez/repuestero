@@ -6,12 +6,14 @@ el aislamiento por RLS entre orgs.
 """
 
 import random
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
 
+import jwt
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import Session
 
@@ -21,9 +23,12 @@ from app.catalogo import service as catalogo
 from app.catalogo.models import Articulo
 from app.catalogo.schemas import ListaPrecioCrear
 from app.clientes import service as clientes
+from app.core import db as core_db
+from app.core.config import get_settings
 from app.core.db import ORG_GUC, set_guc
-from app.core.models import Organizacion
+from app.core.models import Miembro, Organizacion
 from app.inventario import service as inventario
+from app.main import app
 from app.ventas import service
 from app.ventas.schemas import RenglonVentaCrear, VentaCrear
 from seeds.generar_ventas_demo import generar_ventas
@@ -525,10 +530,29 @@ def test_pasarse_del_limite_advierte_con_los_tres_numeros(sesion, org):
     avisos = _advertencias(sesion, org)
 
     assert len(avisos) == 1
-    assert "242.00" in avisos[0]  # el saldo: 2 x 100 + IVA
-    assert "100.00" in avisos[0]  # el límite
-    assert "142.00" in avisos[0]  # el exceso
+    assert "242,00" in avisos[0]  # el saldo: 2 x 100 + IVA
+    assert "100,00" in avisos[0]  # el límite
+    assert "142,00" in avisos[0]  # el exceso
     assert comp.total == Decimal("242.00")
+
+
+def test_los_importes_del_aviso_van_en_formato_es_AR(sesion, org):
+    """Punto de miles y coma decimal. Se vio en pantalla, no en un test.
+
+    El aviso se lee dos líneas debajo del total, que el front pinta en es-AR: con el formato de
+    EE.UU. la misma pantalla mostraba "$ 9.506,97" arriba y "9,506.97" abajo, que se leen como
+    dos números distintos.
+    """
+    _fijar_limite(sesion, "1000")
+    service.crear_venta(
+        sesion, org.id, datos=_venta(cantidad="5", precio="200", condicion="cta_cte")
+    )
+
+    aviso = _advertencias(sesion, org)[0]
+
+    assert "1.210,00" in aviso  # el saldo: 1000 + 21% de IVA
+    assert "1.000,00" in aviso  # el límite, con punto de miles
+    assert "1,000.00" not in aviso  # el formato de EE.UU. NO
 
 
 def test_la_advertencia_NO_bloquea_la_venta(sesion, org):
@@ -586,3 +610,97 @@ def test_por_debajo_del_limite_no_advierte(sesion, org):
     service.crear_venta(sesion, org.id, datos=_venta(condicion="cta_cte"))
 
     assert _advertencias(sesion, org) == []
+
+
+# =============================================== el borde HTTP: la advertencia tiene que VIAJAR
+
+
+@pytest.fixture(scope="module")
+def org_http(migrated_db):
+    """Org con miembro (sin esto `get_tenant` da 403), depósito, stock y un cliente con límite."""
+    org_id, user_id = uuid4(), uuid4()
+    eng = create_engine(OWNER_URL)
+    with Session(eng) as s:
+        s.add(Organizacion(id=org_id, nombre="Org Ventas HTTP"))
+        s.flush()  # antes del miembro: sin relación declarada, SQLAlchemy no ordena el FK solo
+        s.add(Miembro(org_id=org_id, user_id=user_id, rol="admin"))
+        s.flush()
+        dep = inventario.crear_deposito(s, org_id, codigo="CEN", nombre="Central")
+        clientes.crear_cliente(
+            s,
+            org_id,
+            codigo="CLI-HTTP",
+            denominacion="Cliente Al Límite",
+            limite_cta_cte=Decimal("100"),
+        )
+        art = Articulo(
+            org_id=org_id,
+            codigo="BUJIA-HTTP",
+            detalle="BUJIA NGK HTTP",
+            costo=Decimal("100"),
+            alicuota_iva=Decimal("21.00"),
+        )
+        s.add(art)
+        s.flush()
+        inventario.registrar_movimiento(
+            s,
+            org_id,
+            articulo_id=art.id,
+            deposito_id=dep.id,
+            cantidad=Decimal("100"),
+            motivo="inicial",
+        )
+        s.commit()
+    eng.dispose()
+    return SimpleNamespace(id=org_id, user=user_id)
+
+
+@pytest.fixture
+def cliente_http(org_http, monkeypatch):
+    """TestClient con el JWT del usuario sembrado y la sesión apuntando a la DB de test."""
+    monkeypatch.setattr(core_db, "SessionLocal", lambda: Session(create_engine(APP_URL)))
+    cfg = get_settings()
+    token = jwt.encode(
+        {
+            "sub": str(org_http.user),
+            "aud": cfg.supabase_jwt_audience,
+            "exp": datetime.now(UTC) + timedelta(hours=1),
+        },
+        cfg.supabase_jwt_secret,
+        algorithm="HS256",
+    )
+    with TestClient(app) as c:
+        c.headers.update({"Authorization": f"Bearer {token}"})
+        yield c
+
+
+def _payload_http(*, condicion: str) -> dict:
+    return {
+        "cliente_codigo": "CLI-HTTP",
+        "deposito_codigo": "CEN",
+        "condicion": condicion,
+        "renglones": [{"articulo_codigo": "BUJIA-HTTP", "cantidad": "2", "precio_unitario": "100"}],
+    }
+
+
+def test_http_la_venta_sale_201_CON_la_advertencia(cliente_http):
+    """El contrato completo: 201 (no 422) y el aviso viajando en `advertencias`.
+
+    Los tests de servicio de arriba prueban la REGLA; este prueba que el router la ponga en la
+    respuesta. Sin esto, `advertencias_de_limite` podría quedar perfecta y sin llamar por nadie —
+    que es exactamente como estuvo `VentaResponse.advertencias` desde que existe.
+    """
+    r = cliente_http.post("/ventas", json=_payload_http(condicion="cta_cte"))
+
+    assert r.status_code == 201
+    avisos = r.json()["advertencias"]
+    assert len(avisos) == 1
+    assert "Cliente Al Límite" in avisos[0]
+    assert "100,00" in avisos[0]
+
+
+def test_http_la_venta_al_contado_no_trae_advertencias(cliente_http):
+    r = cliente_http.post("/ventas", json=_payload_http(condicion="contado"))
+
+    assert r.status_code == 201
+    assert r.json()["advertencias"] == []
