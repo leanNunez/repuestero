@@ -15,6 +15,7 @@ import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { Field, FieldLabel } from "@/shared/ui/field";
 import { SuccessPanel } from "@/shared/ui/success-panel";
+import { WarningList } from "@/shared/ui/warning-list";
 
 function comprobanteLabel(tipo: string, ptoVenta: number, numero: number): string {
   return `${tipo} ${String(ptoVenta).padStart(4, "0")}-${String(numero).padStart(8, "0")}`;
@@ -61,6 +62,9 @@ export function VentasPage() {
               Comprobante {comprobanteLabel(r.tipo, r.pto_venta, r.numero)} · Total {pesos(r.total)}
             </p>
           </div>
+          {/* La venta YA se emitió: esto no es un error, es algo para mirar. Va en el panel de
+              éxito y no en un toast porque el toast se va y el cliente sigue excedido. */}
+          <WarningList avisos={r.advertencias} />
           <Button
             variant="outline"
             onClick={() => {

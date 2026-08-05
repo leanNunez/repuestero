@@ -19,7 +19,11 @@ export const ventaCrearSchema = z.object({
   renglones: z.array(renglonVentaSchema),
 });
 
-/** Acuse del alta (`VentaResponse`). */
+/** Acuse del alta (`VentaResponse`).
+ *
+ * `advertencias` tiene `.default([])` y no es requerido: el backend lo manda siempre, pero un
+ * default acá deja que el schema siga parseando respuestas viejas —las de un deploy anterior, o
+ * las capturadas en un fixture— en vez de romper la pantalla de una venta que SÍ se emitió. */
 export const ventaResponseSchema = z.object({
   venta_id: z.number(),
   tipo: z.string(),
@@ -27,6 +31,7 @@ export const ventaResponseSchema = z.object({
   numero: z.number(),
   total: z.string(),
   movimientos: z.number(),
+  advertencias: z.array(z.string()).default([]),
 });
 
 /** Precio a precargar en un renglón (`PrecioSugeridoLeer`). `precio` es null si esa lista no
