@@ -2,12 +2,15 @@ import { getRouteApi } from "@tanstack/react-router";
 import { useEffect } from "react";
 
 import { ArticuloTable } from "@/entities/articulo/ArticuloTable";
+import { useCrearArticulo } from "@/features/catalogo-alta/model/hooks";
+import { FormularioArticulo } from "@/features/catalogo-alta/ui/FormularioArticulo";
 import {
   PAGE_SIZE,
   useCatalogo,
   useMarcas,
   useRubros,
 } from "@/features/catalogo-search/model/hooks";
+import { ApiError } from "@/shared/api/client";
 import { NativeSelect } from "@/shared/ui/native-select";
 import { PageHeader } from "@/shared/ui/page-header";
 import { PageBody, PageLayout } from "@/shared/ui/page-layout";
@@ -25,6 +28,12 @@ export function CatalogoPage() {
   const { data, isLoading, isError, refetch } = useCatalogo(q, page, rubro, marca);
   const { data: rubros = [] } = useRubros();
   const { data: marcas = [] } = useMarcas();
+  const crear = useCrearArticulo();
+
+  // El 409 por código duplicado NO es un error del formulario: es un problema de UN campo, y va
+  // debajo de ese campo. Al pie diría "ya existe" sin decir qué, con el código a diez centímetros.
+  const codigoRepetido =
+    crear.error instanceof ApiError && crear.error.status === 409 ? crear.error.detail : null;
 
   const buscando = q.trim().length > 0;
   const items = data?.items ?? [];
@@ -48,6 +57,23 @@ export function CatalogoPage() {
   return (
     <PageLayout>
       <PageHeader title="Catálogo" />
+
+      <FormularioArticulo
+        cargando={crear.isPending}
+        error={codigoRepetido ? null : (crear.error?.message ?? null)}
+        errorCodigo={codigoRepetido}
+        ultimoCodigo={crear.data?.articulo.codigo ?? null}
+        // Después del alta el catálogo salta a buscar el artículo recién creado. Es el cierre del
+        // circuito: sin esto queda en la página que estaba mirando, donde el nuevo casi nunca cae.
+        // `mutateAsync` y no `mutate` porque el formulario se limpia recién cuando el alta salió.
+        onCrear={(v) =>
+          crear.mutateAsync(v).then((r) => {
+            setSearch({ q: r.articulo.codigo, page: 1 });
+            return r;
+          })
+        }
+      />
+
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
         <SearchInput
           value={q}
