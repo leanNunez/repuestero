@@ -187,6 +187,7 @@ export function FormularioArticulo({
               id="art-codigo-barra"
               value={datos.codigo_barra}
               onChange={(e) => campo("codigo_barra", e.target.value)}
+              maxLength={60}
               placeholder="7790001234567"
               inputMode="numeric"
             />
@@ -312,6 +313,10 @@ function Sugerido({
         onChange={(e) => onChange(e.target.value)}
         list={`${id}-opciones`}
         autoComplete="off"
+        // 60 = el largo de la columna. `ArticuloCrear` NO declara `max_length` para estos campos
+        // (a diferencia de `codigo` y `detalle`), así que un valor más largo pasa Pydantic y muere
+        // en la base con un truncation error: 500 en vez de 422.
+        maxLength={60}
         placeholder={placeholder}
         aria-describedby={`${id}-hint`}
       />

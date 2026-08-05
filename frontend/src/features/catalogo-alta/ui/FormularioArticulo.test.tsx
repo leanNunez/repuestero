@@ -162,6 +162,17 @@ describe("FormularioArticulo", () => {
     expect(input).toHaveAccessibleDescription(/escribí uno nuevo/i);
   });
 
+  it("corta marca, rubro y código de barra en los 60 de la columna", () => {
+    // `ArticuloCrear` no declara `max_length` para estos tres (sí para `codigo` y `detalle`), así
+    // que un valor más largo pasa Pydantic y muere en la base: 500 en vez de 422. La reja va acá.
+    render(<FormularioArticulo {...props} />);
+    abrir();
+
+    for (const label of [/Marca/i, /Rubro/i, /Código de barra/i]) {
+      expect(screen.getByLabelText(label)).toHaveAttribute("maxlength", "60");
+    }
+  });
+
   it("un rubro nuevo viaja en el payload tal como se escribió", () => {
     const onCrear = vi.fn().mockResolvedValue(undefined);
     render(<FormularioArticulo {...props} onCrear={onCrear} />);
