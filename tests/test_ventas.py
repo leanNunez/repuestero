@@ -492,3 +492,97 @@ def test_repu_consulta_ventas_scopeado_por_rls(dos_orgs, monkeypatch):
 
     ejec_b = asistente_service._hacer_ejecutor(dos_orgs.b, uuid4())
     assert grafo.responder("cuántas ventas hay", ejec_b)["filas"][0]["cantidad"] == 0
+
+
+# =============================================== límite de crédito: advierte, NO bloquea
+
+
+def _fijar_limite(sesion, limite: str) -> None:
+    """El límite del cliente de la fixture. La columna es NOT NULL: no hay caso "sin límite"
+    más que el cero."""
+    sesion.execute(
+        text("update clientes set limite_cta_cte = :l where codigo = 'CLI-1'"),
+        {"l": Decimal(limite)},
+    )
+    sesion.flush()
+
+
+def _advertencias(sesion, org, *, condicion: str = "cta_cte") -> list[str]:
+    return service.advertencias_de_limite(
+        sesion, org.id, cliente_id=_cliente_id(sesion), condicion=condicion
+    )
+
+
+def test_pasarse_del_limite_advierte_con_los_tres_numeros(sesion, org):
+    """La advertencia dice cuánto debe, cuál es el tope y por cuánto se pasó.
+
+    Sin los tres números el aviso no sirve para decidir: "se pasó del límite" no le dice al del
+    mostrador si son doscientos pesos o doscientos mil.
+    """
+    _fijar_limite(sesion, "100")
+    comp = service.crear_venta(sesion, org.id, datos=_venta(condicion="cta_cte"))
+
+    avisos = _advertencias(sesion, org)
+
+    assert len(avisos) == 1
+    assert "242.00" in avisos[0]  # el saldo: 2 x 100 + IVA
+    assert "100.00" in avisos[0]  # el límite
+    assert "142.00" in avisos[0]  # el exceso
+    assert comp.total == Decimal("242.00")
+
+
+def test_la_advertencia_NO_bloquea_la_venta(sesion, org):
+    """El contrato: el comprobante queda escrito y el stock descontado igual.
+
+    Es la regla del proyecto —advertir, no bloquear— y este test es lo que impide que alguien la
+    convierta en un 422 sin darse cuenta de que deja el mostrador parado.
+    """
+    _fijar_limite(sesion, "1")
+    antes = _stock(sesion, "BUJIA-1")
+
+    comp = service.crear_venta(sesion, org.id, datos=_venta(condicion="cta_cte"))
+
+    assert comp.id is not None
+    assert _stock(sesion, "BUJIA-1") == antes - Decimal("2")
+    assert _advertencias(sesion, org) != []
+
+
+def test_al_contado_no_advierte_aunque_deba_de_antes(sesion, org):
+    """Una venta al contado no mueve el saldo: sacar a la luz una deuda vieja sería ruido.
+
+    Mismo criterio que caja, que acota el chequeo a la forma que la operación tocó.
+    """
+    _fijar_limite(sesion, "100")
+    service.crear_venta(sesion, org.id, datos=_venta(condicion="cta_cte"))  # lo deja excedido
+    assert _advertencias(sesion, org) != []
+
+    assert _advertencias(sesion, org, condicion="contado") == []
+
+
+def test_limite_en_cero_es_SIN_limite(sesion, org):
+    """Cero = no configurado, no "no puede deber nada".
+
+    Es la lectura que ya usa el front (`excedeLimite`) y la única compatible con los datos: la
+    mitad del padrón tiene el límite en cero. Leerlo al revés haría sonar la alarma en cada venta
+    a cuenta corriente, y una alarma que suena siempre es una alarma que nadie mira.
+    """
+    _fijar_limite(sesion, "0")
+    service.crear_venta(sesion, org.id, datos=_venta(condicion="cta_cte"))
+
+    assert _advertencias(sesion, org) == []
+
+
+def test_justo_en_el_limite_no_advierte(sesion, org):
+    """El borde: se avisa cuando se PASA, no cuando llega. Espeja el `>` del front."""
+    _fijar_limite(sesion, "242")
+    service.crear_venta(sesion, org.id, datos=_venta(condicion="cta_cte"))
+
+    assert service.saldo_cliente(sesion, org.id, _cliente_id(sesion)) == Decimal("242.00")
+    assert _advertencias(sesion, org) == []
+
+
+def test_por_debajo_del_limite_no_advierte(sesion, org):
+    _fijar_limite(sesion, "500")
+    service.crear_venta(sesion, org.id, datos=_venta(condicion="cta_cte"))
+
+    assert _advertencias(sesion, org) == []
