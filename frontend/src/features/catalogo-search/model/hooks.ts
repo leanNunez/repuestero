@@ -4,6 +4,7 @@ import {
   articuloListaSchema,
   articuloPaginaSchema,
   articuloSchema,
+  listaPrecioListaSchema,
   opcionesSchema,
   type ArticuloPagina,
 } from "@/entities/articulo/schema";
@@ -61,6 +62,20 @@ export function useMarcas() {
   return useQuery({
     queryKey: ["catalogo", "marcas"],
     queryFn: () => apiGet("/catalogo/marcas", opcionesSchema),
+    staleTime: 5 * 60 * 1000,
+  });
+}
+
+/** Listas de precio de la org, para el selector del alta. Misma naturaleza que rubros y marcas
+ *  —opciones para llenar un control, cambian poco— así que mismo namespace de caché y mismo
+ *  `staleTime`.
+ *
+ *  Puede volver `[]`: las listas hoy solo las crean el importador y los seeds, y no hay alta de
+ *  listas por la app. La UI tiene que soportar ese caso, no asumir que siempre hay una. */
+export function useListasPrecio() {
+  return useQuery({
+    queryKey: ["catalogo", "listas"],
+    queryFn: () => apiGet("/catalogo/listas", listaPrecioListaSchema),
     staleTime: 5 * 60 * 1000,
   });
 }
