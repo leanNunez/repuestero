@@ -1,16 +1,18 @@
 import { useState } from "react";
 
-import type { ArticuloAltaRequest } from "@/entities/articulo/schema";
+import type { ArticuloAltaRequest, ListaPrecio } from "@/entities/articulo/schema";
 import { Button } from "@/shared/ui/button";
 import { CampoMoneda } from "@/shared/ui/campo-moneda";
 import { Card } from "@/shared/ui/card";
-import { Field, FieldError, FieldLabel } from "@/shared/ui/field";
+import { Field, FieldDescription, FieldError, FieldLabel } from "@/shared/ui/field";
 import { Input } from "@/shared/ui/input";
 import { NativeSelect } from "@/shared/ui/native-select";
+import { WarningList } from "@/shared/ui/warning-list";
 
 import {
   ALICUOTAS_IVA,
   aPayload,
+  precioSinLista,
   puedeGuardar,
   VACIO,
   type AlicuotaIva,
@@ -26,6 +28,13 @@ interface Props {
   /** Código del último artículo dado de alta. Lo tipeó la persona, así que no es una revelación
    *  como en clientes — pero es la prueba de que el alta ocurrió. */
   ultimoCodigo: string | null;
+  /** Avisos no bloqueantes del alta (el más frecuente: se creó sin precio de venta). */
+  advertencias: readonly string[];
+  /** Rubros y marcas que YA existen, para sugerir sin obligar. */
+  rubros: readonly string[];
+  marcas: readonly string[];
+  /** Listas de precio de la org. Puede venir vacía: no hay alta de listas por la app. */
+  listas: readonly ListaPrecio[];
   /** Devuelve una promesa: el formulario necesita saber si el alta salió bien para recién ahí
    *  limpiarse. Ver el comentario de `enviar`. */
   onCrear: (v: ArticuloAltaRequest) => Promise<unknown>;
@@ -37,19 +46,25 @@ interface Props {
  * que es como el cliente lo pide en el mostrador y como viene impreso en la caja. El sistema no
  * tiene nada mejor que inventar.
  *
- * Este formulario pide solo lo obligatorio. Marca, rubro, precio y los demás opcionales llegan en
- * el paso siguiente. */
+ * Lo obligatorio va en la primera fila; el resto —lo que se completa cuando se tiene a mano— en el
+ * segundo bloque. */
 export function FormularioArticulo({
   cargando,
   error,
   errorCodigo,
   ultimoCodigo,
+  advertencias,
+  rubros,
+  marcas,
+  listas,
   onCrear,
 }: Props) {
   const [abierto, setAbierto] = useState(false);
   const [datos, setDatos] = useState<Datos>(VACIO);
 
   const habilitado = puedeGuardar(datos) && !cargando;
+  const sinListas = listas.length === 0;
+  const faltaLista = precioSinLista(datos);
 
   function campo<K extends keyof Datos>(k: K, v: Datos[K]) {
     setDatos((d) => ({ ...d, [k]: v }));
@@ -79,7 +94,7 @@ export function FormularioArticulo({
         <Button size="sm" onClick={() => setAbierto(true)}>
           Nuevo artículo
         </Button>
-        {ultimoCodigo && <Confirmacion codigo={ultimoCodigo} />}
+        {ultimoCodigo && <Confirmacion codigo={ultimoCodigo} avisos={advertencias} />}
       </div>
     );
   }
@@ -146,6 +161,107 @@ export function FormularioArticulo({
           </Field>
         </div>
 
+        {/* Segundo bloque: lo que se completa si se tiene a mano. Separado del primero a propósito
+            —quien carga veinte repuestos seguidos llena los cuatro de arriba y nada más—. */}
+        <div className="grid gap-3 border-t pt-3 sm:grid-cols-2 lg:grid-cols-6">
+          <Sugerido
+            id="art-marca"
+            label="Marca"
+            valor={datos.marca}
+            opciones={marcas}
+            placeholder="Mann-Filter"
+            onChange={(v) => campo("marca", v)}
+          />
+          <Sugerido
+            id="art-rubro"
+            label="Rubro"
+            valor={datos.rubro}
+            opciones={rubros}
+            placeholder="FILTROS"
+            onChange={(v) => campo("rubro", v)}
+          />
+
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor="art-codigo-barra">Código de barra</FieldLabel>
+            <Input
+              id="art-codigo-barra"
+              value={datos.codigo_barra}
+              onChange={(e) => campo("codigo_barra", e.target.value)}
+              placeholder="7790001234567"
+              inputMode="numeric"
+            />
+          </Field>
+
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor="art-costo-dolar">Costo en dólares</FieldLabel>
+            <CampoMoneda
+              id="art-costo-dolar"
+              value={datos.costo_dolar}
+              onChange={(v) => campo("costo_dolar", v)}
+              placeholder="0,00"
+              disabled={cargando}
+            />
+          </Field>
+
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor="art-punto-pedido">Punto de pedido</FieldLabel>
+            <CampoMoneda
+              id="art-punto-pedido"
+              value={datos.punto_pedido}
+              onChange={(v) => campo("punto_pedido", v)}
+              placeholder="0,00"
+              disabled={cargando}
+            />
+          </Field>
+        </div>
+
+        {/* El precio NO es un campo del artículo: vive en `articulo_precios`, por lista. Va en su
+            propio bloque para que se lea como lo que es — una decisión aparte de cargar el
+            producto—, y porque sin lista elegida no se puede fijar. */}
+        <div className="grid gap-3 border-t pt-3 sm:grid-cols-2 lg:grid-cols-6">
+          <Field className="gap-1.5">
+            <FieldLabel htmlFor="art-precio">Precio de venta</FieldLabel>
+            <CampoMoneda
+              id="art-precio"
+              value={datos.precio}
+              onChange={(v) => campo("precio", v)}
+              placeholder="0,00"
+              disabled={cargando || sinListas}
+              aria-describedby={sinListas ? "art-precio-hint" : undefined}
+            />
+            {sinListas && (
+              <FieldDescription id="art-precio-hint" className="text-xs">
+                Esta organización no tiene listas de precio cargadas. El artículo se crea igual y el
+                precio se pone después.
+              </FieldDescription>
+            )}
+          </Field>
+
+          <Field className="gap-1.5 lg:col-span-2" data-invalid={faltaLista || undefined}>
+            <FieldLabel htmlFor="art-lista">Lista de precios</FieldLabel>
+            <NativeSelect
+              id="art-lista"
+              value={datos.lista_id}
+              onChange={(e) => campo("lista_id", e.target.value)}
+              disabled={cargando || sinListas}
+              aria-invalid={faltaLista}
+              aria-describedby={faltaLista ? "art-lista-error" : undefined}
+            >
+              <option value="">Elegí una lista</option>
+              {listas.map((l) => (
+                <option key={l.id} value={String(l.id)}>
+                  {l.nombre} ({l.codigo})
+                </option>
+              ))}
+            </NativeSelect>
+            {faltaLista && (
+              <FieldError id="art-lista-error" className="text-xs">
+                Elegí en qué lista va ese precio. No hay una por defecto.
+              </FieldError>
+            )}
+          </Field>
+        </div>
+
         {error && <FieldError>{error}</FieldError>}
 
         <div className="flex gap-2">
@@ -158,17 +274,71 @@ export function FormularioArticulo({
         </div>
       </form>
 
-      {ultimoCodigo && <Confirmacion codigo={ultimoCodigo} />}
+      {ultimoCodigo && <Confirmacion codigo={ultimoCodigo} avisos={advertencias} />}
     </Card>
   );
 }
 
-/** El código no lo eligió el sistema, pero sí es lo que prueba que el artículo quedó guardado con
- *  el número que la persona quería. */
-function Confirmacion({ codigo }: { codigo: string }) {
+/** Campo de texto libre que SUGIERE los valores que ya existen sin obligar a elegirlos.
+ *
+ * `<datalist>` nativo y no `Combobox`: ese componente está hecho para elegir una entidad que
+ * existe —su rama de `elegido` vuelve el input de solo lectura— y lo usan ventas y compras, que
+ * son pantallas de plata ya verificadas. Un modo "creatable" ahí es superficie de regresión
+ * pagada por un campo donde el browser hace el trabajo gratis.
+ *
+ * `autoComplete="off"` no es higiene: sin eso el historial del browser compite por el mismo popup
+ * y tapa las sugerencias reales. */
+function Sugerido({
+  id,
+  label,
+  valor,
+  opciones,
+  placeholder,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  valor: string;
+  opciones: readonly string[];
+  placeholder: string;
+  onChange: (v: string) => void;
+}) {
   return (
-    <p role="status" className="text-sm text-muted-foreground">
-      Artículo dado de alta con el código <strong className="text-foreground">{codigo}</strong>.
-    </p>
+    <Field className="gap-1.5">
+      <FieldLabel htmlFor={id}>{label}</FieldLabel>
+      <Input
+        id={id}
+        value={valor}
+        onChange={(e) => onChange(e.target.value)}
+        list={`${id}-opciones`}
+        autoComplete="off"
+        placeholder={placeholder}
+        aria-describedby={`${id}-hint`}
+      />
+      {/* Lo que importa que se anuncie es la AFFORDANCE, no el listado: los lectores de pantalla
+          leen el datalist de forma inconsistente, pero "o escribí uno nuevo" siempre se escucha. */}
+      <FieldDescription id={`${id}-hint`} className="text-xs">
+        Elegí uno o escribí uno nuevo.
+      </FieldDescription>
+      <datalist id={`${id}-opciones`}>
+        {opciones.map((o) => (
+          <option key={o} value={o} />
+        ))}
+      </datalist>
+    </Field>
+  );
+}
+
+/** El código no lo eligió el sistema, pero sí es lo que prueba que el artículo quedó guardado con
+ *  el número que la persona quería. Las advertencias van pegadas: la más frecuente es "se creó sin
+ *  precio de venta", que sin el aviso se descubre recién al querer venderlo. */
+function Confirmacion({ codigo, avisos }: { codigo: string; avisos: readonly string[] }) {
+  return (
+    <div className="space-y-2">
+      <p role="status" className="text-sm text-muted-foreground">
+        Artículo dado de alta con el código <strong className="text-foreground">{codigo}</strong>.
+      </p>
+      <WarningList avisos={avisos} />
+    </div>
   );
 }
