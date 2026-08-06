@@ -77,6 +77,14 @@ def crear_venta(
         numero=comprobante.numero,
         total=comprobante.total,
         movimientos=len(body.renglones),
+        # Se calcula DESPUÉS de escribir, con el saldo ya movido: la pregunta es cómo quedó el
+        # cliente, no cómo estaba. Advierte y no bloquea — la venta ya está hecha.
+        advertencias=service.advertencias_de_limite(
+            tenant.session,
+            tenant.org_id,
+            cliente_id=comprobante.cliente_id,
+            condicion=comprobante.condicion,
+        ),
     )
 
 

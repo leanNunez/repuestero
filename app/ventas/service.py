@@ -23,6 +23,7 @@ from app.catalogo import service as catalogo
 from app.clientes import service as clientes
 from app.clientes.models import Cliente
 from app.core.formas_pago import FORMAS_PAGO
+from app.core.formato import pesos
 from app.core.numeracion import asignar_numero
 from app.inventario import service as inventario
 from app.ventas.models import (
@@ -299,6 +300,57 @@ def saldo_cliente(session: Session, org_id: UUID, cliente_id: int) -> Decimal:
         )
     )
     return saldo if saldo is not None else Decimal("0")
+
+
+def advertencias_de_limite(
+    session: Session, org_id: UUID, *, cliente_id: int, condicion: str
+) -> list[str]:
+    """Avisa si el cliente quedó por encima de su límite de cuenta corriente. NO bloquea.
+
+    ## Por qué advertir y no bloquear
+
+    La regla del proyecto, tomada el 27-jul-2026 con la caja en negativo y escrita en
+    `caja.service.advertencias_de_saldo`, que ya nombraba este caso: **no hay roles ni mecanismo
+    de override**. Un bloqueo duro deja el mostrador parado cuando el que puede autorizar no está,
+    y el resultado real no es que la venta no ocurra — es que ocurre fuera del sistema, que es
+    peor. Se revisa cuando existan roles (Fase 3).
+
+    Que no bloquee es parte del contrato: **el comprobante ya está escrito** cuando esto corre, y
+    el caller decide qué hacer con el texto. Nunca lanza.
+
+    ## Solo en cuenta corriente
+
+    Una venta al contado no mueve el saldo, así que avisar ahí sería sacar a la luz una deuda
+    vieja que no tiene nada que ver con lo que la persona acaba de hacer. Mismo criterio que caja,
+    que acota el chequeo a la forma que la operación tocó.
+
+    ## `limite_cta_cte` en 0 significa SIN LÍMITE, no "no puede deber nada"
+
+    No es una interpretación nueva: es la que ya usa el front (`excedeLimite` en
+    `features/cuenta-corriente/model/estado.ts`, con `tope <= 0` → no excede) y es la única
+    compatible con los datos — **510 de los 1822 clientes del local tienen el límite en cero**.
+    Leerlo como "no puede deber nada" convertiría a esos 510 en una advertencia en cada venta a
+    cuenta corriente, y una alarma que suena siempre es una alarma que nadie mira.
+    """
+    if condicion != "cta_cte":
+        return []
+
+    # `limite_cta_cte` es NOT NULL con default 0, así que el único caso sin límite es el <= 0.
+    cliente = session.get(Cliente, cliente_id)
+    if cliente is None or cliente.limite_cta_cte <= 0:
+        return []
+
+    saldo = saldo_cliente(session, org_id, cliente_id)
+    if saldo <= cliente.limite_cta_cte:
+        return []
+
+    # `pesos()` y no `f"{...:,.2f}"`: ese formato es el de EE.UU. y el aviso se lee justo debajo
+    # del total, que el front pinta en es-AR. Visto en pantalla: "$ 9.506,97" arriba y
+    # "9,506.97" abajo se leen como dos números distintos.
+    return [
+        f"{cliente.denominacion} quedó debiendo {pesos(saldo)} y su límite es "
+        f"{pesos(cliente.limite_cta_cte)}: se pasó por {pesos(saldo - cliente.limite_cta_cte)}."
+    ]
 
 
 class FormaPago(NamedTuple):
