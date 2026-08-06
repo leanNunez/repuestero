@@ -108,7 +108,7 @@ const ALTA_CON_ADVERTENCIA = {
   forma: "efectivo",
   saldo: "-995299.00",
   advertencias: [
-    "El efectivo quedó en -995,299.00. Un saldo negativo no puede pasar en la realidad: revisá si falta cargar un ingreso.",
+    "El efectivo quedó en -995.299,00. Un saldo negativo no puede pasar en la realidad: revisá si falta cargar un ingreso.",
   ],
 };
 

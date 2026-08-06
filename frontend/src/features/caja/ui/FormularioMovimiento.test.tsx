@@ -56,11 +56,11 @@ describe("FormularioMovimiento", () => {
     render(
       <FormularioMovimiento
         {...props}
-        advertencias={["El efectivo quedó en -500.00. Un saldo negativo no puede pasar."]}
+        advertencias={["El efectivo quedó en -12.500,00. Un saldo negativo no puede pasar."]}
       />,
     );
 
-    expect(screen.getByRole("status")).toHaveTextContent("-500.00");
+    expect(screen.getByRole("status")).toHaveTextContent("-12.500,00");
   });
 
   it("un error de negocio sí se muestra como alerta", () => {
