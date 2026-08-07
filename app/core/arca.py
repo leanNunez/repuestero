@@ -14,9 +14,11 @@ tabla de ARCA, y vive en `core/letra.py`. La diferencia importa porque `ventas` 
 letra ANTES de que exista ninguna llamada a ARCA (la letra decide el espacio de numeración), y
 por lo tanto no puede depender de este módulo ni de `app/afip/`.
 
-Las migraciones NO importan esto: cada una congela su propia copia en el CHECK que crea (regla
-de 0008_compras.py). El candado que evita que las dos copias se separen es un test que inserta
-cada valor y verifica que la base lo acepte.
+⚠️ Por ahora estas tablas viven SOLO en Python: ninguna migración las usa todavía (la última es
+la 0013). Cuando lleguen las 0014-0017, cada una va a congelar su propia copia en el CHECK que
+cree —regla de 0008_compras.py, las migraciones nunca importan de acá— y el candado contra la
+deriva va a ser un test que inserte cada valor y verifique que la base lo acepte. Ese test **no
+existe todavía**; hasta que exista, nada garantiza que la base y este archivo digan lo mismo.
 """
 
 from decimal import Decimal
@@ -73,6 +75,19 @@ def clave_numeracion(cbte_tipo: int) -> str:
 
     El prefijo `FE` mantiene el espacio separado de las claves no fiscales ('FAC', 'NC', 'REC',
     'OP') y entra holgado en el `String(10)` de `numeradores.tipo`.
+
+    ⚠️ **Separar los talonarios es necesario pero NO suficiente.** Quedan dos agujeros que esta
+    función sola no tapa, y que hay que resolver antes de la primera emisión real:
+
+    1. **El contador arranca en 0.** `asignar_numero` crea la fila con `ultimo=0`, así que el
+       primer comprobante de cada `FE0xx` sale con número 1. Para un CUIT que YA venía facturando
+       (talonario autorizado en N), eso es exactamente el rechazo por número fuera de secuencia
+       que esto viene a evitar. Hay que sembrar el numerador desde `FECompUltimoAutorizado`.
+    2. **El unique de `comprobantes` todavía es `(org_id, tipo, pto_venta, numero)`** con
+       `tipo='FAC'`. Si se saca el número del numerador `FE001` pero se deja `tipo='FAC'`, el
+       contador nuevo arranca en 1 y choca contra los FAC 1..N ya emitidos → `IntegrityError` en
+       la primera factura electrónica de toda org con historia. Por eso la migración 0016 parte
+       ese unique en dos índices parciales según `cbte_tipo`.
     """
     return f"FE{cbte_tipo:03d}"
 

@@ -11,15 +11,21 @@ numeración, y el número se asigna mucho antes de hablar con nadie. Si esto viv
 criterio con el que el `Numerador` salió de `ventas` hacia `core/numeracion.py`.
 """
 
-from app.core.cond_fiscal import CONDICIONES_FISCALES
+from app.core.cond_fiscal import CONDICIONES_FISCALES, CONDICIONES_FISCALES_EMISOR
 
-#: Las tres letras que este sistema emite hoy.
+#: Todas las letras que el sistema sabe MANEJAR, que no es lo mismo que las que sabe DERIVAR.
 #:
-#: La **M** (RG 1575) existe en `arca.py` pero NO se decide acá y nunca se devuelve: se emite M en
-#: lugar de A cuando ARCA no da por probada la solvencia de un responsable inscripto recién
-#: inscripto, y eso **lo comunica ARCA** — no es derivable de ningún dato nuestro. La **E** de
-#: exportación queda fuera de alcance.
-LETRAS: frozenset[str] = frozenset({"A", "B", "C"})
+#: La **M** (RG 1575) está acá porque hay que poder procesarla —tiene sus códigos en `arca.py` y
+#: declara IVA como la A—, pero `letra_de` **nunca la devuelve**: se emite M en lugar de A cuando
+#: ARCA no da por probada la solvencia de un responsable inscripto recién inscripto, y eso lo
+#: comunica ARCA, no se deriva de ningún dato nuestro. La **E** de exportación queda fuera.
+#:
+#: La distinción importa: una validación escrita como `if letra in LETRAS` tiene que aceptar una M
+#: legítima. Lo que `letra_de` produce es el subconjunto `LETRAS_DERIVABLES`.
+LETRAS: frozenset[str] = frozenset({"A", "B", "C", "M"})
+
+#: Las que `letra_de` puede decidir sola, a partir de las condiciones fiscales.
+LETRAS_DERIVABLES: frozenset[str] = frozenset({"A", "B", "C"})
 
 #: Quiénes reciben factura A de un responsable inscripto: los que están inscriptos en el régimen.
 #:
@@ -30,10 +36,18 @@ LETRAS: frozenset[str] = frozenset({"A", "B", "C"})
 #: inspección, multiplicado por todos los comprobantes mal emitidos.
 _RECIBEN_A: frozenset[str] = frozenset({"RESPONSABLE_INSCRIPTO", "MONOTRIBUTO"})
 
-#: Quiénes pueden EMITIR comprobantes. `CONSUMIDOR_FINAL` no está: un consumidor final no emite,
-#: recibe. La misma reja está en la base (CHECK de `organizaciones.cond_fiscal`, migración 0014):
-#: el `if` de acá es el mensaje legible, el CHECK es el que garantiza que no entre por otro lado.
-EMISORES_VALIDOS: frozenset[str] = frozenset({"RESPONSABLE_INSCRIPTO", "MONOTRIBUTO", "EXENTO"})
+#: Quiénes pueden EMITIR comprobantes: `CONSUMIDOR_FINAL` no está porque un consumidor final no
+#: emite, recibe.
+#:
+#: Es un alias de `CONDICIONES_FISCALES_EMISOR`, NO una segunda copia. Tenerlo dos veces se veía
+#: inofensivo y no lo es: al sumar un emisor a una sola de las dos listas, `letra_de` lo aceptaría
+#: y devolvería "C" mientras el test que barre la matriz sigue verde, porque arma sus expectativas
+#: desde la OTRA lista.
+#:
+#: ⚠️ Hoy esta es la ÚNICA reja. `organizaciones` todavía no tiene columna `cond_fiscal` (llega con
+#: la migración 0014, que no existe aún), así que nada impide guardar una organización con una
+#: condición fiscal que no puede emitir: el error recién aparece acá, al facturar.
+EMISORES_VALIDOS = CONDICIONES_FISCALES_EMISOR
 
 
 class EmisorInvalido(ValueError):
@@ -94,6 +108,6 @@ def declara_iva(letra: str) -> bool:
     Esta función responde por lo que viaja en el request. El día que exista la impresión del
     comprobante, el desglose visual será otra función y otra regla.
     """
-    if letra not in LETRAS and letra != "M":
+    if letra not in LETRAS:
         raise ValueError(f"'{letra}' no es una letra de comprobante conocida.")
     return letra != "C"

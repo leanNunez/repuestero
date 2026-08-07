@@ -15,7 +15,7 @@ import pytest
 
 from app.core import arca, letra
 from app.core.cond_fiscal import CONDICIONES_FISCALES, CONDICIONES_FISCALES_EMISOR
-from app.core.documentos import documento_de
+from app.core.documentos import DocumentoInvalido, documento_de
 
 # --------------------------------------------------------------------------------------
 # La letra
@@ -79,6 +79,34 @@ def test_la_matriz_cubre_todas_las_combinaciones_posibles() -> None:
     esperadas = {(e, r) for e in CONDICIONES_FISCALES_EMISOR for r in CONDICIONES_FISCALES}
     probadas = {(e, r) for e, r, _ in MATRIZ_LETRA}
     assert probadas == esperadas
+
+
+def test_los_emisores_validos_son_UNA_lista_no_dos() -> None:
+    """`letra.EMISORES_VALIDOS` es un alias, no una copia.
+
+    Con dos listas, sumar un emisor a una sola dejaba a `letra_de` aceptándolo y devolviendo "C",
+    mientras el test de arriba seguía verde porque arma sus expectativas desde la OTRA lista. Un
+    `==` no alcanza para atajarlo: dos copias con el mismo contenido pasan igual. Por eso `is`.
+    """
+    assert letra.EMISORES_VALIDOS is CONDICIONES_FISCALES_EMISOR
+
+
+def test_letra_de_nunca_devuelve_una_M() -> None:
+    """La M la decide ARCA (RG 1575), no se deriva de las condiciones fiscales.
+
+    Está en `LETRAS` porque hay que poder procesarla, pero nunca sale de acá.
+    """
+    derivadas = {
+        letra.letra_de(e, r) for e in CONDICIONES_FISCALES_EMISOR for r in CONDICIONES_FISCALES
+    }
+    assert derivadas <= letra.LETRAS_DERIVABLES
+    assert "M" not in derivadas
+
+
+def test_la_M_es_una_letra_manejable_aunque_no_derivable() -> None:
+    """Una validación escrita como `if letra in LETRAS` tiene que aceptar una M legítima."""
+    assert "M" in letra.LETRAS
+    assert "M" not in letra.LETRAS_DERIVABLES
 
 
 # --------------------------------------------------------------------------------------
@@ -235,6 +263,39 @@ def test_un_doc_tipo_sin_numero_no_se_declara_a_medias() -> None:
     """Mandar el tipo con el número vacío es un rechazo garantizado: se cae al siguiente escalón."""
     assert documento_de(doc_tipo=96, doc_nro=None, cuit="20-30111222-3") == (80, "20301112223")
     assert documento_de(doc_tipo=96, doc_nro="") == (99, "0")
+
+
+def test_un_numero_sin_tipo_no_se_puede_declarar() -> None:
+    """Ocho dígitos sueltos no dicen si son un DNI o un pasaporte: se baja al escalón siguiente."""
+    assert documento_de(doc_nro="30111222", cuit="20-30111222-3") == (80, "20301112223")
+    assert documento_de(doc_nro="30111222") == (99, "0")
+
+
+@pytest.mark.parametrize(
+    ("crudo", "limpio"),
+    [("30.111.222", "30111222"), ("30 111 222", "30111222"), ("30-111-222", "30111222")],
+)
+def test_el_numero_de_documento_viaja_sin_puntos_ni_guiones(crudo: str, limpio: str) -> None:
+    """El mostrador escribe "30.111.222" todo el tiempo, y ARCA quiere el número pelado.
+
+    La normalización se aplicaba solo al CUIT: un DNI con puntos viajaba tal cual y era rechazo.
+    """
+    assert documento_de(doc_tipo=96, doc_nro=crudo) == (96, limpio)
+
+
+def test_el_tipo_sin_identificar_siempre_declara_numero_cero() -> None:
+    """El 99 con cualquier número que no sea 0 es rechazo de ARCA.
+
+    Pasa cuando alguien carga un cliente anónimo y el front manda el tipo con un número residual.
+    Normalizarlo acá sale gratis; descubrirlo con el cliente ya afuera, no.
+    """
+    assert documento_de(doc_tipo=99, doc_nro="12345") == (99, "0")
+    assert documento_de(doc_tipo=99, doc_nro="0") == (99, "0")
+
+
+def test_un_tipo_de_documento_inventado_no_pasa() -> None:
+    with pytest.raises(DocumentoInvalido):
+        documento_de(doc_tipo=42, doc_nro="30111222")
 
 
 # --------------------------------------------------------------------------------------

@@ -38,10 +38,13 @@ CondFiscalLiteral = Literal["CONSUMIDOR_FINAL", "MONOTRIBUTO", "RESPONSABLE_INSC
 COND_FISCAL_POR_DEFECTO = "CONSUMIDOR_FINAL"
 
 #: Las condiciones que puede tener quien EMITE. Es el mismo vocabulario menos `CONSUMIDOR_FINAL`,
-#: y esa ausencia no es un olvido: un consumidor final no emite comprobantes, los recibe. La reja
-#: está también en la base (CHECK de `organizaciones.cond_fiscal`, migración 0014) porque una
+#: y esa ausencia no es un olvido: un consumidor final no emite comprobantes, los recibe.
+#:
+#: ⚠️ Hoy esto vive SOLO en Python. `organizaciones` todavía no tiene columna `cond_fiscal` — llega
+#: con la migración 0014, que aún no está escrita. Hasta entonces no hay reja en la base, y una
 #: organización mal configurada no se descubre al guardarla sino al facturar, con el cliente
-#: esperando en el mostrador.
+#: esperando en el mostrador. Cuando la 0014 exista, su CHECK congela su propia copia de esta
+#: lista (regla de 0008_compras.py) y el candado contra la deriva es un test que inserta las tres.
 CONDICIONES_FISCALES_EMISOR: frozenset[str] = frozenset(
     {"RESPONSABLE_INSCRIPTO", "MONOTRIBUTO", "EXENTO"}
 )
