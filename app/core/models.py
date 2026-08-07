@@ -14,6 +14,16 @@ class Organizacion(Base, TimestampMixin):
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     nombre: Mapped[str] = mapped_column(String(120))
     cuit: Mapped[str | None] = mapped_column(String(13))
+
+    # Qué es la organización ante ARCA. Decide la LETRA del comprobante: un responsable inscripto
+    # emite A o B según el receptor, un monotributista siempre C (`app/core/letra.py`).
+    #
+    # Nullable a propósito y sin backfill (migración 0014): inventarle una condición fiscal a una
+    # organización es inventar un hecho fiscal. Sin esto no se puede facturar, y el error sale al
+    # emitir diciendo qué falta configurar. `CONSUMIDOR_FINAL` no es un valor válido acá —lo frena
+    # el CHECK— porque un consumidor final no emite comprobantes, los recibe.
+    cond_fiscal: Mapped[str | None] = mapped_column(String(30))
+
     activa: Mapped[bool] = mapped_column(default=True)
 
 

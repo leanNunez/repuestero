@@ -13,6 +13,8 @@ class ClienteLeer(BaseModel):
     denominacion: str
     cuit: str | None
     cond_fiscal: str
+    doc_tipo: int | None
+    doc_nro: str | None
     limite_cta_cte: Decimal
     telefono: str | None
     email: str | None
@@ -46,6 +48,13 @@ class ClienteCrear(BaseModel):
     denominacion: str = Field(min_length=1, max_length=140)
     cuit: str | None = Field(default=None, max_length=13)
     cond_fiscal: CondFiscalLiteral = COND_FISCAL_POR_DEFECTO
+
+    #: Documento a declarar ante ARCA. Opcional: sin esto, `documento_de` cae al CUIT y, si
+    #: tampoco hay, a "sin identificar". Se cargan JUNTOS o ninguno — un número sin tipo no dice
+    #: si son un DNI o un pasaporte, y lo frena el CHECK `ck_clientes_doc_par`.
+    doc_tipo: int | None = None
+    doc_nro: str | None = Field(default=None, max_length=11)
+
     limite_cta_cte: Decimal = Field(default=Decimal("0"), ge=0)
     telefono: str | None = Field(default=None, max_length=40)
     email: str | None = Field(default=None, max_length=120)
