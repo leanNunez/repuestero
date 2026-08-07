@@ -5,6 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.clientes.models import Cliente
+from app.core.arca import DOC_TIPOS
 from app.core.cond_fiscal import COND_FISCAL_POR_DEFECTO, CONDICIONES_FISCALES
 from app.core.cuit import cuit_valido
 from app.core.numeracion import asignar_numero
@@ -29,6 +30,8 @@ def crear_cliente(
     denominacion: str,
     cuit: str | None = None,
     cond_fiscal: str = COND_FISCAL_POR_DEFECTO,
+    doc_tipo: int | None = None,
+    doc_nro: str | None = None,
     limite_cta_cte: Decimal = Decimal("0"),
     telefono: str | None = None,
     email: str | None = None,
@@ -46,12 +49,27 @@ def crear_cliente(
             f"Esperaba una de {sorted(CONDICIONES_FISCALES)}"
         )
 
+    # Mismo criterio que arriba: el CHECK de la base frena esto igual, pero con un IntegrityError
+    # que no dice cuál de los dos campos falta ni qué valores son válidos.
+    if (doc_tipo is None) != (doc_nro is None):
+        raise ValueError(
+            "El documento se carga completo o no se carga: "
+            f"recibí doc_tipo={doc_tipo!r} y doc_nro={doc_nro!r}."
+        )
+
+    if doc_tipo is not None and doc_tipo not in DOC_TIPOS:
+        raise ValueError(
+            f"Tipo de documento inválido: {doc_tipo}. Esperaba uno de {sorted(DOC_TIPOS)}"
+        )
+
     cliente = Cliente(
         org_id=org_id,
         codigo=codigo,
         denominacion=denominacion,
         cuit=cuit,
         cond_fiscal=cond_fiscal,
+        doc_tipo=doc_tipo,
+        doc_nro=doc_nro,
         limite_cta_cte=limite_cta_cte,
         telefono=telefono,
         email=email,
@@ -83,6 +101,8 @@ def alta_cliente(
     denominacion: str,
     cuit: str | None = None,
     cond_fiscal: str = COND_FISCAL_POR_DEFECTO,
+    doc_tipo: int | None = None,
+    doc_nro: str | None = None,
     limite_cta_cte: Decimal = Decimal("0"),
     telefono: str | None = None,
     email: str | None = None,
@@ -101,6 +121,8 @@ def alta_cliente(
         denominacion=denominacion,
         cuit=cuit,
         cond_fiscal=cond_fiscal,
+        doc_tipo=doc_tipo,
+        doc_nro=doc_nro,
         limite_cta_cte=limite_cta_cte,
         telefono=telefono,
         email=email,

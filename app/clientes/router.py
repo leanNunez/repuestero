@@ -53,6 +53,8 @@ def crear(
             denominacion=body.denominacion,
             cuit=body.cuit,
             cond_fiscal=body.cond_fiscal,
+            doc_tipo=body.doc_tipo,
+            doc_nro=body.doc_nro,
             limite_cta_cte=body.limite_cta_cte,
             telefono=body.telefono,
             email=body.email,
