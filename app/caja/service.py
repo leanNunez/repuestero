@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.caja.models import CajaMovimiento, CajaSaldo, Cheque
 from app.core.conceptos_caja import CONCEPTOS_DERIVADOS, CONCEPTOS_MANUALES, es_ingreso
 from app.core.formas_pago import FORMAS_PAGO
+from app.core.formato import pesos
 
 #: Estado inicial de un cheque que entra a la cartera.
 EN_CARTERA = "en_cartera"
@@ -673,8 +674,11 @@ def advertencias_de_saldo(
     saldos = saldo_por_forma(session, org_id)
     a_revisar = sorted(set(formas)) if formas is not None else sorted(saldos)
 
+    # `pesos()` y no `f"{...:,.2f}"`: ese formato es el de EE.UU. y el aviso convive con las
+    # tarjetas de saldo, que el front pinta en es-AR. Visto en pantalla, "$ -995.299,00" arriba y
+    # "-995,299.00" abajo se leen como dos números distintos.
     return [
-        f"{_NOMBRE_FORMA.get(forma, forma)} quedó en {saldos[forma]:,.2f}. "
+        f"{_NOMBRE_FORMA.get(forma, forma)} quedó en {pesos(saldos[forma])}. "
         "Un saldo negativo no puede pasar en la realidad: revisá si falta cargar un ingreso."
         for forma in a_revisar
         if forma != "cheque" and saldos.get(forma, Decimal("0")) < 0

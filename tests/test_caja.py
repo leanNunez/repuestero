@@ -110,8 +110,25 @@ def test_un_saldo_negativo_advierte(sesion, org):
     avisos = service.advertencias_de_saldo(sesion, org.id, formas=["efectivo"])
 
     assert len(avisos) == 1
-    assert "-500.00" in avisos[0]
+    assert "-500,00" in avisos[0]
     assert "efectivo" in avisos[0].lower()
+
+
+def test_el_aviso_trae_el_importe_en_es_AR(sesion, org):
+    """El número del aviso se lee al lado de las tarjetas de saldo, que el front pinta en es-AR.
+    Con `f"{monto:,.2f}"` decía "-12,500.00" contra un "$ -12.500,00" dos centímetros arriba: el
+    mismo número en dos formatos se lee como dos números.
+
+    Hace falta un monto de cinco cifras: con -500 los dos formatos coinciden y el test no prueba
+    nada. Este pasa por el separador de miles Y por el decimal."""
+    service.registrar_movimiento(
+        sesion, org.id, concepto="gasto", forma="efectivo", monto=SALDO_EFECTIVO + Decimal("12500")
+    )
+
+    aviso = service.advertencias_de_saldo(sesion, org.id, formas=["efectivo"])[0]
+
+    assert "-12.500,00" in aviso
+    assert "-12,500.00" not in aviso
 
 
 def test_advertir_NO_bloquea_el_movimiento(sesion, org):

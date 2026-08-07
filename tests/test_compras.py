@@ -285,7 +285,7 @@ def test_pagar_en_efectivo_sin_fondos_advierte_pero_paga(sesion, org):
 
     assert pago.orden.id is not None, "el pago se registra igual"
     assert len(pago.advertencias) == 1
-    assert "-50,000.00" in pago.advertencias[0]
+    assert "-50.000,00" in pago.advertencias[0]
 
 
 def test_pagar_con_fondos_no_advierte(sesion, org):
