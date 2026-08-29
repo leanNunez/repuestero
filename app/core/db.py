@@ -46,7 +46,15 @@ def _fijar_zona_horaria(dbapi_connection, _record) -> None:
         dbapi_connection.autocommit = autocommit_previo
 
 
-engine = create_engine(_settings.database_url, pool_pre_ping=True, future=True)
+#: connect_timeout corta rápido si la base no responde (ej. Supabase pausada), en vez de
+#: colgarse al timeout del SO (~2 min). Con una sola instancia en Render free, sin esto
+#: un puñado de conexiones colgadas en connect() agotan el pool y tumban hasta /health.
+engine = create_engine(
+    _settings.database_url,
+    pool_pre_ping=True,
+    future=True,
+    connect_args={"connect_timeout": 5},
+)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
 
 #: GUCs que leen las políticas de RLS. Un solo nombre, un solo lugar.
@@ -66,9 +74,27 @@ def readonly_engine():
                 "DATABASE_READONLY_URL no configurada — la requiere el asistente NL2SQL"
             )
         _readonly_engine = create_engine(
-            _settings.database_readonly_url, pool_pre_ping=True, future=True
+            _settings.database_readonly_url,
+            pool_pre_ping=True,
+            future=True,
+            connect_args={"connect_timeout": 5},
         )
     return _readonly_engine
+
+
+def ping(*, timeout_ms: int = 2000) -> None:
+    """`select 1` con timeout corto: prueba de conectividad pura para `/health/db`.
+
+    A propósito NO toma tenant ni pasa por RLS: no lee ninguna tabla de negocio, solo
+    confirma que Postgres responde. Deja que un `OperationalError` se propague — el handler
+    global de `app/main.py` ya lo convierte en 503 sin filtrar el mensaje del driver (que
+    trae el host).
+    """
+    with SessionLocal() as session:
+        session.execute(
+            text("select set_config('statement_timeout', :ms, true)"), {"ms": str(timeout_ms)}
+        )
+        session.execute(text("select 1"))
 
 
 def set_guc(session: Session, guc: str, value: str) -> None:

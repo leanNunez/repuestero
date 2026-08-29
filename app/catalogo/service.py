@@ -541,11 +541,16 @@ def asegurar_embeddings(session: Session, org_id: UUID, *, articulos: list[Artic
        nunca se recalcula. Este es un bug latente que este camino además tapa.
 
     ¿Y por qué no rompe la razón por la que el indexado está fuera del hot path? Porque esa
-    razón es el cold-load del modelo (~120MB), y el proceso de la API YA lo pagó al arrancar
-    (`main.py` llama a `precargar_embeddings()` en el startup, y el modelo queda cacheado con
-    `lru_cache`). Lo que queda es embeber un puñado de textos cortos: decenas de ms, una vez,
-    en un endpoint donde el humano ya esperó varios segundos de OCR. `reindexar_embeddings`
-    sigue siendo lo correcto para el CLI de importación masiva, que sí paga el cold-load.
+    razón es el cold-load del modelo (~120MB) y SOLO aplica al backend LOCAL (dev): con
+    `EMBEDDINGS_BACKEND=remote` —lo que corre en producción— `_modelo_local()` nunca se llama y
+    esto no importa. En dev, nada precarga el modelo en el startup (antes lo hacía indirectamente
+    `seguridad.precargar_embeddings()`, pero forzar esa carga en el arranque quedó descartado: con
+    backend remoto son llamadas HTTP a HF que, si fallan, se llevan puesto el proceso — ver
+    `app/asistente/seguridad.py::_asegurar_embeddings`). El primer request de dev que necesite
+    embeddings paga el cold-load una vez (`lru_cache` en `_modelo_local`); acá lo que queda después
+    es embeber un puñado de textos cortos: decenas de ms, en un endpoint donde el humano ya esperó
+    varios segundos de OCR. `reindexar_embeddings` sigue siendo lo correcto para el CLI de
+    importación masiva, que sí paga el cold-load.
 
     A diferencia de aquella, esta SÍ toma org_id: no barre la base buscando pendientes, opera
     sobre objetos que el caller ya tiene en la mano.

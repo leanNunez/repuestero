@@ -23,5 +23,8 @@ RUN uv sync --frozen --no-install-project --no-dev
 COPY . .
 RUN uv sync --frozen --no-dev
 
-# El host inyecta $PORT. Corre las migraciones (idempotente) y levanta el server.
-CMD uv run alembic upgrade head && uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}
+# El host inyecta $PORT. Las migraciones YA NO corren acá: si la base no responde (ej.
+# Supabase free pausada por inactividad), un alembic bloqueante tumbaba el arranque entero
+# y convertía un evento recuperable en una caída total. Corren aparte, en CI, antes del
+# deploy (ver .github/workflows/deploy.yml y docs/deploy.md).
+CMD uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT:-8000}

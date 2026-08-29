@@ -1,3 +1,4 @@
+import logging
 from functools import lru_cache
 from typing import Any
 from uuid import UUID
@@ -8,6 +9,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.core.config import Settings, get_settings
 
+logger = logging.getLogger(__name__)
 _bearer = HTTPBearer(auto_error=False)
 
 
@@ -47,6 +49,16 @@ def get_current_user(
     creds: HTTPAuthorizationCredentials | None = Depends(_bearer),
     settings: Settings = Depends(get_settings),
 ) -> CurrentUser:
+    # Guard explícito ANTES de intentar decodificar: sin JWKS ni secret configurados esto es
+    # un error de CONFIGURACIÓN del servidor, no un token inválido. Devolver 401 acá sería
+    # peor que el 500 que reemplaza: le miente al cliente ("tu credencial está mal" con una
+    # credencial perfecta), y el front borra el token al ver un 401 (bounceIf401 en
+    # client.ts) — deja al usuario en un loop de login que nunca puede funcionar, sin
+    # ningún mensaje, y entierra el bug de config en el ruido de los 401 legítimos.
+    if not (settings.supabase_jwks_url or settings.supabase_jwt_secret):
+        logger.error("Auth sin configurar: falta SUPABASE_JWKS_URL o SUPABASE_JWT_SECRET")
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Autenticación no configurada")
+
     if creds is None:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, "Falta el token")
 
