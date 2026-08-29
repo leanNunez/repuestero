@@ -1,13 +1,52 @@
-import { Wrench } from "lucide-react";
-import type { ReactNode } from "react";
+import { Wrench, XIcon } from "lucide-react";
+import { useState, type ReactNode } from "react";
 
 import { useDrawerStore } from "@/features/ui-shell/drawerStore";
+import { bannerDemoCerrado, cerrarBannerDemo } from "@/shared/auth/demo";
+import { DEMO_MODE } from "@/shared/config/env";
 import { cn } from "@/shared/lib/cn";
 import { Toaster } from "@/shared/ui/sonner";
 import { AssistantDrawer } from "@/widgets/assistant-drawer/AssistantDrawer";
 
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
+
+const REPO_URL = "https://github.com/leanNunez/repuestero";
+
+/** Solo se monta si DEMO_MODE está activo. Hace tres trabajos a la vez: fija expectativas
+ * (los datos son de mentira), invita a escribir (que es lo que demuestra el producto), y
+ * linkea al repo — que es lo que un reclutador realmente quiere encontrar. */
+function BannerDemo() {
+  const [visible, setVisible] = useState(() => !bannerDemoCerrado());
+  if (!visible) return null;
+
+  return (
+    <div className="flex items-center justify-between gap-3 border-b border-border bg-primary/10 px-4 py-2 text-xs text-foreground">
+      <p className="min-w-0 truncate">
+        Demo pública con datos generados. Podés cargar ventas y compras: se resetean todos los
+        días.{" "}
+        <a
+          href={REPO_URL}
+          target="_blank"
+          rel="noreferrer"
+          className="font-medium underline underline-offset-2"
+        >
+          Código en GitHub →
+        </a>
+      </p>
+      <button
+        onClick={() => {
+          cerrarBannerDemo();
+          setVisible(false);
+        }}
+        aria-label="Cerrar aviso"
+        className="shrink-0 text-muted-foreground hover:text-foreground"
+      >
+        <XIcon className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
 
 /** Pie de la barra: org y usuario del entorno de dev. En Fase 2 sale de Supabase Auth. */
 function OrgFooter() {
@@ -58,6 +97,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        {DEMO_MODE && <BannerDemo />}
         <Topbar />
         <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
       </div>
