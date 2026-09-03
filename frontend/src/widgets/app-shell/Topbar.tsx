@@ -3,6 +3,7 @@ import { Menu, Moon, Sun } from "lucide-react";
 
 import { RepuMascot } from "@/features/chat/ui/RepuMascot";
 import { useDrawerStore } from "@/features/ui-shell/drawerStore";
+import { marcarSalidaExplicita } from "@/shared/auth/demo";
 import { supabase } from "@/shared/auth/supabase";
 import { useThemeStore } from "@/shared/theme/themeStore";
 import { Button } from "@/shared/ui/button";
@@ -23,7 +24,12 @@ export function Topbar() {
   const toggleAssistant = useDrawerStore((s) => s.toggleAssistant);
   const toggleNav = useDrawerStore((s) => s.toggleNav);
   // El logout pasa por Supabase; el AuthGate limpia el token del store al detectar el signOut.
-  const cerrarSesion = () => void supabase?.auth.signOut();
+  // marcarSalidaExplicita() va ANTES del signOut(): si no, el AuthGate ve "sin sesión" y el
+  // auto-login de demo vuelve a entrar solo — "Salir" quedaría sin efecto visible.
+  const cerrarSesion = () => {
+    marcarSalidaExplicita();
+    void supabase?.auth.signOut();
+  };
   const theme = useThemeStore((s) => s.theme);
   const toggleTheme = useThemeStore((s) => s.toggle);
   const pathname = useRouterState({ select: (s) => s.location.pathname });

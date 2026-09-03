@@ -44,6 +44,59 @@ def test_ban_por_strikes():
     assert seguridad.esta_baneado(ip)
 
 
+# ------------------------------------------------------ embeddings de injection, perezosos ---
+
+
+def test_asegurar_embeddings_puebla_en_el_primer_uso():
+    """Antes se precargaban en el startup del proceso (ver Dockerfile/main.py). Ahora se
+    pueblan recién cuando algo los necesita — pero SE TIENEN que poblar, no solo "no romper":
+    con la lista vacía la capa semántica desaparece en silencio (`if _injection_embeddings:`)."""
+    seguridad._reset_embeddings_para_tests()
+    assert seguridad._injection_embeddings == []
+
+    seguridad._asegurar_embeddings()
+
+    assert len(seguridad._injection_embeddings) == len(seguridad.INJECTION_EXAMPLES)
+    seguridad._reset_embeddings_para_tests()
+
+
+def test_asegurar_embeddings_no_repite_el_trabajo(monkeypatch):
+    """Se intenta UNA sola vez por vida del proceso: repetir el cómputo en cada request sería
+    tan caro como el precómputo que reemplaza (y con backend remoto, N llamadas HTTP a HF)."""
+    seguridad._reset_embeddings_para_tests()
+    llamadas = 0
+
+    def _contar(texto):
+        nonlocal llamadas
+        llamadas += 1
+        return [0.0] * 384
+
+    monkeypatch.setattr(seguridad, "embed_query", _contar)
+    seguridad._asegurar_embeddings()
+    primera_tanda = llamadas
+    assert primera_tanda == len(seguridad.INJECTION_EXAMPLES)
+
+    seguridad._asegurar_embeddings()  # segunda llamada: no debe volver a embeber nada
+    assert llamadas == primera_tanda
+    seguridad._reset_embeddings_para_tests()
+
+
+def test_es_injection_no_explota_si_los_embeddings_fallan(monkeypatch):
+    """Si HF (o el backend que sea) falla al poblar los embeddings, es_injection NO debe
+    reventar: la capa keyword sigue de pie, sola, hasta el próximo arranque del proceso."""
+    seguridad._reset_embeddings_para_tests()
+
+    def _falla(_texto):
+        raise RuntimeError("HF caído")
+
+    monkeypatch.setattr(seguridad, "embed_query", _falla)
+
+    assert not seguridad.es_injection("¿qué filtros de aceite tengo para un Gol Trend?")
+    assert seguridad._injection_embeddings == []  # la población falló, y no rompió nada
+
+    seguridad._reset_embeddings_para_tests()
+
+
 # --------------------------------------------------------------------------- guard de SQL (unit)
 
 

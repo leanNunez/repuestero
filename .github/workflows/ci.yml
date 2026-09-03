@@ -100,3 +100,50 @@ jobs:
       # errores de tipo que los tests unitarios no ven.
       - name: Build
         run: bun run build
+
+  # Los dos jobs de abajo SOLO corren en push a main, y solo si backend+frontend pasaron
+  # (needs). Antes las migraciones corrían en el CMD del contenedor de Render en cada
+  # arranque: si la base no respondía (ej. Supabase pausada), alembic fallaba y el proceso
+  # nunca llegaba a levantar uvicorn — una pausa recuperable se volvía una caída total. Ahora
+  # migrar es un paso explícito de CI, y Render solo deployea lo que ya migró (render.yaml:
+  # autoDeploy: false). Ver docs/deploy.md.
+  migrate:
+    name: migrar (alembic upgrade head)
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Instalar dependencias
+        run: uv sync --frozen --no-dev
+
+      # Runners de GitHub: IPv4-only. La conexión directa de Supabase (db.<ref>.supabase.co)
+      # es IPv6-only — el secret TIENE que ser el pooler en session mode, puerto 5432
+      # (aws-0-<region>.pooler.supabase.com:5432), nunca el 6543 (transaction mode: rompe DDL
+      # y prepared statements). `DATABASE_URL` se fija igual porque Settings la exige, pero
+      # `env.py` prioriza MIGRATIONS_DATABASE_URL (ver alembic/env.py) — el valor es el mismo
+      # a propósito.
+      - name: Migrar producción
+        env:
+          DATABASE_URL: ${{ secrets.MIGRATIONS_DATABASE_URL }}
+          MIGRATIONS_DATABASE_URL: ${{ secrets.MIGRATIONS_DATABASE_URL }}
+        run: uv run --frozen alembic upgrade head
+
+  deploy:
+    name: desplegar (Render deploy hook)
+    runs-on: ubuntu-latest
+    needs: migrate
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      # `-f`: si Render devuelve un status de error, el step falla (y no queda un "verde"
+      # mintiendo). El hook dispara el build+deploy de la imagen que YA migró arriba.
+      - name: Disparar el deploy en Render
+        run: curl -fsS "${{ secrets.RENDER_DEPLOY_HOOK_URL }}"

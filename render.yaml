@@ -7,6 +7,11 @@ services:
     dockerfilePath: ./Dockerfile
     plan: free
     healthCheckPath: /health
+    # El deploy lo dispara GitHub Actions (.github/workflows/ci.yml, job "deploy"), DESPUÉS
+    # de correr las migraciones — nunca Render solo. Con autoDeploy en true, un push a main
+    # podía deployear ANTES de migrar, o el CMD viejo migraba en cada arranque (ver
+    # Dockerfile: por qué se sacó de ahí). Ver docs/deploy.md.
+    autoDeploy: false
     envVars:
       - key: ENV
         value: production # NO "prod": is_prod ahora acepta ambos, pero el estándar es production
