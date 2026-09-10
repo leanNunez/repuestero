@@ -1,0 +1,43 @@
+name: keep-alive
+
+# Supabase free pausa un proyecto tras ~7 días sin actividad de base, y Render free
+# duerme el servicio tras 15 min sin tráfico. Un solo request a /health/db despierta
+# los dos: el endpoint ejecuta `select 1` contra Postgres (app/core/db.py), así que
+# cuenta como actividad real de base y además fuerza el arranque en frío de Render.
+#
+# Cada 3 días, no 6: los cron de GitHub se atrasan o se saltan bajo carga, y la
+# ventana de pausa de Supabase es de 7 días. Con 3 queda margen para que un run
+# perdido no llegue a dormir el proyecto.
+#
+# OJO: GitHub deshabilita los workflows programados tras 60 días sin commits en el
+# repo. Mientras el repo tenga movimiento no es un problema; si el proyecto queda
+# quieto, hay que reactivarlo a mano desde la pestaña Actions.
+
+on:
+  schedule:
+    - cron: "17 6 */3 * *" # cada 3 días, 06:17 UTC (horario "raro" a propósito: los
+                            # cron en punto están más congestionados y se atrasan más)
+  workflow_dispatch: {} # para poder dispararlo a mano y comprobar que anda
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Despertar backend + base (/health/db)
+        run: |
+          url="${{ vars.BACKEND_URL }}/health/db"
+          # Hasta 6 intentos con 30s de pausa: el arranque en frío de Render tarda
+          # 30-60s y el primer request suele dar 502 o timeout mientras levanta.
+          # `|| echo 000` evita que un curl fallido (bash -e) corte el script antes
+          # de agotar los reintentos.
+          for i in $(seq 1 6); do
+            code=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 90 "$url" || echo 000)
+            if [ "$code" = "200" ]; then
+              echo "OK en el intento $i"
+              exit 0
+            fi
+            echo "intento $i: HTTP $code — reintento en 30s"
+            sleep 30
+          done
+          echo "falló: /health/db no respondió 200 tras 6 intentos"
+          exit 1
