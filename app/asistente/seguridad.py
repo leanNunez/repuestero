@@ -122,7 +122,16 @@ def _asegurar_embeddings() -> None:
 def _normalize(texto: str) -> str:
     texto = unicodedata.normalize("NFKC", texto)
     # leetspeak → letras, para que "1gn0r3" no esquive el filtro.
-    for src, dst in (("1", "i"), ("0", "o"), ("3", "e"), ("@", "a"), ("$", "s"), ("5", "s")):
+    for src, dst in (
+        ("1", "i"),
+        ("0", "o"),
+        ("3", "e"),
+        ("4", "a"),
+        ("5", "s"),
+        ("7", "t"),
+        ("@", "a"),
+        ("$", "s"),
+    ):
         texto = texto.replace(src, dst)
     return texto.lower()
 
@@ -141,6 +150,9 @@ def es_injection(texto: str) -> bool:
         return True
     # ataque "i g n o r á": colapsar espacios entre letras y reintentar.
     colapsado = re.sub(r"(?<=[a-záéíóúñ])\s(?=[a-záéíóúñ])", "", norm)
+    # el colapso deja intactos los espacios ENTRE palabras ("ignora   tus"): los patrones
+    # llevan uno solo, así que se reducen a uno.
+    colapsado = re.sub(r"\s+", " ", colapsado)
     if any(p in colapsado for p in INJECTION_PATTERNS):
         return True
 
