@@ -12,10 +12,11 @@ import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 
 const REPO_URL = "https://github.com/leanNunez/repuestero";
+const PORTFOLIO_URL = "https://leannunez.github.io/myportfolio/";
 
 /** Solo se monta si DEMO_MODE está activo. Hace tres trabajos a la vez: fija expectativas
  * (los datos son de mentira), invita a escribir (que es lo que demuestra el producto), y
- * linkea al repo — que es lo que un reclutador realmente quiere encontrar. */
+ * linkea al repo y al portfolio — que es lo que un reclutador realmente quiere encontrar. */
 function BannerDemo() {
   const [visible, setVisible] = useState(() => !bannerDemoCerrado());
   if (!visible) return null;
@@ -32,6 +33,15 @@ function BannerDemo() {
           className="font-medium underline underline-offset-2"
         >
           Código en GitHub →
+        </a>
+        {" · "}
+        <a
+          href={PORTFOLIO_URL}
+          target="_blank"
+          rel="noopener"
+          className="font-medium underline underline-offset-2"
+        >
+          Hecho por Leandro Nuñez
         </a>
       </p>
       <button

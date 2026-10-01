@@ -42,7 +42,7 @@ describe("BootScreen", () => {
     expect(barra).toHaveStyle({ width: "95%" });
   });
 
-  it("en 'agotado' ofrece reintentar y el link al repo, y dispara onReintentar al click", async () => {
+  it("en 'agotado' ofrece reintentar, el link al repo y al portfolio, y dispara onReintentar al click", async () => {
     const onReintentar = vi.fn();
     const user = userEvent.setup();
     render(<BootScreen estado={{ fase: "agotado" }} onReintentar={onReintentar} />);
@@ -50,6 +50,11 @@ describe("BootScreen", () => {
     expect(screen.getByText(/no pudimos despertar el servidor/i)).toBeInTheDocument();
     const link = screen.getByRole("link", { name: /ver el proyecto en github/i });
     expect(link).toHaveAttribute("href", "https://github.com/leanNunez/repuestero");
+
+    const portfolio = screen.getByRole("link", { name: /hecho por leandro nuñez/i });
+    expect(portfolio).toHaveAttribute("href", "https://leannunez.github.io/myportfolio/");
+    // Backlink seguido a propósito (SEO): nada de nofollow.
+    expect(portfolio.getAttribute("rel") ?? "").not.toMatch(/nofollow/);
 
     await user.click(screen.getByRole("button", { name: "Reintentar" }));
     expect(onReintentar).toHaveBeenCalledOnce();
