@@ -5,6 +5,7 @@ import { Button } from "@/shared/ui/button";
 import type { EstadoBackend } from "./useBackendReady";
 
 const REPO_URL = "https://github.com/leanNunez/repuestero";
+const PORTFOLIO_URL = "https://leannunez.github.io/myportfolio/";
 /** Estimado para la barra de progreso, no una promesa: un cold start típico ronda esto. */
 const ESTIMADO_SEGUNDOS = 60;
 
@@ -37,6 +38,14 @@ export function BootScreen({
             className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
           >
             Ver el proyecto en GitHub
+          </a>
+          <a
+            href={PORTFOLIO_URL}
+            target="_blank"
+            rel="noopener"
+            className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+          >
+            Hecho por Leandro Nuñez
           </a>
         </div>
       </Pantalla>
